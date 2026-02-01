@@ -1,0 +1,223 @@
+package generator
+
+import (
+	"fmt"
+	"path/filepath"
+)
+
+// generateModelModule generates all Model module files
+func (g *Generator) generateModelModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("Model"); err != nil {
+		return err
+	}
+
+	// ImmutableStyle.java
+	if err := g.writeTemplate(
+		"java/model/ImmutableStyle.java.tmpl",
+		g.javaPath("Model", "ImmutableStyle.java"),
+	); err != nil {
+		return fmt.Errorf("failed to generate ImmutableStyle.java: %w", err)
+	}
+
+	// Placeholder.java (entity interface)
+	if err := g.writeTemplate(
+		"java/model/entities/Placeholder.java.tmpl",
+		g.javaPath("Model", filepath.Join("entities", "Placeholder.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate Placeholder.java: %w", err)
+	}
+
+	// PlaceholderRecord.java (database record)
+	if err := g.writeTemplate(
+		"java/model/entities/PlaceholderRecord.java.tmpl",
+		g.javaPath("Model", filepath.Join("entities", "PlaceholderRecord.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderRecord.java: %w", err)
+	}
+
+	// PlaceholderRequest.java (DTO)
+	if err := g.writeTemplate(
+		"java/model/dto/PlaceholderRequest.java.tmpl",
+		g.javaPath("Model", filepath.Join("dto", "PlaceholderRequest.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderRequest.java: %w", err)
+	}
+
+	// PlaceholderResponse.java (DTO)
+	if err := g.writeTemplate(
+		"java/model/dto/PlaceholderResponse.java.tmpl",
+		g.javaPath("Model", filepath.Join("dto", "PlaceholderResponse.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderResponse.java: %w", err)
+	}
+
+	return nil
+}
+
+// generateSQLDatastoreModule generates all SQLDatastore module files
+func (g *Generator) generateSQLDatastoreModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("SQLDatastore"); err != nil {
+		return err
+	}
+
+	// DatabaseConfig.java
+	if err := g.writeTemplate(
+		"java/sqldatastore/config/DatabaseConfig.java.tmpl",
+		g.javaPath("SQLDatastore", filepath.Join("config", "DatabaseConfig.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate DatabaseConfig.java: %w", err)
+	}
+
+	// PlaceholderRepository.java
+	if err := g.writeTemplate(
+		"java/sqldatastore/repository/PlaceholderRepository.java.tmpl",
+		g.javaPath("SQLDatastore", filepath.Join("repository", "PlaceholderRepository.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderRepository.java: %w", err)
+	}
+
+	// V1__baseline.sql (Flyway migration)
+	if err := g.writeTemplate(
+		"java/sqldatastore/migration/V1__baseline.sql.tmpl",
+		g.resourcePath("SQLDatastore", filepath.Join("db", "migration", "V1__baseline.sql")),
+	); err != nil {
+		return fmt.Errorf("failed to generate V1__baseline.sql: %w", err)
+	}
+
+	// application.yml (database configuration)
+	if err := g.writeTemplate(
+		"java/sqldatastore/resources/application.yml.tmpl",
+		g.resourcePath("SQLDatastore", "application.yml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate SQLDatastore application.yml: %w", err)
+	}
+
+	// TestConfig.java (test configuration for library module)
+	if err := g.writeTemplate(
+		"java/sqldatastore/test/TestConfig.java.tmpl",
+		g.testJavaPath("SQLDatastore", "TestConfig.java"),
+	); err != nil {
+		return fmt.Errorf("failed to generate TestConfig.java: %w", err)
+	}
+
+	// PlaceholderRepositoryTest.java
+	if err := g.writeTemplate(
+		"java/sqldatastore/test/PlaceholderRepositoryTest.java.tmpl",
+		g.testJavaPath("SQLDatastore", filepath.Join("repository", "PlaceholderRepositoryTest.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderRepositoryTest.java: %w", err)
+	}
+
+	return nil
+}
+
+// generateSharedModule generates all Shared module files
+func (g *Generator) generateSharedModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("Shared"); err != nil {
+		return err
+	}
+
+	// SharedConfig.java
+	if err := g.writeTemplate(
+		"java/shared/config/SharedConfig.java.tmpl",
+		g.javaPath("Shared", filepath.Join("config", "SharedConfig.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate SharedConfig.java: %w", err)
+	}
+
+	// CircuitBreakerConfiguration.java
+	if err := g.writeTemplate(
+		"java/shared/config/CircuitBreakerConfiguration.java.tmpl",
+		g.javaPath("Shared", filepath.Join("config", "CircuitBreakerConfiguration.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate CircuitBreakerConfiguration.java: %w", err)
+	}
+
+	// application.yml (circuit breaker configuration)
+	if err := g.writeTemplate(
+		"java/shared/resources/application.yml.tmpl",
+		g.resourcePath("Shared", "application.yml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate Shared application.yml: %w", err)
+	}
+
+	// PlaceholderService.java
+	if err := g.writeTemplate(
+		"java/shared/service/PlaceholderService.java.tmpl",
+		g.javaPath("Shared", filepath.Join("service", "PlaceholderService.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderService.java: %w", err)
+	}
+
+	// PlaceholderServiceTest.java
+	if err := g.writeTemplate(
+		"java/shared/test/PlaceholderServiceTest.java.tmpl",
+		g.testJavaPath("Shared", filepath.Join("service", "PlaceholderServiceTest.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderServiceTest.java: %w", err)
+	}
+
+	return nil
+}
+
+// generateAPIModule generates all API module files
+func (g *Generator) generateAPIModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("API"); err != nil {
+		return err
+	}
+
+	// Application.java (main class)
+	applicationFile := fmt.Sprintf("%sApiApplication.java", g.config.ProjectNamePascal())
+	if err := g.writeTemplate(
+		"java/api/Application.java.tmpl",
+		g.javaPath("API", applicationFile),
+	); err != nil {
+		return fmt.Errorf("failed to generate Application.java: %w", err)
+	}
+
+	// HealthController.java
+	if err := g.writeTemplate(
+		"java/api/controller/HealthController.java.tmpl",
+		g.javaPath("API", filepath.Join("controller", "HealthController.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate HealthController.java: %w", err)
+	}
+
+	// PlaceholderController.java
+	if err := g.writeTemplate(
+		"java/api/controller/PlaceholderController.java.tmpl",
+		g.javaPath("API", filepath.Join("controller", "PlaceholderController.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderController.java: %w", err)
+	}
+
+	// WebConfig.java
+	if err := g.writeTemplate(
+		"java/api/config/WebConfig.java.tmpl",
+		g.javaPath("API", filepath.Join("config", "WebConfig.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate WebConfig.java: %w", err)
+	}
+
+	// application.yml
+	if err := g.writeTemplate(
+		"java/api/resources/application.yml.tmpl",
+		g.resourcePath("API", "application.yml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate application.yml: %w", err)
+	}
+
+	// IntelliJ IDEA Run Configuration (Maven)
+	if err := g.writeTemplate(
+		"idea/run/API__Maven_.run.xml.tmpl",
+		filepath.Join(".run", "API.run.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate API run configuration: %w", err)
+	}
+
+	return nil
+}

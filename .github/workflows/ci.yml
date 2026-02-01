@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build
+        run: go build -v ./cmd/trabuco
+
+      - name: Run Go tests
+        run: go test -v ./...
+
+      - name: Upload CLI binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: trabuco-cli
+          path: trabuco
+          retention-days: 1
+
+  test-generated-project:
+    name: Test Generated Project
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trabuco-cli
+
+      - name: Make CLI executable
+        run: chmod +x ./trabuco
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Generate project with all modules
+        run: |
+          mkdir -p test-output
+          cd test-output
+          ../trabuco init \
+            --name=test-project \
+            --group-id=com.test.project \
+            --modules=Model,SQLDatastore,Shared,API \
+            --database=postgresql
+
+      - name: Display generated structure
+        run: |
+          echo "Generated project structure:"
+          find test-output/test-project -type f -name "*.java" -o -name "*.xml" -o -name "*.yml" | head -30
+
+      - name: Build generated project
+        working-directory: test-output/test-project
+        run: mvn clean compile -B
+
+      - name: Run generated project tests (skip integration)
+        working-directory: test-output/test-project
+        run: mvn test -B -DskipITs -Dspring.profiles.active=test
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/test
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+
+  test-minimal-project:
+    name: Test Minimal Project (Model only)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trabuco-cli
+
+      - name: Make CLI executable
+        run: chmod +x ./trabuco
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Generate minimal project
+        run: |
+          mkdir -p test-minimal
+          cd test-minimal
+          ../trabuco init \
+            --name=minimal-project \
+            --group-id=com.minimal.project \
+            --modules=Model \
+            --database=none
+
+      - name: Build minimal project
+        working-directory: test-minimal/minimal-project
+        run: mvn clean compile test -B

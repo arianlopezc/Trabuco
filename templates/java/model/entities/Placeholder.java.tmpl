@@ -1,0 +1,58 @@
+package {{.GroupID}}.model.entities;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.annotation.Nullable;
+import org.immutables.value.Value;
+
+import java.time.Instant;
+
+/**
+ * Placeholder entity for SERVICE LAYER business logic.
+ *
+ * Always use ImmutablePlaceholder.builder() to create instances.
+ * PlaceholderRecord is only used at the repository boundary for database persistence.
+ *
+ * Key Design Principles:
+ * - Always use ImmutablePlaceholder, never the Placeholder interface directly
+ * - Use builder pattern for all object creation
+ * - Immutable for thread safety and functional programming
+ *
+ * Replace this with your actual domain entities.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutablePlaceholder.class)
+@JsonDeserialize(as = ImmutablePlaceholder.class)
+public interface Placeholder {
+
+    /**
+     * Unique identifier (auto-generated).
+     */
+    @Nullable
+    Long id();
+
+    /**
+     * Name of the placeholder.
+     */
+    String name();
+
+    /**
+     * Optional description.
+     */
+    @Nullable
+    String description();
+
+    /**
+     * Timestamp when record was created.
+     */
+    @Nullable
+    Instant createdAt();
+
+    /**
+     * Timestamp when record was last updated.
+     */
+    @Nullable
+    Instant updatedAt();
+}

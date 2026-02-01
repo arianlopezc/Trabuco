@@ -4,7 +4,7 @@ set -e
 # Trabuco Installer
 # Usage: curl -sSL https://github.com/your-org/trabuco/releases/latest/download/install.sh | bash
 
-REPO="your-org/trabuco"
+REPO="trabuco/trabuco"
 BINARY_NAME="trabuco"
 
 # Colors

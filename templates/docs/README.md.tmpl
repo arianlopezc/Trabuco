@@ -1,0 +1,184 @@
+# {{.ProjectName}}
+
+A Java multi-module Maven project.
+
+## Project Structure
+
+```
+{{.ProjectName}}/
+├── pom.xml                      # Parent POM
+{{- if .HasModule "Model"}}
+├── Model/                       # DTOs, Entities, Enums
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+├── SQLDatastore/                # Repositories, Flyway migrations
+{{- end}}
+{{- if .HasModule "Shared"}}
+├── Shared/                      # Services, Circuit breaker
+{{- end}}
+{{- if .HasModule "API"}}
+├── API/                         # REST endpoints (port 8080)
+{{- end}}
+{{- if and (and (.HasModule "API") (.HasModule "SQLDatastore")) (ne .Database "")}}
+├── docker-compose.yml           # Local development database
+├── .env.example                 # Environment variables template
+{{- end}}
+└── README.md
+```
+
+## Prerequisites
+
+- Java {{.JavaVersion}}
+- Maven 3.9+
+{{- if and (and (.HasModule "API") (.HasModule "SQLDatastore")) (ne .Database "")}}
+- Docker & Docker Compose (for local development)
+{{- end}}
+
+## Quick Start
+
+{{- if and (and (.HasModule "API") (.HasModule "SQLDatastore")) (ne .Database "")}}
+
+### 1. Start the database
+
+```bash
+docker-compose up -d
+```
+
+This starts a {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}} container with:
+{{- if eq .Database "postgresql"}}
+- **Host:** localhost:5433 (uses non-standard port to avoid conflicts)
+- **Database:** {{.ProjectName}}
+- **User:** postgres
+- **Password:** postgres
+{{- else if eq .Database "mysql"}}
+- **Host:** localhost:3307 (uses non-standard port to avoid conflicts)
+- **Database:** {{.ProjectName}}
+- **User:** root
+- **Password:** root
+{{- end}}
+
+### 2. Build the project
+
+```bash
+mvn clean compile
+```
+{{- else}}
+
+### Build the project
+
+```bash
+mvn clean compile
+```
+{{- end}}
+{{- if .HasModule "API"}}
+
+### {{if and (.HasModule "SQLDatastore") (ne .Database "")}}3{{else}}2{{end}}. Run the API
+
+```bash
+cd API
+mvn spring-boot:run
+```
+
+The API will be available at http://localhost:8080
+
+**Health Check:**
+```bash
+curl http://localhost:8080/actuator/health
+```
+{{- end}}
+
+## Build Commands
+
+```bash
+# Compile all modules
+mvn clean compile
+
+# Run tests
+mvn test
+
+# Package
+mvn clean package
+
+# Install to local repository
+mvn clean install
+```
+{{- if and (and (.HasModule "API") (.HasModule "SQLDatastore")) (ne .Database "")}}
+
+## Database Management
+
+```bash
+# Start database
+docker-compose up -d
+
+# Stop database (keeps data)
+docker-compose stop
+
+# Stop and remove containers (keeps data)
+docker-compose down
+
+# Stop and delete all data
+docker-compose down -v
+
+# View logs
+docker-compose logs -f
+```
+
+### Custom Database Configuration
+
+If you prefer to use your own database instead of Docker:
+
+1. Copy `.env.example` to `.env`
+2. Update the values to match your database
+3. The application will use these environment variables
+{{- end}}
+
+## Modules
+
+| Module | Description |
+|--------|-------------|
+{{- if .HasModule "Model"}}
+| Model | DTOs, Entities, Enums, Exceptions |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| SQLDatastore | Database repositories, Flyway migrations |
+{{- end}}
+{{- if .HasModule "Shared"}}
+| Shared | Business services, Circuit breaker utilities |
+{{- end}}
+{{- if .HasModule "API"}}
+| API | REST controllers, Web configuration |
+{{- end}}
+
+## Configuration
+
+{{- if .HasModule "SQLDatastore"}}
+
+### Database Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+{{- if eq .Database "postgresql"}}
+| `DB_HOST` | PostgreSQL host | localhost |
+| `DB_PORT` | PostgreSQL port | 5433 |
+{{- else if eq .Database "mysql"}}
+| `DB_HOST` | MySQL host | localhost |
+| `DB_PORT` | MySQL port | 3307 |
+{{- end}}
+| `DB_NAME` | Database name | {{.ProjectName}} |
+| `DB_USERNAME` | Database user | {{if eq .Database "postgresql"}}postgres{{else if eq .Database "mysql"}}root{{end}} |
+| `DB_PASSWORD` | Database password | {{if eq .Database "postgresql"}}postgres{{else if eq .Database "mysql"}}root{{end}} |
+{{- end}}
+{{- if .HasModule "Shared"}}
+
+### Circuit Breaker Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CB_FAILURE_RATE_THRESHOLD` | Failure rate to open circuit (%) | 50 |
+| `CB_SLOW_CALL_DURATION_MS` | Slow call threshold (ms) | 2000 |
+| `CB_WAIT_DURATION_MS` | Wait time in open state (ms) | 30000 |
+{{- end}}
+
+---
+
+Generated with [Trabuco](https://github.com/trabuco/trabuco)

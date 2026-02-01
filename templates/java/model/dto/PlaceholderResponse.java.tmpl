@@ -1,0 +1,37 @@
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.annotation.Nullable;
+import org.immutables.value.Value;
+
+import java.time.Instant;
+
+/**
+ * Response DTO for Placeholder data.
+ *
+ * Uses Immutables for immutable value objects with builder pattern.
+ * Always use ImmutablePlaceholderResponse.builder() to create instances.
+ *
+ * Replace this with your actual response DTOs.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutablePlaceholderResponse.class)
+@JsonDeserialize(as = ImmutablePlaceholderResponse.class)
+public interface PlaceholderResponse {
+
+    Long id();
+
+    String name();
+
+    @Nullable
+    String description();
+
+    @Nullable
+    Instant createdAt();
+
+    @Nullable
+    Instant updatedAt();
+}

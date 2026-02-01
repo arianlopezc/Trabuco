@@ -1,0 +1,130 @@
+package {{.GroupID}}.shared.service;
+
+import {{.GroupID}}.model.dto.ImmutablePlaceholderRequest;
+import {{.GroupID}}.model.entities.ImmutablePlaceholder;
+{{- if .HasModule "SQLDatastore"}}
+import {{.GroupID}}.model.entities.PlaceholderRecord;
+import {{.GroupID}}.sqldatastore.repository.PlaceholderRepository;
+{{- end}}
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.Instant;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+{{- if .HasModule "SQLDatastore"}}
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+{{- end}}
+
+/**
+ * Unit tests for PlaceholderService.
+ *
+ * Uses Mockito to mock the repository layer.
+ * Always uses ImmutableX types with builder pattern.
+ */
+@ExtendWith(MockitoExtension.class)
+class PlaceholderServiceTest {
+
+{{- if .HasModule "SQLDatastore"}}
+    @Mock
+    private PlaceholderRepository repository;
+
+    private PlaceholderService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new PlaceholderService(repository);
+    }
+
+    @Test
+    void shouldCreatePlaceholder() {
+        // Given
+        var request = ImmutablePlaceholderRequest.builder()
+            .name("Test")
+            .description("Description")
+            .build();
+        PlaceholderRecord savedRecord = new PlaceholderRecord(
+            1L, "Test", "Description", Instant.now(), Instant.now()
+        );
+        when(repository.save(any())).thenReturn(savedRecord);
+
+        // When
+        ImmutablePlaceholder result = service.create(request);
+
+        // Then
+        assertThat(result.id()).isEqualTo(1L);
+        assertThat(result.name()).isEqualTo("Test");
+        verify(repository).save(any());
+    }
+
+    @Test
+    void shouldFindById() {
+        // Given
+        PlaceholderRecord record = new PlaceholderRecord(
+            1L, "Test", "Desc", Instant.now(), Instant.now()
+        );
+        when(repository.findById(1L)).thenReturn(Optional.of(record));
+
+        // When
+        Optional<ImmutablePlaceholder> result = service.findById(1L);
+
+        // Then
+        assertThat(result).isPresent();
+        assertThat(result.get().name()).isEqualTo("Test");
+    }
+
+    @Test
+    void shouldReturnEmptyWhenNotFound() {
+        // Given
+        when(repository.findById(999L)).thenReturn(Optional.empty());
+
+        // When
+        Optional<ImmutablePlaceholder> result = service.findById(999L);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void shouldDeletePlaceholder() {
+        // Given
+        when(repository.existsById(1L)).thenReturn(true);
+        doNothing().when(repository).deleteById(1L);
+
+        // When
+        boolean result = service.delete(1L);
+
+        // Then
+        assertThat(result).isTrue();
+        verify(repository).deleteById(1L);
+    }
+{{- else}}
+    // TODO: SQLDatastore module not included.
+    // Add the SQLDatastore module for repository tests.
+
+    private PlaceholderService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new PlaceholderService();
+    }
+
+    @Test
+    void shouldThrowWhenSQLDatastoreNotIncluded() {
+        // Service methods require SQLDatastore module
+        var request = ImmutablePlaceholderRequest.builder()
+            .name("Test")
+            .description("Description")
+            .build();
+        org.junit.jupiter.api.Assertions.assertThrows(
+            UnsupportedOperationException.class,
+            () -> service.create(request)
+        );
+    }
+{{- end}}
+}

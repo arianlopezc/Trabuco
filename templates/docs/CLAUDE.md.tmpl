@@ -1,0 +1,72 @@
+# Build & Test Commands
+
+```bash
+mvn clean compile                # Compile all modules
+mvn clean install                # Build and install to local repo
+mvn test                         # Run all tests
+mvn test -pl Model               # Test single module
+{{- if .HasModule "API"}}
+mvn spring-boot:run -pl API      # Run API (port 8080)
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+mvn flyway:migrate -pl SQLDatastore  # Run migrations manually
+{{- end}}
+```
+
+# Immutables - IMPORTANT
+
+This project uses [Immutables](https://immutables.github.io/) for all DTOs and entities.
+
+**Always prefer:**
+- `ImmutableX` concrete types over interface types in method signatures
+- Builder pattern for object creation: `ImmutablePlaceholder.builder()...build()`
+- Never use `new` for Immutable objects, always use builders
+
+**Example - CORRECT:**
+```java
+public ImmutablePlaceholder create(ImmutablePlaceholderRequest request) {
+    return ImmutablePlaceholder.builder()
+        .name(request.name())
+        .description(request.description())
+        .build();
+}
+```
+
+**Example - AVOID:**
+```java
+public Placeholder create(PlaceholderRequest request) {  // Don't use interface types
+    return Placeholder.fromRecord(record);  // Don't use factory methods
+}
+```
+
+{{- if .HasModule "SQLDatastore"}}
+
+**Database persistence:**
+- Use `PlaceholderRecord` (Java record) only at the repository boundary
+- Convert to `ImmutablePlaceholder` immediately after repository calls
+- Never expose `PlaceholderRecord` outside the repository/service layer
+{{- end}}
+
+# Code Style
+
+- Use Immutables for all DTOs and entities: `@Value.Immutable` + `@ImmutableStyle`
+- Always add `@JsonSerialize` and `@JsonDeserialize` annotations for Jackson
+- Enums do NOT use Immutables (they're already immutable)
+{{- if .HasModule "SQLDatastore"}}
+- Spring Data JDBC (not JPA) - no lazy loading, no proxies
+- Flyway migrations: `V{number}__{description}.sql`
+{{- end}}
+{{- if .HasModule "Shared"}}
+- Use `@CircuitBreaker(name = "default")` on service methods that call external resources
+{{- end}}
+
+# Workflow
+
+- Run `mvn clean compile` after code changes to verify build
+{{- if .HasModule "SQLDatastore"}}
+- Create new migration files for any schema changes (never modify existing migrations)
+- Repository tests use Testcontainers - Docker must be running
+{{- end}}
+{{- if .HasModule "API"}}
+- Validate request DTOs with Jakarta annotations (@NotBlank, @Size, etc.)
+{{- end}}

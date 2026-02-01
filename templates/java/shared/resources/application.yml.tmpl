@@ -1,0 +1,29 @@
+# Shared Module Configuration
+# These defaults are for local development. Override in production via environment variables.
+
+# Circuit Breaker Configuration
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        # Percentage of failures to open the circuit
+        failure-rate-threshold: ${CB_FAILURE_RATE_THRESHOLD:50}
+        # Percentage of slow calls to open the circuit
+        slow-call-rate-threshold: ${CB_SLOW_CALL_RATE_THRESHOLD:100}
+        # Duration threshold to consider a call as slow (in milliseconds)
+        slow-call-duration-threshold: ${CB_SLOW_CALL_DURATION_MS:2000}
+        # Time to wait in open state before transitioning to half-open (in milliseconds)
+        wait-duration-in-open-state: ${CB_WAIT_DURATION_MS:30000}
+        # Number of calls permitted in half-open state
+        permitted-number-of-calls-in-half-open-state: ${CB_PERMITTED_CALLS_HALF_OPEN:3}
+        # Minimum number of calls before calculating failure rate
+        minimum-number-of-calls: ${CB_MIN_CALLS:5}
+        # Size of the sliding window
+        sliding-window-size: ${CB_SLIDING_WINDOW_SIZE:10}
+        # Type of sliding window: COUNT_BASED or TIME_BASED
+        sliding-window-type: ${CB_SLIDING_WINDOW_TYPE:COUNT_BASED}
+        # Automatically transition from open to half-open
+        automatic-transition-from-open-to-half-open-enabled: ${CB_AUTO_TRANSITION:true}
+    instances:
+      default:
+        base-config: default

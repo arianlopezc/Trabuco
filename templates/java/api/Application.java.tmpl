@@ -1,0 +1,18 @@
+package {{.GroupID}}.api;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.ComponentScan;
+
+@SpringBootApplication
+@ComponentScan(basePackages = {
+    "{{.GroupID}}.api"{{if .HasModule "Shared"}},
+    "{{.GroupID}}.shared"{{end}}{{if .HasModule "SQLDatastore"}},
+    "{{.GroupID}}.sqldatastore"{{end}}
+})
+public class {{.ProjectNamePascal}}ApiApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run({{.ProjectNamePascal}}ApiApplication.class, args);
+    }
+}

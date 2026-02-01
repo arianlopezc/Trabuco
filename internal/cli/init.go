@@ -2,9 +2,23 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"github.com/trabuco/trabuco/internal/config"
+	"github.com/trabuco/trabuco/internal/generator"
+	"github.com/trabuco/trabuco/internal/prompts"
+)
+
+// Non-interactive mode flags
+var (
+	flagProjectName  string
+	flagGroupID      string
+	flagModules      string
+	flagDatabase     string
+	flagJavaVersion  string
+	flagIncludeClaude bool
 )
 
 var initCmd = &cobra.Command{
@@ -16,20 +30,101 @@ This command will interactively prompt you for:
   - Project name
   - Group ID (e.g., com.company.project)
   - Modules to include
-  - Database type (PostgreSQL, MySQL, or Generic)
-  - Additional options (Docker, GitHub Actions, etc.)`,
+  - Database type (if SQLDatastore selected)
+
+For non-interactive mode, provide all required flags:
+  trabuco init --name=myproject --group-id=com.company.project --modules=Model,SQLDatastore --database=postgresql`,
 	Run: runInit,
+}
+
+func init() {
+	initCmd.Flags().StringVar(&flagProjectName, "name", "", "Project name (non-interactive)")
+	initCmd.Flags().StringVar(&flagGroupID, "group-id", "", "Group ID, e.g., com.company.project (non-interactive)")
+	initCmd.Flags().StringVar(&flagModules, "modules", "", "Comma-separated modules: Model,SQLDatastore,Shared,API (non-interactive)")
+	initCmd.Flags().StringVar(&flagDatabase, "database", "postgresql", "Database type: postgresql, mysql, none (non-interactive)")
+	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 21 or 25 (non-interactive)")
+	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", true, "Include CLAUDE.md file (non-interactive)")
 }
 
 func runInit(cmd *cobra.Command, args []string) {
 	cyan := color.New(color.FgCyan, color.Bold)
 	green := color.New(color.FgGreen)
+	yellow := color.New(color.FgYellow)
 
-	cyan.Println("\nWelcome to Trabuco - Java Project Generator\n")
+	cyan.Println("\n╔════════════════════════════════════════╗")
+	cyan.Println("║   Trabuco - Java Project Generator     ║")
+	cyan.Println("╚════════════════════════════════════════╝")
+	fmt.Println()
 
-	// TODO: Implement prompts (Stage 4)
-	// TODO: Implement generation (Stage 9)
+	var cfg *config.ProjectConfig
+	var err error
 
-	green.Println("Project generation not yet implemented.")
-	fmt.Println("This will be completed in upcoming stages.")
+	// Check if non-interactive mode (flags provided)
+	if flagProjectName != "" && flagGroupID != "" && flagModules != "" {
+		// Non-interactive mode
+		modules := strings.Split(flagModules, ",")
+		for i := range modules {
+			modules[i] = strings.TrimSpace(modules[i])
+		}
+
+		cfg = &config.ProjectConfig{
+			ProjectName:    flagProjectName,
+			GroupID:        flagGroupID,
+			ArtifactID:     flagProjectName,
+			JavaVersion:    flagJavaVersion,
+			Modules:        modules,
+			Database:       flagDatabase,
+			IncludeCLAUDEMD: flagIncludeClaude,
+		}
+
+		fmt.Println("Running in non-interactive mode...")
+	} else {
+		// Interactive mode - run prompts
+		cfg, err = prompts.RunPrompts()
+		if err != nil {
+			color.Red("\nError: %v\n", err)
+			return
+		}
+	}
+
+	// Display summary
+	fmt.Println()
+	yellow.Println("─────────────────────────────────────────")
+	yellow.Println("  Project Summary")
+	yellow.Println("─────────────────────────────────────────")
+	fmt.Printf("  Project:    %s\n", cfg.ProjectName)
+	fmt.Printf("  Group ID:   %s\n", cfg.GroupID)
+	fmt.Printf("  Java:       %s\n", cfg.JavaVersion)
+	fmt.Printf("  Modules:    %s\n", strings.Join(cfg.Modules, ", "))
+	if cfg.HasModule("SQLDatastore") {
+		fmt.Printf("  Database:   %s\n", cfg.Database)
+	}
+	if cfg.IncludeCLAUDEMD {
+		fmt.Printf("  CLAUDE.md:  Yes\n")
+	}
+	yellow.Println("─────────────────────────────────────────")
+	fmt.Println()
+
+	// Generate project
+	gen, err := generator.New(cfg)
+	if err != nil {
+		color.Red("\nError: %v\n", err)
+		return
+	}
+
+	if err := gen.Generate(); err != nil {
+		color.Red("\nError: %v\n", err)
+		return
+	}
+
+	// Success message
+	fmt.Println()
+	green.Println("✓ Project generated successfully!")
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Printf("  cd %s\n", cfg.ProjectName)
+	fmt.Printf("  mvn clean install\n")
+	if cfg.HasModule("API") {
+		fmt.Printf("  cd API && mvn spring-boot:run\n")
+	}
 }

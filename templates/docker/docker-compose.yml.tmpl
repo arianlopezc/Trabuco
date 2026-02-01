@@ -1,0 +1,48 @@
+# Docker Compose for local development
+# Run: docker-compose up -d
+# Stop: docker-compose down
+# Reset data: docker-compose down -v
+
+services:
+{{- if eq .Database "postgresql"}}
+  postgres:
+    image: postgres:15-alpine
+    container_name: {{.ProjectName}}-postgres
+    environment:
+      POSTGRES_DB: {{.ProjectName}}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"  # Host:Container - uses 5433 to avoid conflicts with local PostgreSQL
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+{{- else if eq .Database "mysql"}}
+  mysql:
+    image: mysql:8.0
+    container_name: {{.ProjectName}}-mysql
+    environment:
+      MYSQL_DATABASE: {{.ProjectName}}
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"  # Host:Container - uses 3307 to avoid conflicts with local MySQL
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: --default-authentication-plugin=mysql_native_password
+{{- end}}
+
+volumes:
+{{- if eq .Database "postgresql"}}
+  postgres_data:
+{{- else if eq .Database "mysql"}}
+  mysql_data:
+{{- end}}
