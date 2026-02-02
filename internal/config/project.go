@@ -10,7 +10,8 @@ type ProjectConfig struct {
 	ArtifactID  string // e.g., "my-platform" (usually same as ProjectName)
 
 	// Java
-	JavaVersion string // "21" or "25"
+	JavaVersion         string // "17", "21", or "25"
+	JavaVersionDetected bool   // Whether the selected Java version was detected on the system
 
 	// Modules
 	Modules []string // e.g., ["Model", "SQLDatastore", "NoSQLDatastore", "Shared", "API"]

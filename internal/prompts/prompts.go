@@ -3,10 +3,13 @@ package prompts
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/arianlopezc/Trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/java"
+	"github.com/fatih/color"
 )
 
 // projectNameRegex validates project names: lowercase, alphanumeric, hyphens allowed (not at start/end)
@@ -60,16 +63,14 @@ func RunPrompts() (*config.ProjectConfig, error) {
 	// Resolve dependencies (only adds Model if not selected)
 	cfg.Modules = config.ResolveDependencies(selectedModules)
 
-	// 4. Java version
-	if err := survey.AskOne(&survey.Select{
-		Message: "Java version:",
-		Options: []string{"21 (Recommended - LTS until 2031)", "25 (Latest LTS)"},
-		Default: "21 (Recommended - LTS until 2031)",
-	}, &cfg.JavaVersion); err != nil {
+	// 4. Java version with detection
+	javaDetection := java.Detect()
+	javaVersion, javaDetected, err := promptJavaVersion(javaDetection)
+	if err != nil {
 		return nil, err
 	}
-	// Extract just the version number
-	cfg.JavaVersion = strings.Split(cfg.JavaVersion, " ")[0]
+	cfg.JavaVersion = javaVersion
+	cfg.JavaVersionDetected = javaDetected
 
 	// 5. SQL Database (only if SQLDatastore is selected)
 	if cfg.HasModule("SQLDatastore") {
@@ -214,4 +215,152 @@ func normalizeNoSQLDatabaseChoice(choice string) string {
 	default:
 		return "mongodb"
 	}
+}
+
+// promptJavaVersion prompts for Java version with detection status
+func promptJavaVersion(detection *java.DetectionResult) (version string, detected bool, err error) {
+	// Build options with detection status
+	options := buildJavaOptions(detection)
+
+	var selected string
+	if err := survey.AskOne(&survey.Select{
+		Message: "Java version:",
+		Options: options,
+		Default: options[0], // First option is recommended
+	}, &selected); err != nil {
+		return "", false, err
+	}
+
+	// Extract version number from selection
+	version = strings.Split(selected, " ")[0]
+	versionInt, _ := strconv.Atoi(version)
+	detected = detection.IsVersionDetected(versionInt)
+
+	// If version not detected, show confirmation prompt
+	if !detected {
+		confirmed, err := confirmUndetectedVersion(version, detection)
+		if err != nil {
+			return "", false, err
+		}
+		if !confirmed {
+			// User chose not to proceed, re-prompt with detected versions only
+			return promptJavaVersionDetectedOnly(detection)
+		}
+	}
+
+	return version, detected, nil
+}
+
+// buildJavaOptions creates the Java version options with detection status
+func buildJavaOptions(detection *java.DetectionResult) []string {
+	type versionOption struct {
+		version     int
+		label       string
+		recommended bool
+	}
+
+	// Define available versions with descriptions
+	allVersions := []versionOption{
+		{21, "21 (LTS until 2031 - Recommended)", true},
+		{25, "25 (Latest LTS)", false},
+		{17, "17 (LTS - Minimum supported)", false},
+	}
+
+	var options []string
+	var hasRecommended bool
+
+	// Add versions with detection status
+	for _, v := range allVersions {
+		// Only show 17 if it's detected and 21/25 are not detected
+		if v.version == 17 {
+			if !detection.IsVersionDetected(17) {
+				continue
+			}
+			if detection.IsVersionDetected(21) || detection.IsVersionDetected(25) {
+				continue
+			}
+		}
+
+		status := "[not detected]"
+		if detection.IsVersionDetected(v.version) {
+			status = "[detected]"
+		}
+		option := fmt.Sprintf("%d %s %s", v.version, strings.TrimPrefix(v.label, fmt.Sprintf("%d ", v.version)), status)
+		options = append(options, option)
+
+		if v.recommended && detection.IsVersionDetected(v.version) {
+			hasRecommended = true
+		}
+	}
+
+	// If recommended version (21) is not detected but another is, reorder to put detected first
+	if !hasRecommended && len(options) > 0 {
+		// Find first detected version and move to front
+		for i, opt := range options {
+			if strings.Contains(opt, "[detected]") {
+				// Move to front
+				options = append([]string{opt}, append(options[:i], options[i+1:]...)...)
+				break
+			}
+		}
+	}
+
+	return options
+}
+
+// confirmUndetectedVersion asks user to confirm using an undetected Java version
+func confirmUndetectedVersion(version string, detection *java.DetectionResult) (bool, error) {
+	yellow := color.New(color.FgYellow)
+	yellow.Printf("\n\u26a0 Java %s was not detected on your system.\n\n", version)
+
+	detectedVersions := detection.GetDetectedVersions()
+	if len(detectedVersions) > 0 {
+		fmt.Printf("Detected compatible versions: %s\n\n", java.FormatDetectedVersions(detectedVersions))
+	} else {
+		fmt.Println("No compatible Java versions detected.")
+	}
+
+	var confirmed bool
+	if err := survey.AskOne(&survey.Confirm{
+		Message: fmt.Sprintf("Continue with Java %s anyway?", version),
+		Default: false,
+	}, &confirmed); err != nil {
+		return false, err
+	}
+
+	return confirmed, nil
+}
+
+// promptJavaVersionDetectedOnly prompts for Java version showing only detected versions
+func promptJavaVersionDetectedOnly(detection *java.DetectionResult) (string, bool, error) {
+	detectedVersions := detection.GetDetectedVersions()
+	if len(detectedVersions) == 0 {
+		// No detected versions, fall back to 21
+		return "21", false, nil
+	}
+
+	var options []string
+	for _, v := range detectedVersions {
+		label := strconv.Itoa(v)
+		switch v {
+		case 21:
+			label = "21 (LTS until 2031 - Recommended)"
+		case 25:
+			label = "25 (Latest LTS)"
+		case 17:
+			label = "17 (LTS - Minimum supported)"
+		}
+		options = append(options, label)
+	}
+
+	var selected string
+	if err := survey.AskOne(&survey.Select{
+		Message: "Select a detected Java version:",
+		Options: options,
+	}, &selected); err != nil {
+		return "", false, err
+	}
+
+	version := strings.Split(selected, " ")[0]
+	return version, true, nil
 }

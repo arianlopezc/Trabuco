@@ -2,13 +2,16 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/arianlopezc/Trabuco/internal/config"
 	"github.com/arianlopezc/Trabuco/internal/generator"
+	"github.com/arianlopezc/Trabuco/internal/java"
 	"github.com/arianlopezc/Trabuco/internal/prompts"
 )
 
@@ -27,6 +30,7 @@ var (
 	flagNoSQLDatabase string
 	flagJavaVersion   string
 	flagIncludeClaude bool
+	flagStrict        bool
 )
 
 var initCmd = &cobra.Command{
@@ -53,8 +57,9 @@ func init() {
 	initCmd.Flags().StringVar(&flagModules, "modules", "", "Comma-separated modules: Model,SQLDatastore,NoSQLDatastore,Shared,API (SQLDatastore and NoSQLDatastore are mutually exclusive)")
 	initCmd.Flags().StringVar(&flagDatabase, "database", "postgresql", "SQL database type: postgresql, mysql, none (non-interactive)")
 	initCmd.Flags().StringVar(&flagNoSQLDatabase, "nosql-database", "mongodb", "NoSQL database type: mongodb, redis (non-interactive)")
-	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 21 or 25 (non-interactive)")
+	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 17, 21, or 25 (non-interactive)")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", true, "Include CLAUDE.md file (non-interactive)")
+	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
 }
 
 func runInit(cmd *cobra.Command, args []string) {
@@ -87,9 +92,33 @@ func runInit(cmd *cobra.Command, args []string) {
 		}
 
 		// Validate Java version
-		if flagJavaVersion != "21" && flagJavaVersion != "25" {
-			color.Red("\nError: Invalid Java version '%s'. Must be 21 or 25.\n", flagJavaVersion)
+		if flagJavaVersion != "17" && flagJavaVersion != "21" && flagJavaVersion != "25" {
+			color.Red("\nError: Invalid Java version '%s'. Must be 17, 21, or 25.\n", flagJavaVersion)
 			return
+		}
+
+		// Java version detection for non-interactive mode
+		javaDetection := java.Detect()
+		javaVersionInt, _ := strconv.Atoi(flagJavaVersion)
+		javaVersionDetected := javaDetection.IsVersionDetected(javaVersionInt)
+
+		if !javaVersionDetected {
+			detectedVersions := javaDetection.GetDetectedVersions()
+			if flagStrict {
+				color.Red("\nError: Java %s not detected (--strict mode).\n", flagJavaVersion)
+				if len(detectedVersions) > 0 {
+					fmt.Fprintf(os.Stderr, "Detected versions: [%s]\n", java.FormatDetectedVersions(detectedVersions))
+				} else {
+					fmt.Fprintln(os.Stderr, "No compatible Java versions detected.")
+				}
+				os.Exit(1)
+			}
+			// Non-strict mode: warn but continue
+			yellow.Fprintf(os.Stderr, "\nWarning: Java %s not detected.", flagJavaVersion)
+			if len(detectedVersions) > 0 {
+				fmt.Fprintf(os.Stderr, " Detected: [%s]", java.FormatDetectedVersions(detectedVersions))
+			}
+			fmt.Fprintln(os.Stderr)
 		}
 
 		// Validate database type
@@ -118,14 +147,15 @@ func runInit(cmd *cobra.Command, args []string) {
 		}
 
 		cfg = &config.ProjectConfig{
-			ProjectName:     flagProjectName,
-			GroupID:         flagGroupID,
-			ArtifactID:      flagProjectName,
-			JavaVersion:     flagJavaVersion,
-			Modules:         modules,
-			Database:        flagDatabase,
-			NoSQLDatabase:   flagNoSQLDatabase,
-			IncludeCLAUDEMD: flagIncludeClaude,
+			ProjectName:         flagProjectName,
+			GroupID:             flagGroupID,
+			ArtifactID:          flagProjectName,
+			JavaVersion:         flagJavaVersion,
+			JavaVersionDetected: javaVersionDetected,
+			Modules:             modules,
+			Database:            flagDatabase,
+			NoSQLDatabase:       flagNoSQLDatabase,
+			IncludeCLAUDEMD:     flagIncludeClaude,
 		}
 
 		fmt.Println("Running in non-interactive mode...")
@@ -175,6 +205,12 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Println()
 	green.Println("✓ Project generated successfully!")
 	fmt.Println()
+
+	// Reminder if Java version was not detected
+	if !cfg.JavaVersionDetected {
+		yellow.Printf("Reminder: Java %s was not detected. Install before building.\n\n", cfg.JavaVersion)
+	}
+
 	fmt.Println("Next steps:")
 	fmt.Printf("  cd %s\n", cfg.ProjectName)
 	fmt.Printf("  mvn clean install\n")

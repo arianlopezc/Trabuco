@@ -202,8 +202,9 @@ Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderR
 | `--modules` | Modules to include (comma-separated) | — |
 | `--database` | SQL database type: `postgresql`, `mysql`, `none` | `postgresql` |
 | `--nosql-database` | NoSQL database type: `mongodb`, `redis` | `mongodb` |
-| `--java-version` | Java version: `21` or `25` | `21` |
+| `--java-version` | Java version: `17`, `21`, or `25` | `21` |
 | `--include-claude` | Generate `CLAUDE.md` for AI assistants | `true` |
+| `--strict` | Fail if specified Java version is not detected | `false` |
 
 ### Available Modules
 
@@ -217,11 +218,31 @@ Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderR
 
 **Note:** SQLDatastore and NoSQLDatastore are mutually exclusive.
 
+### Java Version Detection
+
+Trabuco automatically detects installed Java versions on your system. In interactive mode, version options show detection status:
+
+```
+Java version:
+> 21 (LTS until 2031 - Recommended) [detected]
+  25 (Latest LTS) [not detected]
+```
+
+If you select an undetected version, you'll be asked to confirm. In non-interactive mode, a warning is shown but the project is still generated. Use `--strict` to fail instead:
+
+```bash
+# Warns but continues
+trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=25
+
+# Fails if Java 25 not installed
+trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=25 --strict
+```
+
 ## Tech Stack
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Java | 21 or 25 | Runtime |
+| Java | 17, 21, or 25 | Runtime |
 | Spring Boot | 3.4.2 | Application framework |
 | Spring Data JDBC | — | SQL database access |
 | Spring Data MongoDB | — | MongoDB access |
@@ -254,7 +275,7 @@ mvn test -pl Model      # Single module
 
 ## Requirements
 
-- **Java 21** (or 25 if specified during init)
+- **Java 17+** (17, 21, or 25 — Trabuco auto-detects installed versions)
 - **Maven 3.8+**
 - **Docker** (for Testcontainers and local development)
 
