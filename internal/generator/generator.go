@@ -147,6 +147,20 @@ func (g *Generator) createDirectories() error {
 		)
 	}
 
+	// Worker module directories
+	if g.config.HasModule("Worker") {
+		workerBase := filepath.Join(g.outDir, "Worker", "src", "main", "java", packagePath, "worker")
+		workerTestBase := filepath.Join(g.outDir, "Worker", "src", "test", "java", packagePath, "worker")
+		dirs = append(dirs,
+			workerBase,
+			filepath.Join(workerBase, "config"),
+			filepath.Join(workerBase, "job"),
+			filepath.Join(g.outDir, "Worker", "src", "main", "resources"),
+			filepath.Join(workerTestBase, "job"),
+			filepath.Join(g.outDir, ".run"), // IntelliJ run configurations (if not already created by API)
+		)
+	}
+
 	// Create all directories
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -170,6 +184,8 @@ func (g *Generator) generateModule(module string) error {
 		return g.generateSharedModule()
 	case "API":
 		return g.generateAPIModule()
+	case "Worker":
+		return g.generateWorkerModule()
 	default:
 		return fmt.Errorf("unknown module: %s", module)
 	}

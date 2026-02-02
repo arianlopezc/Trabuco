@@ -1,0 +1,60 @@
+package {{.GroupID}}.worker.config;
+
+import {{.GroupID}}.worker.job.PlaceholderJob;
+import org.jobrunr.scheduling.JobScheduler;
+import org.jobrunr.scheduling.cron.Cron;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.EventListener;
+
+/**
+ * Configuration for recurring (CRON) jobs.
+ *
+ * Define all recurring jobs here. They will be registered when the application starts.
+ *
+ * Common Cron expressions:
+ * - Cron.minutely()           - Every minute
+ * - Cron.hourly()             - Every hour at minute 0
+ * - Cron.hourly(30)           - Every hour at minute 30
+ * - Cron.daily()              - Every day at midnight
+ * - Cron.daily(6, 0)          - Every day at 6:00 AM
+ * - Cron.weekly(DayOfWeek.MONDAY, 9, 0) - Every Monday at 9:00 AM
+ * - "0 0 * * *"               - Custom cron expression (midnight daily)
+ */
+@Configuration
+public class RecurringJobsConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(RecurringJobsConfig.class);
+
+    private final JobScheduler jobScheduler;
+    private final PlaceholderJob placeholderJob;
+
+    public RecurringJobsConfig(JobScheduler jobScheduler, PlaceholderJob placeholderJob) {
+        this.jobScheduler = jobScheduler;
+        this.placeholderJob = placeholderJob;
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void registerRecurringJobs() {
+        log.info("Registering recurring jobs...");
+
+        // Example: Run a job every hour
+        // Uncomment to enable:
+        // jobScheduler.scheduleRecurrently(
+        //     "hourly-placeholder-job",
+        //     Cron.hourly(),
+        //     () -> placeholderJob.executeRecurringJob("Hourly job executed")
+        // );
+
+        // Example: Run a job daily at 6 AM
+        // jobScheduler.scheduleRecurrently(
+        //     "daily-morning-job",
+        //     Cron.daily(6, 0),
+        //     () -> placeholderJob.executeRecurringJob("Daily morning job executed")
+        // );
+
+        log.info("Recurring jobs registered successfully");
+    }
+}

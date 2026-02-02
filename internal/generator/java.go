@@ -299,3 +299,70 @@ func (g *Generator) generateAPIModule() error {
 
 	return nil
 }
+
+// generateWorkerModule generates all Worker module files
+func (g *Generator) generateWorkerModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("Worker"); err != nil {
+		return err
+	}
+
+	// WorkerApplication.java (main class)
+	applicationFile := fmt.Sprintf("%sWorkerApplication.java", g.config.ProjectNamePascal())
+	if err := g.writeTemplate(
+		"java/worker/WorkerApplication.java.tmpl",
+		g.javaPath("Worker", applicationFile),
+	); err != nil {
+		return fmt.Errorf("failed to generate WorkerApplication.java: %w", err)
+	}
+
+	// JobRunrConfig.java
+	if err := g.writeTemplate(
+		"java/worker/config/JobRunrConfig.java.tmpl",
+		g.javaPath("Worker", filepath.Join("config", "JobRunrConfig.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate JobRunrConfig.java: %w", err)
+	}
+
+	// RecurringJobsConfig.java
+	if err := g.writeTemplate(
+		"java/worker/config/RecurringJobsConfig.java.tmpl",
+		g.javaPath("Worker", filepath.Join("config", "RecurringJobsConfig.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate RecurringJobsConfig.java: %w", err)
+	}
+
+	// PlaceholderJob.java
+	if err := g.writeTemplate(
+		"java/worker/job/PlaceholderJob.java.tmpl",
+		g.javaPath("Worker", filepath.Join("job", "PlaceholderJob.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderJob.java: %w", err)
+	}
+
+	// application.yml
+	if err := g.writeTemplate(
+		"java/worker/resources/application.yml.tmpl",
+		g.resourcePath("Worker", "application.yml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate Worker application.yml: %w", err)
+	}
+
+	// PlaceholderJobTest.java
+	if err := g.writeTemplate(
+		"java/worker/test/PlaceholderJobTest.java.tmpl",
+		g.testJavaPath("Worker", filepath.Join("job", "PlaceholderJobTest.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderJobTest.java: %w", err)
+	}
+
+	// IntelliJ IDEA Run Configuration (Maven)
+	if err := g.writeTemplate(
+		"idea/run/Worker__Maven_.run.xml.tmpl",
+		filepath.Join(".run", "Worker.run.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate Worker run configuration: %w", err)
+	}
+
+	return nil
+}

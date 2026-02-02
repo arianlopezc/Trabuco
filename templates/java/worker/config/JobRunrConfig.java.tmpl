@@ -1,0 +1,27 @@
+package {{.GroupID}}.worker.config;
+
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * JobRunr configuration.
+ *
+ * JobRunr is configured via application.yml properties:
+ * - org.jobrunr.background-job-server.enabled: true
+ * - org.jobrunr.dashboard.enabled: true
+ *
+ * JobRunr automatically detects and uses the configured datasource
+ * (PostgreSQL, MySQL, MongoDB, or Redis) for job persistence.
+ *
+ * For advanced configuration, you can customize JobRunr by providing
+ * beans of type:
+ * - JobRunrConfigurationCustomizer
+ * - BackgroundJobServerConfigurationCustomizer
+ * - DashboardConfigurationCustomizer
+ */
+@Configuration
+public class JobRunrConfig {
+
+    // JobRunr is auto-configured via Spring Boot starter
+    // Add any custom configuration here if needed
+
+}

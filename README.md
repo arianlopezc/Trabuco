@@ -12,11 +12,12 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 
 ## Features
 
-- **Multi-module Maven structure** — Clean separation between Model, Data, Services, and API
+- **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, and Worker
 - **Immutables everywhere** — Type-safe, immutable DTOs and entities with builder pattern
 - **Spring Boot 3.4** — Latest LTS with Spring Data JDBC (not JPA — no magic, no surprises)
 - **SQL databases** — PostgreSQL/MySQL support with Flyway migrations out of the box
 - **NoSQL databases** — MongoDB/Redis support with Spring Data repositories
+- **Background jobs** — JobRunr for fire-and-forget, delayed, recurring, and batch jobs
 - **Testcontainers 2.x** — Real database tests that actually work with Docker Desktop
 - **Circuit breakers** — Resilience4j configured and ready to use
 - **Docker Compose** — Local development stack included
@@ -109,6 +110,13 @@ myapp/
 │       │   └── config/              # Web configuration
 │       └── resources/
 │           └── application.yml      # App configuration
+├── Worker/                          # Background jobs (Spring Boot app)
+│   └── src/main/
+│       ├── java/.../worker/
+│       │   ├── config/              # JobRunr configuration
+│       │   └── job/                 # Job classes
+│       └── resources/
+│           └── application.yml      # Worker configuration
 ├── docker-compose.yml               # Local dev stack (database)
 ├── .run/                            # IntelliJ run configurations
 ├── CLAUDE.md                        # AI assistant context
@@ -193,6 +201,28 @@ The REST API module — a runnable Spring Boot application.
 
 Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderResponse` for output.
 
+### Worker
+
+Background job processing module — a runnable Spring Boot application using JobRunr.
+
+| What | Description |
+|------|-------------|
+| **Jobs** | Job classes with `@Job` annotation |
+| **Config** | JobRunr configuration and recurring job registration |
+| **Dashboard** | JobRunr dashboard at `http://localhost:8000` |
+| **Health** | Actuator health endpoints at port 8082 |
+
+**Supported job types:**
+
+| Type | Description | Example |
+|------|-------------|---------|
+| Fire-and-forget | Execute immediately in background | `jobScheduler.<MyJob>enqueue(job -> job.process(data))` |
+| Delayed | Execute at a specific time | `jobScheduler.<MyJob>schedule(instant, job -> job.process(data))` |
+| Recurring | Execute on a CRON schedule | `jobScheduler.scheduleRecurrently("id", Cron.daily(), ...)` |
+| Batch | Process multiple items efficiently | `jobScheduler.<MyJob, String>enqueue(items.stream(), MyJob::process)` |
+
+**Note:** Worker requires SQLDatastore or NoSQLDatastore for job persistence.
+
 ## Configuration Options
 
 | Option | Description | Default |
@@ -215,8 +245,11 @@ Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderR
 | `NoSQLDatastore` | NoSQL Repositories | Model |
 | `Shared` | Services, Circuit breakers | Model |
 | `API` | REST endpoints | Model |
+| `Worker` | Background jobs (JobRunr) | Model + SQLDatastore or NoSQLDatastore |
 
-**Note:** SQLDatastore and NoSQLDatastore are mutually exclusive.
+**Notes:**
+- SQLDatastore and NoSQLDatastore are mutually exclusive
+- Worker requires a datastore module for job persistence
 
 ### Java Version Detection
 
@@ -249,6 +282,7 @@ trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=
 | Spring Data Redis | — | Redis access |
 | Immutables | 2.10.1 | Immutable value objects |
 | Flyway | — | SQL database migrations |
+| JobRunr | 7.3.2 | Background job processing |
 | Testcontainers | 2.0.3 | Integration testing |
 | Resilience4j | — | Circuit breakers |
 | PostgreSQL / MySQL | — | SQL databases |

@@ -19,6 +19,8 @@ func (g *Generator) generateModulePOM(module string) error {
 		templateName = "pom/shared.xml.tmpl"
 	case "API":
 		templateName = "pom/api.xml.tmpl"
+	case "Worker":
+		templateName = "pom/worker.xml.tmpl"
 	default:
 		return nil
 	}

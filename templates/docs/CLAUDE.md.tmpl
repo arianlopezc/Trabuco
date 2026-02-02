@@ -8,6 +8,9 @@ mvn test -pl Model               # Test single module
 {{- if .HasModule "API"}}
 mvn spring-boot:run -pl API      # Run API (port 8080)
 {{- end}}
+{{- if .HasModule "Worker"}}
+mvn spring-boot:run -pl Worker   # Run Worker (dashboard at port 8000)
+{{- end}}
 {{- if .HasModule "SQLDatastore"}}
 mvn flyway:migrate -pl SQLDatastore  # Run migrations manually
 {{- end}}
@@ -101,4 +104,42 @@ public Placeholder create(PlaceholderRequest request) {  // Don't use interface 
 {{- end}}
 {{- if .HasModule "API"}}
 - Validate request DTOs with Jakarta annotations (@NotBlank, @Size, etc.)
+{{- end}}
+{{- if .HasModule "Worker"}}
+
+# Background Jobs (JobRunr)
+
+JobRunr provides four types of background jobs. All jobs are persisted to the database, automatically retried on failure, and distributed across Worker instances.
+
+**Fire-and-forget** - Execute immediately in background:
+```java
+jobScheduler.<MyJobService>enqueue(job -> job.processData(data));
+```
+
+**Delayed** - Execute at a specific time:
+```java
+Instant executeAt = Instant.now().plus(1, ChronoUnit.HOURS);
+jobScheduler.<MyJobService>schedule(executeAt, job -> job.processData(data));
+```
+
+**Recurring** - Execute on a CRON schedule (register in RecurringJobsConfig):
+```java
+jobScheduler.scheduleRecurrently("cleanup-job", Cron.daily(),
+    () -> cleanupService.runCleanup());
+```
+
+**Batch** - Process multiple items efficiently:
+```java
+jobScheduler.<MyJobService, String>enqueue(
+    items.stream(),
+    MyJobService::processItem
+);
+```
+
+**Job method requirements:**
+- Annotate with `@Job(name = "Descriptive name: %0")` (use %0, %1 for params)
+- Keep job methods simple and idempotent (they may retry on failure)
+- Inject dependencies via constructor, not method parameters
+
+**Dashboard:** http://localhost:8000 (when Worker is running)
 {{- end}}

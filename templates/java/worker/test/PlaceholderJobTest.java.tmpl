@@ -1,0 +1,52 @@
+package {{.GroupID}}.worker.job;
+
+import org.junit.jupiter.api.Test;
+
+/**
+ * Unit tests for PlaceholderJob.
+ *
+ * These tests verify that job methods execute correctly.
+ * Integration tests with JobRunr would require a running database.
+ */
+class PlaceholderJobTest {
+
+    @Test
+    void executeFireAndForget_shouldComplete() {
+        // Given
+        PlaceholderJob job = new PlaceholderJob(null);
+        String message = "Test message";
+
+        // When/Then - should not throw
+        job.executeFireAndForget(message);
+    }
+
+    @Test
+    void executeDelayed_shouldComplete() {
+        // Given
+        PlaceholderJob job = new PlaceholderJob(null);
+        String message = "Delayed test message";
+
+        // When/Then - should not throw
+        job.executeDelayed(message);
+    }
+
+    @Test
+    void executeRecurringJob_shouldComplete() {
+        // Given
+        PlaceholderJob job = new PlaceholderJob(null);
+        String message = "Recurring test message";
+
+        // When/Then - should not throw
+        job.executeRecurringJob(message);
+    }
+
+    @Test
+    void executeBatchItem_shouldComplete() {
+        // Given
+        PlaceholderJob job = new PlaceholderJob(null);
+        String itemId = "item-123";
+
+        // When/Then - should not throw
+        job.executeBatchItem(itemId);
+    }
+}
