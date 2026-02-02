@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/trabuco/trabuco/internal/config"
-	"github.com/trabuco/trabuco/internal/templates"
+	"github.com/arianlopezc/Trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/templates"
 )
 
 // Generator handles project generation

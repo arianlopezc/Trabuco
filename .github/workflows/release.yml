@@ -46,7 +46,7 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
-          go build -ldflags "-X github.com/trabuco/trabuco/internal/cli.Version=${{ steps.version.outputs.VERSION }}" \
+          go build -ldflags "-X github.com/arianlopezc/Trabuco/internal/cli.Version=${{ steps.version.outputs.VERSION }}" \
             -o "dist/${BINARY_NAME}" ./cmd/trabuco
 
       - name: Upload artifact

@@ -1,7 +1,7 @@
 .PHONY: build build-all clean test run install
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X github.com/trabuco/trabuco/internal/cli.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X github.com/arianlopezc/Trabuco/internal/cli.Version=$(VERSION)"
 INSTALL_DIR := $(HOME)/bin
 
 build:

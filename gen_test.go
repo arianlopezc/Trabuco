@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/trabuco/trabuco/internal/config"
-	"github.com/trabuco/trabuco/internal/generator"
+	"github.com/arianlopezc/Trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/generator"
 )
 
 func main() {

@@ -7,9 +7,9 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/trabuco/trabuco/internal/config"
-	"github.com/trabuco/trabuco/internal/generator"
-	"github.com/trabuco/trabuco/internal/prompts"
+	"github.com/arianlopezc/Trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/generator"
+	"github.com/arianlopezc/Trabuco/internal/prompts"
 )
 
 // Validation patterns for non-interactive mode

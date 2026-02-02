@@ -1,4 +1,4 @@
-module github.com/trabuco/trabuco
+module github.com/arianlopezc/Trabuco
 
 go 1.24.4
 

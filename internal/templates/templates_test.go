@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trabuco/trabuco/internal/config"
-	"github.com/trabuco/trabuco/internal/utils"
+	"github.com/arianlopezc/Trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/utils"
 )
 
 func TestNewEngine(t *testing.T) {

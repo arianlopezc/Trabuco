@@ -1,6 +1,6 @@
 package config
 
-import "github.com/trabuco/trabuco/internal/utils"
+import "github.com/arianlopezc/Trabuco/internal/utils"
 
 // ProjectConfig holds all configuration for a generated project
 type ProjectConfig struct {

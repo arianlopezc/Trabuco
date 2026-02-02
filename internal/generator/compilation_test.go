@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/trabuco/trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/config"
 )
 
 // TestCompilation_* tests verify that generated projects compile successfully with Maven.

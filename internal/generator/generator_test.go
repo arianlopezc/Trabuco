@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/trabuco/trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/config"
 )
 
 func TestGenerator_Generate_ModelOnly(t *testing.T) {

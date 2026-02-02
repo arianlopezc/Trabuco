@@ -28,13 +28,13 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 ### From GitHub (recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/trabuco/trabuco/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/arianlopezc/Trabuco/main/scripts/install.sh | bash
 ```
 
 ### Using Go
 
 ```bash
-go install github.com/trabuco/trabuco/cmd/trabuco@latest
+go install github.com/arianlopezc/Trabuco/cmd/trabuco@latest
 ```
 
 Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your PATH.

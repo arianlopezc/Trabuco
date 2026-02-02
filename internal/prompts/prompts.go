@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/trabuco/trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/config"
 )
 
 // projectNameRegex validates project names: lowercase, alphanumeric, hyphens allowed (not at start/end)

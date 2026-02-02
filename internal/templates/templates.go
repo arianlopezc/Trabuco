@@ -7,9 +7,9 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/trabuco/trabuco/internal/config"
-	"github.com/trabuco/trabuco/internal/utils"
-	embeddedTemplates "github.com/trabuco/trabuco/templates"
+	"github.com/arianlopezc/Trabuco/internal/config"
+	"github.com/arianlopezc/Trabuco/internal/utils"
+	embeddedTemplates "github.com/arianlopezc/Trabuco/templates"
 )
 
 // Engine handles template loading and execution
