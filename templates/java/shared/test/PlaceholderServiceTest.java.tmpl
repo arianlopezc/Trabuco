@@ -5,6 +5,9 @@ import {{.GroupID}}.model.entities.ImmutablePlaceholder;
 {{- if .HasModule "SQLDatastore"}}
 import {{.GroupID}}.model.entities.PlaceholderRecord;
 import {{.GroupID}}.sqldatastore.repository.PlaceholderRepository;
+{{- else if .HasModule "NoSQLDatastore"}}
+import {{.GroupID}}.model.entities.PlaceholderDocument;
+import {{.GroupID}}.nosqldatastore.repository.PlaceholderDocumentRepository;
 {{- end}}
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,7 +19,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-{{- if .HasModule "SQLDatastore"}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 {{- end}}
@@ -103,9 +106,82 @@ class PlaceholderServiceTest {
         assertThat(result).isTrue();
         verify(repository).deleteById(1L);
     }
+{{- else if .HasModule "NoSQLDatastore"}}
+    @Mock
+    private PlaceholderDocumentRepository repository;
+
+    private PlaceholderService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new PlaceholderService(repository);
+    }
+
+    @Test
+    void shouldCreateDocument() {
+        // Given
+        var request = ImmutablePlaceholderRequest.builder()
+            .name("Test")
+            .description("Description")
+            .build();
+        PlaceholderDocument savedDocument = new PlaceholderDocument(
+            "doc-123", "Test", "Description", Instant.now(), null
+        );
+        when(repository.save(any())).thenReturn(savedDocument);
+
+        // When
+        ImmutablePlaceholder result = service.createDocument(request);
+
+        // Then
+        assertThat(result.documentId()).isEqualTo("doc-123");
+        assertThat(result.name()).isEqualTo("Test");
+        verify(repository).save(any());
+    }
+
+    @Test
+    void shouldFindByDocumentId() {
+        // Given
+        PlaceholderDocument document = new PlaceholderDocument(
+            "doc-123", "Test", "Desc", Instant.now(), null
+        );
+        when(repository.findById("doc-123")).thenReturn(Optional.of(document));
+
+        // When
+        Optional<ImmutablePlaceholder> result = service.findByDocumentId("doc-123");
+
+        // Then
+        assertThat(result).isPresent();
+        assertThat(result.get().name()).isEqualTo("Test");
+    }
+
+    @Test
+    void shouldReturnEmptyWhenNotFound() {
+        // Given
+        when(repository.findById("nonexistent")).thenReturn(Optional.empty());
+
+        // When
+        Optional<ImmutablePlaceholder> result = service.findByDocumentId("nonexistent");
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void shouldDeleteDocument() {
+        // Given
+        when(repository.existsById("doc-123")).thenReturn(true);
+        doNothing().when(repository).deleteById("doc-123");
+
+        // When
+        boolean result = service.deleteDocument("doc-123");
+
+        // Then
+        assertThat(result).isTrue();
+        verify(repository).deleteById("doc-123");
+    }
 {{- else}}
-    // TODO: SQLDatastore module not included.
-    // Add the SQLDatastore module for repository tests.
+    // TODO: No datastore module included.
+    // Add SQLDatastore or NoSQLDatastore module for repository tests.
 
     private PlaceholderService service;
 
@@ -115,8 +191,8 @@ class PlaceholderServiceTest {
     }
 
     @Test
-    void shouldThrowWhenSQLDatastoreNotIncluded() {
-        // Service methods require SQLDatastore module
+    void shouldThrowWhenDatastoreNotIncluded() {
+        // Service methods require a datastore module
         var request = ImmutablePlaceholderRequest.builder()
             .name("Test")
             .description("Description")

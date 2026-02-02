@@ -1,0 +1,128 @@
+package {{.GroupID}}.nosqldatastore.repository;
+
+import {{.GroupID}}.model.entities.PlaceholderDocument;
+import {{.GroupID}}.nosqldatastore.TestConfig;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+{{- if eq .NoSQLDatabase "mongodb"}}
+import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.containers.MongoDBContainer;
+{{- else if eq .NoSQLDatabase "redis"}}
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
+{{- end}}
+import org.springframework.context.annotation.Import;
+
+import java.time.Instant;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Integration tests for PlaceholderDocumentRepository.
+ *
+ * Uses Testcontainers for realistic NoSQL database testing.
+ * Tests are automatically skipped if Docker is not available.
+ */
+{{- if eq .NoSQLDatabase "mongodb"}}
+@DataMongoTest
+@Import(TestConfig.class)
+@Testcontainers(disabledWithoutDocker = true)
+class PlaceholderDocumentRepositoryTest {
+
+    @Container
+    @ServiceConnection
+    static MongoDBContainer mongodb = new MongoDBContainer("mongo:7.0");
+{{- else if eq .NoSQLDatabase "redis"}}
+@SpringBootTest(classes = TestConfig.class)
+@Testcontainers(disabledWithoutDocker = true)
+class PlaceholderDocumentRepositoryTest {
+
+    @Container
+    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+            .withExposedPorts(6379);
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", redis::getFirstMappedPort);
+    }
+{{- end}}
+
+    @Autowired
+    private PlaceholderDocumentRepository repository;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+    }
+
+    @Test
+    void shouldSaveDocument() {
+        // Given
+        PlaceholderDocument document = new PlaceholderDocument(
+            null, "Test", "Test description", Instant.now(), null
+        );
+
+        // When
+        PlaceholderDocument saved = repository.save(document);
+
+        // Then
+        assertThat(saved.id()).isNotNull();
+        assertThat(saved.name()).isEqualTo("Test");
+        assertThat(saved.description()).isEqualTo("Test description");
+    }
+
+    @Test
+    void shouldFindById() {
+        // Given
+        PlaceholderDocument saved = repository.save(new PlaceholderDocument(
+            null, "Find Me", "Description", Instant.now(), null
+        ));
+
+        // When
+        Optional<PlaceholderDocument> found = repository.findById(saved.id());
+
+        // Then
+        assertThat(found).isPresent();
+        assertThat(found.get().name()).isEqualTo("Find Me");
+    }
+
+    @Test
+    void shouldFindByName() {
+        // Given
+        repository.save(new PlaceholderDocument(
+            null, "Unique Name", "Description", Instant.now(), null
+        ));
+
+        // When
+        Optional<PlaceholderDocument> found = repository.findByName("Unique Name");
+
+        // Then
+        assertThat(found).isPresent();
+        assertThat(found.get().description()).isEqualTo("Description");
+    }
+
+    @Test
+    void shouldDeleteDocument() {
+        // Given
+        PlaceholderDocument saved = repository.save(new PlaceholderDocument(
+            null, "To Delete", "Will be deleted", Instant.now(), null
+        ));
+
+        // When
+        repository.deleteById(saved.id());
+
+        // Then
+        assertThat(repository.findById(saved.id())).isEmpty();
+    }
+}

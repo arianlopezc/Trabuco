@@ -10,6 +10,12 @@ import {{.GroupID}}.model.entities.PlaceholderRecord;
 import {{.GroupID}}.sqldatastore.repository.PlaceholderRepository;
 import java.time.Instant;
 import java.util.stream.StreamSupport;
+{{- else if .HasModule "NoSQLDatastore"}}
+import {{.GroupID}}.model.entities.ImmutablePlaceholder;
+import {{.GroupID}}.model.entities.PlaceholderDocument;
+import {{.GroupID}}.nosqldatastore.repository.PlaceholderDocumentRepository;
+import java.time.Instant;
+import java.util.stream.StreamSupport;
 {{- end}}
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -29,6 +35,8 @@ import java.util.List;
 public class PlaceholderController {
 
 {{- if .HasModule "Shared"}}
+{{- if .HasModule "SQLDatastore"}}
+    // Using Shared service with SQL datastore
     private final PlaceholderService service;
 
     public PlaceholderController(PlaceholderService service) {
@@ -97,8 +105,110 @@ public class PlaceholderController {
         }
         return ResponseEntity.notFound().build();
     }
+{{- else if .HasModule "NoSQLDatastore"}}
+    // Using Shared service with NoSQL datastore (String IDs)
+    private final PlaceholderService service;
+
+    public PlaceholderController(PlaceholderService service) {
+        this.service = service;
+    }
+
+    @PostMapping
+    public ResponseEntity<ImmutablePlaceholderResponse> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
+        var created = service.createDocument(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(ImmutablePlaceholderResponse.builder()
+                .documentId(created.documentId())
+                .name(created.name())
+                .description(created.description())
+                .createdAt(created.createdAt())
+                .updatedAt(created.updatedAt())
+                .build());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable String id) {
+        return service.findByDocumentId(id)
+            .map(p -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
+                .documentId(p.documentId())
+                .name(p.name())
+                .description(p.description())
+                .createdAt(p.createdAt())
+                .updatedAt(p.updatedAt())
+                .build()))
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
+        var placeholders = service.findAll().stream()
+            .map(p -> ImmutablePlaceholderResponse.builder()
+                .documentId(p.documentId())
+                .name(p.name())
+                .description(p.description())
+                .createdAt(p.createdAt())
+                .updatedAt(p.updatedAt())
+                .build())
+            .toList();
+        return ResponseEntity.ok(placeholders);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ImmutablePlaceholderResponse> update(
+            @PathVariable String id,
+            @Valid @RequestBody ImmutablePlaceholderRequest request) {
+        return service.updateDocument(id, request)
+            .map(p -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
+                .documentId(p.documentId())
+                .name(p.name())
+                .description(p.description())
+                .createdAt(p.createdAt())
+                .updatedAt(p.updatedAt())
+                .build()))
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        if (service.deleteDocument(id)) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.notFound().build();
+    }
+{{- else}}
+    // Shared module included but no datastore
+    @PostMapping
+    public ResponseEntity<String> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+            .body("Datastore module required");
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<String> getById(@PathVariable String id) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+            .body("Datastore module required");
+    }
+
+    @GetMapping
+    public ResponseEntity<String> getAll() {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+            .body("Datastore module required");
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<String> update(@PathVariable String id, @Valid @RequestBody ImmutablePlaceholderRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+            .body("Datastore module required");
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> delete(@PathVariable String id) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+            .body("Datastore module required");
+    }
+{{- end}}
 {{- else if .HasModule "SQLDatastore"}}
-    // Using repository directly (Shared module not included)
+    // Using SQL repository directly (Shared module not included)
     private final PlaceholderRepository repository;
 
     public PlaceholderController(PlaceholderRepository repository) {
@@ -175,38 +285,116 @@ public class PlaceholderController {
         }
         return ResponseEntity.notFound().build();
     }
+{{- else if .HasModule "NoSQLDatastore"}}
+    // Using NoSQL repository directly (Shared module not included)
+    private final PlaceholderDocumentRepository repository;
+
+    public PlaceholderController(PlaceholderDocumentRepository repository) {
+        this.repository = repository;
+    }
+
+    @PostMapping
+    public ResponseEntity<ImmutablePlaceholderResponse> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
+        var saved = repository.save(new PlaceholderDocument(
+            null, request.name(), request.description(), Instant.now(), null
+        ));
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(ImmutablePlaceholderResponse.builder()
+                .documentId(saved.id())
+                .name(saved.name())
+                .description(saved.description())
+                .createdAt(saved.createdAt())
+                .updatedAt(saved.updatedAt())
+                .build());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable String id) {
+        return repository.findById(id)
+            .map(doc -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
+                .documentId(doc.id())
+                .name(doc.name())
+                .description(doc.description())
+                .createdAt(doc.createdAt())
+                .updatedAt(doc.updatedAt())
+                .build()))
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
+        var placeholders = StreamSupport.stream(repository.findAll().spliterator(), false)
+            .map(doc -> ImmutablePlaceholderResponse.builder()
+                .documentId(doc.id())
+                .name(doc.name())
+                .description(doc.description())
+                .createdAt(doc.createdAt())
+                .updatedAt(doc.updatedAt())
+                .build())
+            .toList();
+        return ResponseEntity.ok(placeholders);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ImmutablePlaceholderResponse> update(
+            @PathVariable String id,
+            @Valid @RequestBody ImmutablePlaceholderRequest request) {
+        return repository.findById(id)
+            .map(existing -> {
+                var saved = repository.save(existing.withNameAndDescription(
+                    request.name(), request.description()
+                ));
+                return ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
+                    .documentId(saved.id())
+                    .name(saved.name())
+                    .description(saved.description())
+                    .createdAt(saved.createdAt())
+                    .updatedAt(saved.updatedAt())
+                    .build());
+            })
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        if (repository.existsById(id)) {
+            repository.deleteById(id);
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.notFound().build();
+    }
 {{- else}}
-    // TODO: Neither Shared nor SQLDatastore modules included.
-    // Add at least SQLDatastore module for database access.
+    // TODO: No datastore modules included.
+    // Add SQLDatastore or NoSQLDatastore module for database access.
 
     @PostMapping
     public ResponseEntity<String> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-            .body("SQLDatastore or Shared module required");
+            .body("Datastore module required");
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<String> getById(@PathVariable Long id) {
+    public ResponseEntity<String> getById(@PathVariable String id) {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-            .body("SQLDatastore or Shared module required");
+            .body("Datastore module required");
     }
 
     @GetMapping
     public ResponseEntity<String> getAll() {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-            .body("SQLDatastore or Shared module required");
+            .body("Datastore module required");
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<String> update(@PathVariable Long id, @Valid @RequestBody ImmutablePlaceholderRequest request) {
+    public ResponseEntity<String> update(@PathVariable String id, @Valid @RequestBody ImmutablePlaceholderRequest request) {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-            .body("SQLDatastore or Shared module required");
+            .body("Datastore module required");
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<String> delete(@PathVariable Long id) {
+    public ResponseEntity<String> delete(@PathVariable String id) {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-            .body("SQLDatastore or Shared module required");
+            .body("Datastore module required");
     }
 {{- end}}
 }

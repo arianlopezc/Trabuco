@@ -1,10 +1,16 @@
-.PHONY: build build-all clean test run
+.PHONY: build build-all clean test run install
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X github.com/trabuco/trabuco/internal/cli.Version=$(VERSION)"
+INSTALL_DIR := $(HOME)/bin
 
 build:
 	go build $(LDFLAGS) -o trabuco ./cmd/trabuco
+
+install: build
+	@mkdir -p $(INSTALL_DIR)
+	cp trabuco $(INSTALL_DIR)/trabuco
+	@echo "Installed trabuco to $(INSTALL_DIR)/trabuco"
 
 build-all:
 	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o dist/trabuco-darwin-amd64 ./cmd/trabuco

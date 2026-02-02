@@ -71,10 +71,10 @@ func RunPrompts() (*config.ProjectConfig, error) {
 	// Extract just the version number
 	cfg.JavaVersion = strings.Split(cfg.JavaVersion, " ")[0]
 
-	// 5. Database (only if SQLDatastore is selected)
+	// 5. SQL Database (only if SQLDatastore is selected)
 	if cfg.HasModule("SQLDatastore") {
 		if err := survey.AskOne(&survey.Select{
-			Message: "Database:",
+			Message: "SQL Database:",
 			Options: []string{
 				"PostgreSQL (Recommended)",
 				"MySQL",
@@ -88,7 +88,23 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		cfg.Database = normalizeDatabaseChoice(cfg.Database)
 	}
 
-	// 6. CLAUDE.md (AI assistant context file)
+	// 6. NoSQL Database (only if NoSQLDatastore is selected)
+	if cfg.HasModule("NoSQLDatastore") {
+		if err := survey.AskOne(&survey.Select{
+			Message: "NoSQL Database:",
+			Options: []string{
+				"MongoDB (Recommended - Document store)",
+				"Redis (Key-Value store)",
+			},
+			Default: "MongoDB (Recommended - Document store)",
+		}, &cfg.NoSQLDatabase); err != nil {
+			return nil, err
+		}
+		// Normalize NoSQL database value
+		cfg.NoSQLDatabase = normalizeNoSQLDatabaseChoice(cfg.NoSQLDatabase)
+	}
+
+	// 7. CLAUDE.md (AI assistant context file)
 	if err := survey.AskOne(&survey.Confirm{
 		Message: "Generate CLAUDE.md?",
 		Default: false,
@@ -131,20 +147,50 @@ func validateGroupID(val interface{}) error {
 }
 
 func validateModuleSelection(val interface{}) error {
-	indices, ok := val.([]survey.OptionAnswer)
-	if !ok {
-		// Try direct []int (happens in some survey versions)
-		if intIndices, ok := val.([]int); ok {
-			if len(intIndices) == 0 {
-				return fmt.Errorf("at least one module must be selected")
-			}
-			return nil
+	var selectedIndices []int
+
+	// Handle different survey response types
+	switch v := val.(type) {
+	case []survey.OptionAnswer:
+		if len(v) == 0 {
+			return fmt.Errorf("at least one module must be selected")
 		}
+		for _, opt := range v {
+			selectedIndices = append(selectedIndices, opt.Index)
+		}
+	case []int:
+		if len(v) == 0 {
+			return fmt.Errorf("at least one module must be selected")
+		}
+		selectedIndices = v
+	default:
 		return fmt.Errorf("invalid selection")
 	}
-	if len(indices) == 0 {
-		return fmt.Errorf("at least one module must be selected")
+
+	// Convert indices to module names and check for conflicts
+	moduleNames := config.GetModuleNames()
+	var selectedModules []string
+	for _, idx := range selectedIndices {
+		if idx < len(moduleNames) {
+			selectedModules = append(selectedModules, moduleNames[idx])
+		}
 	}
+
+	// Check for SQLDatastore + NoSQLDatastore conflict
+	hasSQLDatastore := false
+	hasNoSQLDatastore := false
+	for _, name := range selectedModules {
+		if name == "SQLDatastore" {
+			hasSQLDatastore = true
+		}
+		if name == "NoSQLDatastore" {
+			hasNoSQLDatastore = true
+		}
+	}
+	if hasSQLDatastore && hasNoSQLDatastore {
+		return fmt.Errorf("SQLDatastore and NoSQLDatastore cannot be selected together")
+	}
+
 	return nil
 }
 
@@ -156,5 +202,16 @@ func normalizeDatabaseChoice(choice string) string {
 		return "mysql"
 	default:
 		return "generic"
+	}
+}
+
+func normalizeNoSQLDatabaseChoice(choice string) string {
+	switch {
+	case strings.HasPrefix(choice, "MongoDB"):
+		return "mongodb"
+	case strings.HasPrefix(choice, "Redis"):
+		return "redis"
+	default:
+		return "mongodb"
 	}
 }

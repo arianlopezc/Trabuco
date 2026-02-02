@@ -12,7 +12,12 @@ import java.time.Instant;
  * Placeholder entity for SERVICE LAYER business logic.
  *
  * Always use ImmutablePlaceholder.builder() to create instances.
- * PlaceholderRecord is only used at the repository boundary for database persistence.
+{{- if .HasModule "SQLDatastore"}}
+ * PlaceholderRecord is used for SQL database persistence.
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+ * PlaceholderDocument is used for NoSQL database persistence.
+{{- end}}
  *
  * Key Design Principles:
  * - Always use ImmutablePlaceholder, never the Placeholder interface directly
@@ -27,11 +32,29 @@ import java.time.Instant;
 @JsonDeserialize(as = ImmutablePlaceholder.class)
 public interface Placeholder {
 
+{{- if .HasModule "SQLDatastore"}}
     /**
-     * Unique identifier (auto-generated).
+     * SQL unique identifier (auto-generated Long).
      */
     @Nullable
     Long id();
+{{- end}}
+
+{{- if .HasModule "NoSQLDatastore"}}
+    /**
+     * NoSQL document identifier (String).
+     */
+    @Nullable
+    String documentId();
+{{- end}}
+
+{{- if not .HasAnyDatastore}}
+    /**
+     * Unique identifier (placeholder - add a datastore module).
+     */
+    @Nullable
+    Long id();
+{{- end}}
 
     /**
      * Name of the placeholder.

@@ -11,10 +11,13 @@ type ProjectConfig struct {
 	JavaVersion string // "21" or "25"
 
 	// Modules
-	Modules []string // e.g., ["Model", "SQLDatastore", "Shared", "API"]
+	Modules []string // e.g., ["Model", "SQLDatastore", "NoSQLDatastore", "Shared", "API"]
 
-	// Database (only if SQLDatastore selected)
+	// SQL Database (only if SQLDatastore selected)
 	Database string // "postgresql", "mysql", or "generic"
+
+	// NoSQL Database (only if NoSQLDatastore selected)
+	NoSQLDatabase string // "mongodb" or "redis"
 
 	// Documentation
 	IncludeCLAUDEMD bool // Generate CLAUDE.md file
@@ -49,6 +52,19 @@ func (c *ProjectConfig) ProjectNameCamel() string {
 	return string(lower(rune(pascal[0]))) + pascal[1:]
 }
 
+// ProjectNameSnake returns the project name in snake_case (e.g., "my_platform")
+func (c *ProjectConfig) ProjectNameSnake() string {
+	result := ""
+	for _, ch := range c.ProjectName {
+		if ch == '-' {
+			result += "_"
+		} else {
+			result += string(ch)
+		}
+	}
+	return result
+}
+
 // HasModule checks if a specific module is included
 func (c *ProjectConfig) HasModule(name string) bool {
 	for _, m := range c.Modules {
@@ -67,6 +83,16 @@ func (c *ProjectConfig) HasAllModules(names ...string) bool {
 		}
 	}
 	return true
+}
+
+// HasAnyDatastore checks if any datastore module is included
+func (c *ProjectConfig) HasAnyDatastore() bool {
+	return c.HasModule("SQLDatastore") || c.HasModule("NoSQLDatastore")
+}
+
+// HasBothDatastores checks if both datastore modules are included
+func (c *ProjectConfig) HasBothDatastores() bool {
+	return c.HasModule("SQLDatastore") && c.HasModule("NoSQLDatastore")
 }
 
 // Helper functions

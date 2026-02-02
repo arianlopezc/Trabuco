@@ -22,7 +22,29 @@ import java.time.Instant;
 @JsonDeserialize(as = ImmutablePlaceholderResponse.class)
 public interface PlaceholderResponse {
 
+{{- if .HasModule "SQLDatastore"}}
+    /**
+     * SQL database ID (Long).
+     */
+    @Nullable
     Long id();
+{{- end}}
+
+{{- if .HasModule "NoSQLDatastore"}}
+    /**
+     * NoSQL document ID (String).
+     */
+    @Nullable
+    String documentId();
+{{- end}}
+
+{{- if not .HasAnyDatastore}}
+    /**
+     * Placeholder ID (add a datastore module).
+     */
+    @Nullable
+    Long id();
+{{- end}}
 
     String name();
 

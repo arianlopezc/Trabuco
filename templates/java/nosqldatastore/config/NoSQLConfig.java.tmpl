@@ -1,0 +1,61 @@
+package {{.GroupID}}.nosqldatastore.config;
+
+{{- if eq .NoSQLDatabase "mongodb"}}
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.mongodb.repository.config.EnableMongoRepositories;
+
+/**
+ * MongoDB configuration.
+ *
+ * Enables MongoDB repositories and configures the MongoDB connection.
+ * Connection settings are in application.yml.
+ */
+@Configuration
+@EnableMongoRepositories(basePackages = "{{.GroupID}}.nosqldatastore.repository")
+public class NoSQLConfig {
+    // MongoDB auto-configuration handles most settings via application.yml
+    // Add custom beans here if needed (e.g., custom converters, auditing)
+}
+{{- else if eq .NoSQLDatabase "redis"}}
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.repository.configuration.EnableRedisRepositories;
+import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
+
+/**
+ * Redis configuration.
+ *
+ * Enables Redis repositories and configures the Redis connection.
+ * Uses Lettuce as the default client (thread-safe, async-capable).
+ */
+@Configuration
+@EnableRedisRepositories(basePackages = "{{.GroupID}}.nosqldatastore.repository")
+public class NoSQLConfig {
+
+    @Bean
+    public ObjectMapper redisObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return mapper;
+    }
+
+    @Bean
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory, ObjectMapper redisObjectMapper) {
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(connectionFactory);
+        template.setKeySerializer(new StringRedisSerializer());
+        template.setValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
+        template.setHashKeySerializer(new StringRedisSerializer());
+        template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
+        template.afterPropertiesSet();
+        return template;
+    }
+}
+{{- end}}

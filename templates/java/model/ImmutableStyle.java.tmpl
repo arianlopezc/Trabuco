@@ -2,7 +2,16 @@ package {{.GroupID}}.model;
 
 import org.immutables.value.Value;
 import org.springframework.data.annotation.Id;
+{{- if .HasModule "SQLDatastore"}}
 import org.springframework.data.relational.core.mapping.Table;
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+{{- if eq .NoSQLDatabase "mongodb"}}
+import org.springframework.data.mongodb.core.mapping.Document;
+{{- else if eq .NoSQLDatabase "redis"}}
+import org.springframework.data.redis.core.RedisHash;
+{{- end}}
+{{- end}}
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -12,18 +21,34 @@ import java.lang.annotation.Target;
 /**
  * Custom Immutables style configuration for {{.ProjectNamePascal}}.
  *
- * This style ensures that Spring Data JDBC annotations are properly
+ * This style ensures that Spring Data annotations are properly
  * passed through to the generated immutable classes.
  *
  * Key features:
- * - Passes Spring Data annotations (@Id, @Table) to generated classes
+ * - Passes Spring Data annotations (@Id, etc.) to generated classes
  * - Configures appropriate visibility and builder patterns
- * - Ensures compatibility with Spring Data JDBC repositories
+ * - Ensures compatibility with Spring Data repositories
  */
 @Target({ElementType.PACKAGE, ElementType.TYPE})
 @Retention(RetentionPolicy.CLASS)
 @Value.Style(
+{{- if and (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+{{- if eq .NoSQLDatabase "mongodb"}}
+    passAnnotations = {Id.class, Table.class, Document.class},
+{{- else if eq .NoSQLDatabase "redis"}}
+    passAnnotations = {Id.class, Table.class, RedisHash.class},
+{{- end}}
+{{- else if .HasModule "SQLDatastore"}}
     passAnnotations = {Id.class, Table.class},
+{{- else if .HasModule "NoSQLDatastore"}}
+{{- if eq .NoSQLDatabase "mongodb"}}
+    passAnnotations = {Id.class, Document.class},
+{{- else if eq .NoSQLDatabase "redis"}}
+    passAnnotations = {Id.class, RedisHash.class},
+{{- end}}
+{{- else}}
+    passAnnotations = {Id.class},
+{{- end}}
     visibility = Value.Style.ImplementationVisibility.PUBLIC
 )
 public @interface ImmutableStyle {

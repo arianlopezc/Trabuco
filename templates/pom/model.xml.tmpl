@@ -56,11 +56,28 @@
             <artifactId>spring-data-commons</artifactId>
         </dependency>
 
+{{- if .HasModule "SQLDatastore"}}
         <!-- Spring Data Relational for @Table annotation (version managed by Spring Boot BOM) -->
         <dependency>
             <groupId>org.springframework.data</groupId>
             <artifactId>spring-data-relational</artifactId>
         </dependency>
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+{{- if eq .NoSQLDatabase "mongodb"}}
+        <!-- Spring Data MongoDB for @Document annotation -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-mongodb</artifactId>
+        </dependency>
+{{- else if eq .NoSQLDatabase "redis"}}
+        <!-- Spring Data Redis for @RedisHash annotation -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-redis</artifactId>
+        </dependency>
+{{- end}}
+{{- end}}
     </dependencies>
 
     <build>

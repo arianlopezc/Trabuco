@@ -5,6 +5,9 @@ import {{.GroupID}}.model.dto.ImmutablePlaceholderRequest;
 {{- if .HasModule "SQLDatastore"}}
 import {{.GroupID}}.model.entities.PlaceholderRecord;
 import {{.GroupID}}.sqldatastore.repository.PlaceholderRepository;
+{{- else if .HasModule "NoSQLDatastore"}}
+import {{.GroupID}}.model.entities.PlaceholderDocument;
+import {{.GroupID}}.nosqldatastore.repository.PlaceholderDocumentRepository;
 {{- end}}
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Service;
@@ -18,7 +21,11 @@ import java.util.stream.StreamSupport;
  * Service for Placeholder business logic.
  *
  * Always uses ImmutablePlaceholder with builder pattern.
- * PlaceholderRecord is only used at the repository boundary.
+{{- if .HasModule "SQLDatastore"}}
+ * Uses SQL repository (PlaceholderRecord) for persistence.
+{{- else if .HasModule "NoSQLDatastore"}}
+ * Uses NoSQL repository (PlaceholderDocument) for persistence.
+{{- end}}
  *
  * Uses circuit breaker pattern for resilience.
  * Replace this with your actual services.
@@ -115,28 +122,120 @@ public class PlaceholderService {
         }
         return false;
     }
+{{- else if .HasModule "NoSQLDatastore"}}
+    private final PlaceholderDocumentRepository repository;
+
+    public PlaceholderService(PlaceholderDocumentRepository repository) {
+        this.repository = repository;
+    }
+
+    /**
+     * Create a new placeholder.
+     * Note: NoSQL uses String IDs, so we generate one or let the database assign it.
+     */
+    @CircuitBreaker(name = "default")
+    public ImmutablePlaceholder createDocument(ImmutablePlaceholderRequest request) {
+        PlaceholderDocument saved = repository.save(new PlaceholderDocument(
+            null,
+            request.name(),
+            request.description(),
+            Instant.now(),
+            null
+        ));
+        return ImmutablePlaceholder.builder()
+            .documentId(saved.id())
+            .name(saved.name())
+            .description(saved.description())
+            .createdAt(saved.createdAt())
+            .updatedAt(saved.updatedAt())
+            .build();
+    }
+
+    /**
+     * Get a placeholder by document ID.
+     */
+    @CircuitBreaker(name = "default")
+    public Optional<ImmutablePlaceholder> findByDocumentId(String documentId) {
+        return repository.findById(documentId)
+            .map(doc -> ImmutablePlaceholder.builder()
+                .documentId(doc.id())
+                .name(doc.name())
+                .description(doc.description())
+                .createdAt(doc.createdAt())
+                .updatedAt(doc.updatedAt())
+                .build());
+    }
+
+    /**
+     * Get all placeholders.
+     */
+    @CircuitBreaker(name = "default")
+    public List<ImmutablePlaceholder> findAll() {
+        return StreamSupport.stream(repository.findAll().spliterator(), false)
+            .map(doc -> ImmutablePlaceholder.builder()
+                .documentId(doc.id())
+                .name(doc.name())
+                .description(doc.description())
+                .createdAt(doc.createdAt())
+                .updatedAt(doc.updatedAt())
+                .build())
+            .toList();
+    }
+
+    /**
+     * Update an existing placeholder.
+     */
+    @CircuitBreaker(name = "default")
+    public Optional<ImmutablePlaceholder> updateDocument(String documentId, ImmutablePlaceholderRequest request) {
+        return repository.findById(documentId)
+            .map(existing -> {
+                PlaceholderDocument saved = repository.save(existing.withNameAndDescription(
+                    request.name(),
+                    request.description()
+                ));
+                return ImmutablePlaceholder.builder()
+                    .documentId(saved.id())
+                    .name(saved.name())
+                    .description(saved.description())
+                    .createdAt(saved.createdAt())
+                    .updatedAt(saved.updatedAt())
+                    .build();
+            });
+    }
+
+    /**
+     * Delete a placeholder by document ID.
+     */
+    @CircuitBreaker(name = "default")
+    public boolean deleteDocument(String documentId) {
+        if (repository.existsById(documentId)) {
+            repository.deleteById(documentId);
+            return true;
+        }
+        return false;
+    }
 {{- else}}
-    // TODO: SQLDatastore module not included.
-    // Implement your service logic here, or add the SQLDatastore module.
+    // TODO: No datastore module included.
+    // Add SQLDatastore or NoSQLDatastore module for data persistence.
 
     public ImmutablePlaceholder create(ImmutablePlaceholderRequest request) {
-        throw new UnsupportedOperationException("SQLDatastore module required");
+        throw new UnsupportedOperationException("Datastore module required");
     }
 
     public Optional<ImmutablePlaceholder> findById(Long id) {
-        throw new UnsupportedOperationException("SQLDatastore module required");
+        throw new UnsupportedOperationException("Datastore module required");
     }
 
     public List<ImmutablePlaceholder> findAll() {
-        throw new UnsupportedOperationException("SQLDatastore module required");
+        throw new UnsupportedOperationException("Datastore module required");
     }
 
     public Optional<ImmutablePlaceholder> update(Long id, ImmutablePlaceholderRequest request) {
-        throw new UnsupportedOperationException("SQLDatastore module required");
+        throw new UnsupportedOperationException("Datastore module required");
     }
 
     public boolean delete(Long id) {
-        throw new UnsupportedOperationException("SQLDatastore module required");
+        throw new UnsupportedOperationException("Datastore module required");
     }
 {{- end}}
 }

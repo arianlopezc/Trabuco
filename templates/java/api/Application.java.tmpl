@@ -8,7 +8,8 @@ import org.springframework.context.annotation.ComponentScan;
 @ComponentScan(basePackages = {
     "{{.GroupID}}.api"{{if .HasModule "Shared"}},
     "{{.GroupID}}.shared"{{end}}{{if .HasModule "SQLDatastore"}},
-    "{{.GroupID}}.sqldatastore"{{end}}
+    "{{.GroupID}}.sqldatastore"{{end}}{{if .HasModule "NoSQLDatastore"}},
+    "{{.GroupID}}.nosqldatastore"{{end}}
 })
 public class {{.ProjectNamePascal}}ApiApplication {
 

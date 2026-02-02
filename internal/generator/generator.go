@@ -110,6 +110,18 @@ func (g *Generator) createDirectories() error {
 		)
 	}
 
+	// NoSQLDatastore module directories
+	if g.config.HasModule("NoSQLDatastore") {
+		nosqlBase := filepath.Join(g.outDir, "NoSQLDatastore", "src", "main", "java", packagePath, "nosqldatastore")
+		nosqlTestBase := filepath.Join(g.outDir, "NoSQLDatastore", "src", "test", "java", packagePath, "nosqldatastore")
+		dirs = append(dirs,
+			filepath.Join(nosqlBase, "config"),
+			filepath.Join(nosqlBase, "repository"),
+			filepath.Join(g.outDir, "NoSQLDatastore", "src", "main", "resources"),
+			filepath.Join(nosqlTestBase, "repository"),
+		)
+	}
+
 	// Shared module directories
 	if g.config.HasModule("Shared") {
 		sharedBase := filepath.Join(g.outDir, "Shared", "src", "main", "java", packagePath, "shared")
@@ -151,6 +163,8 @@ func (g *Generator) generateModule(module string) error {
 		return g.generateModelModule()
 	case "SQLDatastore":
 		return g.generateSQLDatastoreModule()
+	case "NoSQLDatastore":
+		return g.generateNoSQLDatastoreModule()
 	case "Shared":
 		return g.generateSharedModule()
 	case "API":

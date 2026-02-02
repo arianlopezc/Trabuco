@@ -4,7 +4,7 @@
 # Reset data: docker-compose down -v
 
 services:
-{{- if eq .Database "postgresql"}}
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
   postgres:
     image: postgres:15-alpine
     container_name: {{.ProjectName}}-postgres
@@ -21,7 +21,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-{{- else if eq .Database "mysql"}}
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
   mysql:
     image: mysql:8.0
     container_name: {{.ProjectName}}-mysql
@@ -39,10 +39,44 @@ services:
       retries: 5
     command: --default-authentication-plugin=mysql_native_password
 {{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+  mongodb:
+    image: mongo:7.0
+    container_name: {{.ProjectName}}-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: {{.ProjectName}}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+  redis:
+    image: redis:7-alpine
+    container_name: {{.ProjectName}}-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+{{- end}}
 
 volumes:
-{{- if eq .Database "postgresql"}}
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
   postgres_data:
-{{- else if eq .Database "mysql"}}
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
   mysql_data:
+{{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+  mongodb_data:
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+  redis_data:
 {{- end}}

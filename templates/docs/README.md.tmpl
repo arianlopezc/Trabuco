@@ -13,13 +13,16 @@ A Java multi-module Maven project.
 {{- if .HasModule "SQLDatastore"}}
 ├── SQLDatastore/                # Repositories, Flyway migrations
 {{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+├── NoSQLDatastore/              # NoSQL repositories, Configuration
+{{- end}}
 {{- if .HasModule "Shared"}}
 ├── Shared/                      # Services, Circuit breaker
 {{- end}}
 {{- if .HasModule "API"}}
 ├── API/                         # REST endpoints (port 8080)
 {{- end}}
-{{- if and (and (.HasModule "API") (.HasModule "SQLDatastore")) (ne .Database "")}}
+{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
 ├── docker-compose.yml           # Local development database
 ├── .env.example                 # Environment variables template
 {{- end}}
@@ -30,13 +33,13 @@ A Java multi-module Maven project.
 
 - Java {{.JavaVersion}}
 - Maven 3.9+
-{{- if and (and (.HasModule "API") (.HasModule "SQLDatastore")) (ne .Database "")}}
+{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
 - Docker & Docker Compose (for local development)
 {{- end}}
 
 ## Quick Start
 
-{{- if and (and (.HasModule "API") (.HasModule "SQLDatastore")) (ne .Database "")}}
+{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
 
 ### 1. Start the database
 
@@ -44,6 +47,7 @@ A Java multi-module Maven project.
 docker-compose up -d
 ```
 
+{{- if and (.HasModule "SQLDatastore") (ne .Database "")}}
 This starts a {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}} container with:
 {{- if eq .Database "postgresql"}}
 - **Host:** localhost:5433 (uses non-standard port to avoid conflicts)
@@ -55,6 +59,15 @@ This starts a {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "
 - **Database:** {{.ProjectName}}
 - **User:** root
 - **Password:** root
+{{- end}}
+{{- else if .HasModule "NoSQLDatastore"}}
+This starts a {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}} container with:
+{{- if eq .NoSQLDatabase "mongodb"}}
+- **Host:** localhost:27017
+- **Database:** {{.ProjectName}}
+{{- else if eq .NoSQLDatabase "redis"}}
+- **Host:** localhost:6379
+{{- end}}
 {{- end}}
 
 ### 2. Build the project
@@ -72,7 +85,7 @@ mvn clean compile
 {{- end}}
 {{- if .HasModule "API"}}
 
-### {{if and (.HasModule "SQLDatastore") (ne .Database "")}}3{{else}}2{{end}}. Run the API
+### {{if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}3{{else}}2{{end}}. Run the API
 
 ```bash
 cd API
@@ -102,7 +115,7 @@ mvn clean package
 # Install to local repository
 mvn clean install
 ```
-{{- if and (and (.HasModule "API") (.HasModule "SQLDatastore")) (ne .Database "")}}
+{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
 
 ## Database Management
 
@@ -142,6 +155,9 @@ If you prefer to use your own database instead of Docker:
 {{- if .HasModule "SQLDatastore"}}
 | SQLDatastore | Database repositories, Flyway migrations |
 {{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+| NoSQLDatastore | NoSQL repositories, {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}} configuration |
+{{- end}}
 {{- if .HasModule "Shared"}}
 | Shared | Business services, Circuit breaker utilities |
 {{- end}}
@@ -167,6 +183,19 @@ If you prefer to use your own database instead of Docker:
 | `DB_NAME` | Database name | {{.ProjectName}} |
 | `DB_USERNAME` | Database user | {{if eq .Database "postgresql"}}postgres{{else if eq .Database "mysql"}}root{{end}} |
 | `DB_PASSWORD` | Database password | {{if eq .Database "postgresql"}}postgres{{else if eq .Database "mysql"}}root{{end}} |
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+
+### NoSQL Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+{{- if eq .NoSQLDatabase "mongodb"}}
+| `MONGODB_URI` | MongoDB connection URI | mongodb://localhost:27017/{{.ProjectName}} |
+{{- else if eq .NoSQLDatabase "redis"}}
+| `REDIS_HOST` | Redis host | localhost |
+| `REDIS_PORT` | Redis port | 6379 |
+{{- end}}
 {{- end}}
 {{- if .HasModule "Shared"}}
 

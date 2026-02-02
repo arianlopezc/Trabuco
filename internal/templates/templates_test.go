@@ -609,8 +609,9 @@ func TestModelTemplates(t *testing.T) {
 	if !strings.Contains(result, "public interface Placeholder") {
 		t.Error("Placeholder should be an interface")
 	}
-	if !strings.Contains(result, "PlaceholderRecord toRecord()") {
-		t.Error("Placeholder should have toRecord() method")
+	// Placeholder uses builder pattern, no factory methods
+	if !strings.Contains(result, "Long id()") {
+		t.Error("Placeholder should have id() method")
 	}
 
 	// Test PlaceholderRecord (database record)
@@ -648,8 +649,9 @@ func TestModelTemplates(t *testing.T) {
 	if !strings.Contains(result, "@Value.Immutable") {
 		t.Error("PlaceholderResponse should have @Value.Immutable annotation")
 	}
-	if !strings.Contains(result, "static PlaceholderResponse from") {
-		t.Error("PlaceholderResponse should have factory method")
+	// PlaceholderResponse uses builder pattern, no factory methods
+	if !strings.Contains(result, "Long id()") {
+		t.Error("PlaceholderResponse should have id() method")
 	}
 }
 
@@ -771,13 +773,13 @@ func TestSharedTemplates_WithoutSQLDatastore(t *testing.T) {
 		Modules:     []string{"Model", "Shared"},
 	}
 
-	// Test PlaceholderService without SQLDatastore
+	// Test PlaceholderService without any datastore
 	result, err := engine.Execute("java/shared/service/PlaceholderService.java.tmpl", cfg)
 	if err != nil {
 		t.Fatalf("PlaceholderService template failed: %v", err)
 	}
-	if !strings.Contains(result, "TODO: SQLDatastore module not included") {
-		t.Error("PlaceholderService should have TODO when SQLDatastore not included")
+	if !strings.Contains(result, "TODO: No datastore module included") {
+		t.Error("PlaceholderService should have TODO when no datastore module included")
 	}
 }
 

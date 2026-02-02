@@ -8,14 +8,15 @@ Trabuco is a command-line tool that generates complete, well-structured Java pro
 
 The generated projects come batteries-included with production-proven technologies: Spring Boot for the application framework, Spring Data JDBC for straightforward database access, Flyway for version-controlled migrations, Testcontainers for realistic integration tests, and Resilience4j for fault tolerance. Everything is pre-configured and working together out of the box. Need PostgreSQL instead of MySQL? Just pick it during setup. Want the latest Java 25 instead of 21? One flag changes everything. The architecture is designed to be solid by default yet flexible when you need it.
 
-The real power lies in the modular structure. Instead of a monolithic source tree where everything depends on everything, Trabuco generates clean, separated modules: Model for your data structures, SQLDatastore for persistence, Shared for business logic and services, and API for your REST endpoints. Each module has a clear responsibility and well-defined dependencies. This isn't just organization for organization's sake — it enforces good architecture, makes testing straightforward, helps new team members understand the codebase faster, and scales gracefully as your project grows from prototype to production. This clear structure also makes your codebase ideal for AI coding assistants. Tools like Claude Code thrive when they can understand where things belong, and Trabuco's organized layout removes the guesswork. The CLI even generates a `CLAUDE.md` file with project-specific conventions, patterns, and commands — giving AI assistants the context they need to write code that fits naturally into your project.
+The real power lies in the modular structure. Instead of a monolithic source tree where everything depends on everything, Trabuco generates clean, separated modules: Model for your data structures, SQLDatastore or NoSQLDatastore for persistence, Shared for business logic and services, and API for your REST endpoints. Each module has a clear responsibility and well-defined dependencies. This isn't just organization for organization's sake — it enforces good architecture, makes testing straightforward, helps new team members understand the codebase faster, and scales gracefully as your project grows from prototype to production. This clear structure also makes your codebase ideal for AI coding assistants. Tools like Claude Code thrive when they can understand where things belong, and Trabuco's organized layout removes the guesswork. The CLI even generates a `CLAUDE.md` file with project-specific conventions, patterns, and commands — giving AI assistants the context they need to write code that fits naturally into your project.
 
 ## Features
 
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, and API
 - **Immutables everywhere** — Type-safe, immutable DTOs and entities with builder pattern
 - **Spring Boot 3.4** — Latest LTS with Spring Data JDBC (not JPA — no magic, no surprises)
-- **Database ready** — PostgreSQL/MySQL support with Flyway migrations out of the box
+- **SQL databases** — PostgreSQL/MySQL support with Flyway migrations out of the box
+- **NoSQL databases** — MongoDB/Redis support with Spring Data repositories
 - **Testcontainers 2.x** — Real database tests that actually work with Docker Desktop
 - **Circuit breakers** — Resilience4j configured and ready to use
 - **Docker Compose** — Local development stack included
@@ -80,16 +81,22 @@ myapp/
 ├── Model/                           # DTOs, Entities, Enums
 │   └── src/main/java/.../model/
 │       ├── dto/                     # Request/Response DTOs
-│       ├── entities/                # Domain entities + DB records
+│       ├── entities/                # Domain entities + DB records/documents
 │       └── ImmutableStyle.java      # Immutables configuration
-├── SQLDatastore/                    # Database layer
+├── SQLDatastore/                    # SQL database layer (if selected)
 │   └── src/
 │       ├── main/
 │       │   ├── java/.../sqldatastore/
 │       │   │   ├── config/          # Database configuration
-│       │   │   └── repository/      # Spring Data repositories
+│       │   │   └── repository/      # Spring Data JDBC repositories
 │       │   └── resources/
 │       │       └── db/migration/    # Flyway SQL migrations
+│       └── test/                    # Testcontainers integration tests
+├── NoSQLDatastore/                  # NoSQL database layer (if selected)
+│   └── src/
+│       ├── main/java/.../nosqldatastore/
+│       │   ├── config/              # NoSQL configuration
+│       │   └── repository/          # Spring Data repositories
 │       └── test/                    # Testcontainers integration tests
 ├── Shared/                          # Business logic & services
 │   └── src/main/java/.../shared/
@@ -102,11 +109,13 @@ myapp/
 │       │   └── config/              # Web configuration
 │       └── resources/
 │           └── application.yml      # App configuration
-├── docker-compose.yml               # Local dev stack (Postgres, etc.)
+├── docker-compose.yml               # Local dev stack (database)
 ├── .run/                            # IntelliJ run configurations
 ├── CLAUDE.md                        # AI assistant context
 └── README.md                        # Project documentation
 ```
+
+**Note:** SQLDatastore and NoSQLDatastore are mutually exclusive — choose one based on your data storage needs.
 
 ## Modules
 
@@ -147,6 +156,20 @@ Database access layer using Spring Data JDBC.
 
 **Why JDBC over JPA?** No lazy loading gotchas, no proxy magic, no `@Transactional` surprises. What you write is what runs.
 
+### NoSQLDatastore
+
+NoSQL database access layer using Spring Data.
+
+| What | Description |
+|------|-------------|
+| **Repositories** | Spring Data MongoDB or Redis repositories |
+| **Config** | Database connection configuration |
+| **Tests** | Testcontainers-based integration tests |
+
+**Supported databases:**
+- **MongoDB** — Document store with flexible schemas
+- **Redis** — Key-value store for high-performance caching and data
+
 ### Shared
 
 Business logic and cross-cutting concerns.
@@ -177,7 +200,8 @@ Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderR
 | `--name` | Project name (lowercase, hyphens allowed) | — |
 | `--group-id` | Maven group ID (e.g., `com.company.project`) | — |
 | `--modules` | Modules to include (comma-separated) | — |
-| `--database` | Database type: `postgresql`, `mysql`, `none` | `postgresql` |
+| `--database` | SQL database type: `postgresql`, `mysql`, `none` | `postgresql` |
+| `--nosql-database` | NoSQL database type: `mongodb`, `redis` | `mongodb` |
 | `--java-version` | Java version: `21` or `25` | `21` |
 | `--include-claude` | Generate `CLAUDE.md` for AI assistants | `true` |
 
@@ -186,9 +210,12 @@ Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderR
 | Module | Description | Dependencies |
 |--------|-------------|--------------|
 | `Model` | DTOs, Entities, Enums | None (always included) |
-| `SQLDatastore` | Repositories, Migrations | Model |
-| `Shared` | Services, Circuit breakers | Model, SQLDatastore |
-| `API` | REST endpoints | Model, SQLDatastore, Shared |
+| `SQLDatastore` | SQL Repositories, Migrations | Model |
+| `NoSQLDatastore` | NoSQL Repositories | Model |
+| `Shared` | Services, Circuit breakers | Model |
+| `API` | REST endpoints | Model |
+
+**Note:** SQLDatastore and NoSQLDatastore are mutually exclusive.
 
 ## Tech Stack
 
@@ -196,13 +223,16 @@ Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderR
 |------------|---------|---------|
 | Java | 21 or 25 | Runtime |
 | Spring Boot | 3.4.2 | Application framework |
-| Spring Data JDBC | — | Database access |
+| Spring Data JDBC | — | SQL database access |
+| Spring Data MongoDB | — | MongoDB access |
+| Spring Data Redis | — | Redis access |
 | Immutables | 2.10.1 | Immutable value objects |
-| Flyway | — | Database migrations |
+| Flyway | — | SQL database migrations |
 | Testcontainers | 2.0.3 | Integration testing |
 | Resilience4j | — | Circuit breakers |
-| PostgreSQL / MySQL | — | Database |
-| HikariCP | — | Connection pooling |
+| PostgreSQL / MySQL | — | SQL databases |
+| MongoDB / Redis | — | NoSQL databases |
+| HikariCP | — | Connection pooling (SQL) |
 
 ## Local Development
 
@@ -220,7 +250,7 @@ mvn test                # All tests
 mvn test -pl Model      # Single module
 ```
 
-**Note:** SQLDatastore tests require Docker to be running (Testcontainers).
+**Note:** SQLDatastore and NoSQLDatastore tests require Docker to be running (Testcontainers).
 
 ## Requirements
 

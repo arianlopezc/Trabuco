@@ -40,6 +40,31 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
 {{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+{{- if eq .NoSQLDatabase "mongodb"}}
+
+  # MongoDB configuration
+  # Use docker-compose up -d to start the MongoDB container
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
+      auto-index-creation: true
+{{- else if eq .NoSQLDatabase "redis"}}
+
+  # Redis configuration
+  # Use docker-compose up -d to start the Redis container
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+{{- end}}
+{{- end}}
 {{- if .HasModule "Shared"}}
 
 # Resilience4j configuration

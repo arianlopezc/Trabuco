@@ -22,7 +22,13 @@ var ModuleRegistry = []Module{
 	},
 	{
 		Name:         "SQLDatastore",
-		Description:  "Repositories, Flyway migrations",
+		Description:  "SQL repositories, Flyway migrations (PostgreSQL, MySQL) - exclusive with NoSQLDatastore",
+		Required:     false,
+		Dependencies: []string{"Model"}, // Only Model is required
+	},
+	{
+		Name:         "NoSQLDatastore",
+		Description:  "NoSQL repositories (MongoDB, Redis) - exclusive with SQLDatastore",
 		Required:     false,
 		Dependencies: []string{"Model"}, // Only Model is required
 	},
@@ -30,13 +36,13 @@ var ModuleRegistry = []Module{
 		Name:         "Shared",
 		Description:  "Services, Circuit breaker, Utilities",
 		Required:     false,
-		Dependencies: []string{"Model"}, // Only Model is required (NOT SQLDatastore)
+		Dependencies: []string{"Model"}, // Only Model is required (NOT datastores)
 	},
 	{
 		Name:         "API",
 		Description:  "REST endpoints, Validation",
 		Required:     false,
-		Dependencies: []string{"Model"}, // Only Model is required (NOT Shared or SQLDatastore)
+		Dependencies: []string{"Model"}, // Only Model is required (NOT Shared or datastores)
 	},
 }
 
@@ -114,6 +120,21 @@ func ResolveDependencies(selected []string) []string {
 func ValidateModuleSelection(selected []string) string {
 	if len(selected) == 0 {
 		return "At least one module must be selected"
+	}
+
+	// Check for mutually exclusive modules: SQLDatastore and NoSQLDatastore cannot be selected together
+	hasSQLDatastore := false
+	hasNoSQLDatastore := false
+	for _, name := range selected {
+		if name == "SQLDatastore" {
+			hasSQLDatastore = true
+		}
+		if name == "NoSQLDatastore" {
+			hasNoSQLDatastore = true
+		}
+	}
+	if hasSQLDatastore && hasNoSQLDatastore {
+		return "SQLDatastore and NoSQLDatastore cannot be selected together. Choose one datastore type."
 	}
 
 	// Check that all required modules are included after resolution

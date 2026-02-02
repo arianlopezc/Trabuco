@@ -11,6 +11,9 @@ mvn spring-boot:run -pl API      # Run API (port 8080)
 {{- if .HasModule "SQLDatastore"}}
 mvn flyway:migrate -pl SQLDatastore  # Run migrations manually
 {{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+mvn test -pl NoSQLDatastore      # Run NoSQL repository tests (requires Docker)
+{{- end}}
 ```
 
 # Immutables - IMPORTANT
@@ -46,6 +49,18 @@ public Placeholder create(PlaceholderRequest request) {  // Don't use interface 
 - Convert to `ImmutablePlaceholder` immediately after repository calls
 - Never expose `PlaceholderRecord` outside the repository/service layer
 {{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+
+**NoSQL persistence:**
+- Use `PlaceholderDocument` (Java record) only at the repository boundary
+- Convert to `ImmutablePlaceholder` immediately after repository calls
+- Never expose `PlaceholderDocument` outside the repository/service layer
+{{- if eq .NoSQLDatabase "mongodb"}}
+- MongoDB auto-generates `_id` when `id` is null on save
+{{- else if eq .NoSQLDatabase "redis"}}
+- Redis auto-generates `id` when null on save (uses UUID)
+{{- end}}
+{{- end}}
 
 # Code Style
 
@@ -55,6 +70,15 @@ public Placeholder create(PlaceholderRequest request) {  // Don't use interface 
 {{- if .HasModule "SQLDatastore"}}
 - Spring Data JDBC (not JPA) - no lazy loading, no proxies
 - Flyway migrations: `V{number}__{description}.sql`
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+{{- if eq .NoSQLDatabase "mongodb"}}
+- Spring Data MongoDB with `@Document` annotation on entities
+- Use `@Indexed` for fields that need secondary indexes
+{{- else if eq .NoSQLDatabase "redis"}}
+- Spring Data Redis with `@RedisHash` annotation on entities
+- Use `@Indexed` for fields that need secondary indexes
+{{- end}}
 {{- end}}
 {{- if .HasModule "Shared"}}
 - Use `@CircuitBreaker(name = "default")` on service methods that call external resources
@@ -66,6 +90,14 @@ public Placeholder create(PlaceholderRequest request) {  // Don't use interface 
 {{- if .HasModule "SQLDatastore"}}
 - Create new migration files for any schema changes (never modify existing migrations)
 - Repository tests use Testcontainers - Docker must be running
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+- Repository tests use Testcontainers - Docker must be running
+{{- if eq .NoSQLDatabase "mongodb"}}
+- MongoDB collections are created automatically on first document insert
+{{- else if eq .NoSQLDatabase "redis"}}
+- Redis keys are created automatically on first save
+{{- end}}
 {{- end}}
 {{- if .HasModule "API"}}
 - Validate request DTOs with Jakarta annotations (@NotBlank, @Size, etc.)

@@ -1,0 +1,29 @@
+# NoSQLDatastore module configuration
+# These settings are merged with the main application.yml when running
+
+{{- if eq .NoSQLDatabase "mongodb"}}
+spring:
+  data:
+    mongodb:
+      # Connection settings - override in environment or main application.yml
+      uri: ${MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
+      # Auto-index creation (disable in production for performance)
+      auto-index-creation: true
+{{- else if eq .NoSQLDatabase "redis"}}
+spring:
+  data:
+    redis:
+      # Connection settings - override in environment or main application.yml
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Optional password (uncomment if needed)
+      # password: ${REDIS_PASSWORD:}
+      # Connection timeout
+      timeout: 2000ms
+      # Lettuce connection pool settings
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+{{- end}}

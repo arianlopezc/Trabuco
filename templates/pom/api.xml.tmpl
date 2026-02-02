@@ -30,6 +30,14 @@
             <version>${project.version}</version>
         </dependency>
 {{end}}
+{{if .HasModule "NoSQLDatastore"}}
+        <!-- NoSQLDatastore module dependency -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>NoSQLDatastore</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{end}}
 {{if .HasModule "Shared"}}
         <!-- Shared module dependency -->
         <dependency>

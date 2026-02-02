@@ -28,12 +28,24 @@ func (g *Generator) generateModelModule() error {
 		return fmt.Errorf("failed to generate Placeholder.java: %w", err)
 	}
 
-	// PlaceholderRecord.java (database record)
-	if err := g.writeTemplate(
-		"java/model/entities/PlaceholderRecord.java.tmpl",
-		g.javaPath("Model", filepath.Join("entities", "PlaceholderRecord.java")),
-	); err != nil {
-		return fmt.Errorf("failed to generate PlaceholderRecord.java: %w", err)
+	// PlaceholderRecord.java (SQL database record) - only if SQLDatastore selected
+	if g.config.HasModule("SQLDatastore") {
+		if err := g.writeTemplate(
+			"java/model/entities/PlaceholderRecord.java.tmpl",
+			g.javaPath("Model", filepath.Join("entities", "PlaceholderRecord.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate PlaceholderRecord.java: %w", err)
+		}
+	}
+
+	// PlaceholderDocument.java (NoSQL document) - only if NoSQLDatastore selected
+	if g.config.HasModule("NoSQLDatastore") {
+		if err := g.writeTemplate(
+			"java/model/entities/PlaceholderDocument.java.tmpl",
+			g.javaPath("Model", filepath.Join("entities", "PlaceholderDocument.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate PlaceholderDocument.java: %w", err)
+		}
 	}
 
 	// PlaceholderRequest.java (DTO)
@@ -108,6 +120,56 @@ func (g *Generator) generateSQLDatastoreModule() error {
 		g.testJavaPath("SQLDatastore", filepath.Join("repository", "PlaceholderRepositoryTest.java")),
 	); err != nil {
 		return fmt.Errorf("failed to generate PlaceholderRepositoryTest.java: %w", err)
+	}
+
+	return nil
+}
+
+// generateNoSQLDatastoreModule generates all NoSQLDatastore module files
+func (g *Generator) generateNoSQLDatastoreModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("NoSQLDatastore"); err != nil {
+		return err
+	}
+
+	// NoSQLConfig.java
+	if err := g.writeTemplate(
+		"java/nosqldatastore/config/NoSQLConfig.java.tmpl",
+		g.javaPath("NoSQLDatastore", filepath.Join("config", "NoSQLConfig.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate NoSQLConfig.java: %w", err)
+	}
+
+	// PlaceholderDocumentRepository.java
+	if err := g.writeTemplate(
+		"java/nosqldatastore/repository/PlaceholderDocumentRepository.java.tmpl",
+		g.javaPath("NoSQLDatastore", filepath.Join("repository", "PlaceholderDocumentRepository.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderDocumentRepository.java: %w", err)
+	}
+
+	// application.yml (NoSQL configuration)
+	if err := g.writeTemplate(
+		"java/nosqldatastore/resources/application.yml.tmpl",
+		g.resourcePath("NoSQLDatastore", "application.yml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate NoSQLDatastore application.yml: %w", err)
+	}
+
+	// TestConfig.java (test configuration for library module)
+	if err := g.writeTemplate(
+		"java/nosqldatastore/test/TestConfig.java.tmpl",
+		g.testJavaPath("NoSQLDatastore", "TestConfig.java"),
+	); err != nil {
+		return fmt.Errorf("failed to generate NoSQLDatastore TestConfig.java: %w", err)
+	}
+
+	// PlaceholderDocumentRepositoryTest.java
+	if err := g.writeTemplate(
+		"java/nosqldatastore/test/PlaceholderDocumentRepositoryTest.java.tmpl",
+		g.testJavaPath("NoSQLDatastore", filepath.Join("repository", "PlaceholderDocumentRepositoryTest.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderDocumentRepositoryTest.java: %w", err)
 	}
 
 	return nil

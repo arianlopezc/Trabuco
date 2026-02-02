@@ -13,6 +13,8 @@ func (g *Generator) generateModulePOM(module string) error {
 		templateName = "pom/model.xml.tmpl"
 	case "SQLDatastore":
 		templateName = "pom/sqldatastore.xml.tmpl"
+	case "NoSQLDatastore":
+		templateName = "pom/nosqldatastore.xml.tmpl"
 	case "Shared":
 		templateName = "pom/shared.xml.tmpl"
 	case "API":

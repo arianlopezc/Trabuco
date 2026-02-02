@@ -13,11 +13,12 @@ import (
 
 // Non-interactive mode flags
 var (
-	flagProjectName  string
-	flagGroupID      string
-	flagModules      string
-	flagDatabase     string
-	flagJavaVersion  string
+	flagProjectName   string
+	flagGroupID       string
+	flagModules       string
+	flagDatabase      string
+	flagNoSQLDatabase string
+	flagJavaVersion   string
 	flagIncludeClaude bool
 )
 
@@ -32,6 +33,8 @@ This command will interactively prompt you for:
   - Modules to include
   - Database type (if SQLDatastore selected)
 
+Note: SQLDatastore and NoSQLDatastore cannot be selected together.
+
 For non-interactive mode, provide all required flags:
   trabuco init --name=myproject --group-id=com.company.project --modules=Model,SQLDatastore --database=postgresql`,
 	Run: runInit,
@@ -40,8 +43,9 @@ For non-interactive mode, provide all required flags:
 func init() {
 	initCmd.Flags().StringVar(&flagProjectName, "name", "", "Project name (non-interactive)")
 	initCmd.Flags().StringVar(&flagGroupID, "group-id", "", "Group ID, e.g., com.company.project (non-interactive)")
-	initCmd.Flags().StringVar(&flagModules, "modules", "", "Comma-separated modules: Model,SQLDatastore,Shared,API (non-interactive)")
-	initCmd.Flags().StringVar(&flagDatabase, "database", "postgresql", "Database type: postgresql, mysql, none (non-interactive)")
+	initCmd.Flags().StringVar(&flagModules, "modules", "", "Comma-separated modules: Model,SQLDatastore,NoSQLDatastore,Shared,API (SQLDatastore and NoSQLDatastore are mutually exclusive)")
+	initCmd.Flags().StringVar(&flagDatabase, "database", "postgresql", "SQL database type: postgresql, mysql, none (non-interactive)")
+	initCmd.Flags().StringVar(&flagNoSQLDatabase, "nosql-database", "mongodb", "NoSQL database type: mongodb, redis (non-interactive)")
 	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 21 or 25 (non-interactive)")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", true, "Include CLAUDE.md file (non-interactive)")
 }
@@ -67,13 +71,20 @@ func runInit(cmd *cobra.Command, args []string) {
 			modules[i] = strings.TrimSpace(modules[i])
 		}
 
+		// Validate module selection
+		if validationErr := config.ValidateModuleSelection(modules); validationErr != "" {
+			color.Red("\nError: %s\n", validationErr)
+			return
+		}
+
 		cfg = &config.ProjectConfig{
-			ProjectName:    flagProjectName,
-			GroupID:        flagGroupID,
-			ArtifactID:     flagProjectName,
-			JavaVersion:    flagJavaVersion,
-			Modules:        modules,
-			Database:       flagDatabase,
+			ProjectName:     flagProjectName,
+			GroupID:         flagGroupID,
+			ArtifactID:      flagProjectName,
+			JavaVersion:     flagJavaVersion,
+			Modules:         modules,
+			Database:        flagDatabase,
+			NoSQLDatabase:   flagNoSQLDatabase,
 			IncludeCLAUDEMD: flagIncludeClaude,
 		}
 
@@ -97,7 +108,10 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Printf("  Java:       %s\n", cfg.JavaVersion)
 	fmt.Printf("  Modules:    %s\n", strings.Join(cfg.Modules, ", "))
 	if cfg.HasModule("SQLDatastore") {
-		fmt.Printf("  Database:   %s\n", cfg.Database)
+		fmt.Printf("  SQL DB:     %s\n", cfg.Database)
+	}
+	if cfg.HasModule("NoSQLDatastore") {
+		fmt.Printf("  NoSQL DB:   %s\n", cfg.NoSQLDatabase)
 	}
 	if cfg.IncludeCLAUDEMD {
 		fmt.Printf("  CLAUDE.md:  Yes\n")
