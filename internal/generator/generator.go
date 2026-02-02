@@ -2,6 +2,7 @@ package generator
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -177,7 +178,9 @@ func (g *Generator) generateModule(module string) error {
 // cleanup removes the generated directory on error
 func (g *Generator) cleanup() {
 	if g.outDir != "" {
-		os.RemoveAll(g.outDir)
+		if err := os.RemoveAll(g.outDir); err != nil {
+			log.Printf("Warning: failed to cleanup directory %s: %v", g.outDir, err)
+		}
 	}
 }
 

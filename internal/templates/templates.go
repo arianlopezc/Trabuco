@@ -8,6 +8,7 @@ import (
 	"text/template"
 
 	"github.com/trabuco/trabuco/internal/config"
+	"github.com/trabuco/trabuco/internal/utils"
 	embeddedTemplates "github.com/trabuco/trabuco/templates"
 )
 
@@ -29,11 +30,11 @@ func NewEngine() *Engine {
 func createFuncMap() template.FuncMap {
 	return template.FuncMap{
 		// String transformations
-		"pascalCase":  toPascalCase,
-		"camelCase":   toCamelCase,
+		"pascalCase":  utils.ToPascalCase,
+		"camelCase":   utils.ToCamelCase,
 		"lower":       strings.ToLower,
 		"upper":       strings.ToUpper,
-		"title":       strings.Title,
+		"title":       utils.ToTitle,
 		"replace":     strings.ReplaceAll,
 		"trimSuffix":  strings.TrimSuffix,
 		"trimPrefix":  strings.TrimPrefix,
@@ -132,42 +133,6 @@ func (e *Engine) RenderToFile(templatePath string, cfg *config.ProjectConfig) (c
 }
 
 // Helper functions for templates
-
-// toPascalCase converts kebab-case or snake_case to PascalCase
-func toPascalCase(s string) string {
-	result := ""
-	capitalizeNext := true
-	for _, ch := range s {
-		if ch == '-' || ch == '_' {
-			capitalizeNext = true
-			continue
-		}
-		if capitalizeNext {
-			if ch >= 'a' && ch <= 'z' {
-				result += string(ch - 32)
-			} else {
-				result += string(ch)
-			}
-			capitalizeNext = false
-		} else {
-			result += string(ch)
-		}
-	}
-	return result
-}
-
-// toCamelCase converts kebab-case or snake_case to camelCase
-func toCamelCase(s string) string {
-	pascal := toPascalCase(s)
-	if len(pascal) == 0 {
-		return ""
-	}
-	first := pascal[0]
-	if first >= 'A' && first <= 'Z' {
-		return string(first+32) + pascal[1:]
-	}
-	return pascal
-}
 
 // packageToPath converts a Java package to a file path
 func packageToPath(pkg string) string {

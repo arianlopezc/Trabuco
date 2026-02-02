@@ -11,12 +11,12 @@ spring:
   # Use docker-compose up -d to start the database container
   datasource:
 {{- if eq .Database "postgresql"}}
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:prefer}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 {{- else if eq .Database "mysql"}}
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectName}}}
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectName}}}?useSSL=${DB_USE_SSL:true}&requireSSL=${DB_REQUIRE_SSL:false}&verifyServerCertificate=${DB_VERIFY_CERT:false}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -80,19 +80,47 @@ resilience4j:
         permittedNumberOfCallsInHalfOpenState: 3
 {{- end}}
 
+# CORS configuration
+# SECURITY: Restrict allowed-origins to your actual domains in production
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080}
+  allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
+  allowed-headers: ${CORS_ALLOWED_HEADERS:Content-Type,Authorization,X-Requested-With}
+  allow-credentials: ${CORS_ALLOW_CREDENTIALS:false}
+  max-age: ${CORS_MAX_AGE:3600}
+
+# Security headers configuration
+# SECURITY: These headers help protect against common web vulnerabilities
+security:
+  headers:
+    enabled: ${SECURITY_HEADERS_ENABLED:true}
+    content-security-policy: ${CSP:default-src 'self'}
+    x-frame-options: ${X_FRAME_OPTIONS:DENY}
+    x-content-type-options: ${X_CONTENT_TYPE_OPTIONS:nosniff}
+    x-xss-protection: ${X_XSS_PROTECTION:1; mode=block}
+    referrer-policy: ${REFERRER_POLICY:strict-origin-when-cross-origin}
+    permissions-policy: ${PERMISSIONS_POLICY:geolocation=(), microphone=(), camera=()}
+
 # Actuator endpoints
+# SECURITY: In production, consider restricting to health only or securing with authentication
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: ${MANAGEMENT_ENDPOINTS:health,info}
+      base-path: /actuator
   endpoint:
     health:
-      show-details: always
+      show-details: ${MANAGEMENT_HEALTH_DETAILS:when_authorized}
+      show-components: ${MANAGEMENT_HEALTH_COMPONENTS:when_authorized}
+  info:
+    env:
+      enabled: false
 
 # Logging
 logging:
   level:
     {{.GroupID}}: ${LOG_LEVEL:DEBUG}
     org.springframework.web: INFO
+    org.springframework.security: INFO
     root: INFO

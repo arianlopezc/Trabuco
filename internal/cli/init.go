@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/fatih/color"
@@ -9,6 +10,12 @@ import (
 	"github.com/trabuco/trabuco/internal/config"
 	"github.com/trabuco/trabuco/internal/generator"
 	"github.com/trabuco/trabuco/internal/prompts"
+)
+
+// Validation patterns for non-interactive mode
+var (
+	projectNameRegex = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+	groupIDRegex     = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$`)
 )
 
 // Non-interactive mode flags
@@ -66,6 +73,39 @@ func runInit(cmd *cobra.Command, args []string) {
 	// Check if non-interactive mode (flags provided)
 	if flagProjectName != "" && flagGroupID != "" && flagModules != "" {
 		// Non-interactive mode
+
+		// Validate project name
+		if !projectNameRegex.MatchString(flagProjectName) {
+			color.Red("\nError: Invalid project name '%s'. Must be lowercase, alphanumeric, hyphens allowed (not at start/end).\n", flagProjectName)
+			return
+		}
+
+		// Validate group ID
+		if !groupIDRegex.MatchString(flagGroupID) {
+			color.Red("\nError: Invalid group ID '%s'. Must be valid Java package format (e.g., com.company.project).\n", flagGroupID)
+			return
+		}
+
+		// Validate Java version
+		if flagJavaVersion != "21" && flagJavaVersion != "25" {
+			color.Red("\nError: Invalid Java version '%s'. Must be 21 or 25.\n", flagJavaVersion)
+			return
+		}
+
+		// Validate database type
+		validDatabases := map[string]bool{"postgresql": true, "mysql": true, "none": true, "generic": true, "": true}
+		if !validDatabases[flagDatabase] {
+			color.Red("\nError: Invalid database type '%s'. Must be postgresql, mysql, or none.\n", flagDatabase)
+			return
+		}
+
+		// Validate NoSQL database type
+		validNoSQLDatabases := map[string]bool{"mongodb": true, "redis": true, "": true}
+		if !validNoSQLDatabases[flagNoSQLDatabase] {
+			color.Red("\nError: Invalid NoSQL database type '%s'. Must be mongodb or redis.\n", flagNoSQLDatabase)
+			return
+		}
+
 		modules := strings.Split(flagModules, ",")
 		for i := range modules {
 			modules[i] = strings.TrimSpace(modules[i])

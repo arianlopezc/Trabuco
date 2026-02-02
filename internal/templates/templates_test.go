@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/trabuco/trabuco/internal/config"
+	"github.com/trabuco/trabuco/internal/utils"
 )
 
 func TestNewEngine(t *testing.T) {
@@ -34,9 +35,9 @@ func TestToPascalCase(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := toPascalCase(tt.input)
+		result := utils.ToPascalCase(tt.input)
 		if result != tt.expected {
-			t.Errorf("toPascalCase(%q) = %q, want %q", tt.input, result, tt.expected)
+			t.Errorf("ToPascalCase(%q) = %q, want %q", tt.input, result, tt.expected)
 		}
 	}
 }
@@ -54,9 +55,9 @@ func TestToCamelCase(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := toCamelCase(tt.input)
+		result := utils.ToCamelCase(tt.input)
 		if result != tt.expected {
-			t.Errorf("toCamelCase(%q) = %q, want %q", tt.input, result, tt.expected)
+			t.Errorf("ToCamelCase(%q) = %q, want %q", tt.input, result, tt.expected)
 		}
 	}
 }

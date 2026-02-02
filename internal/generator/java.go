@@ -265,6 +265,22 @@ func (g *Generator) generateAPIModule() error {
 		return fmt.Errorf("failed to generate WebConfig.java: %w", err)
 	}
 
+	// GlobalExceptionHandler.java
+	if err := g.writeTemplate(
+		"java/api/config/GlobalExceptionHandler.java.tmpl",
+		g.javaPath("API", filepath.Join("config", "GlobalExceptionHandler.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate GlobalExceptionHandler.java: %w", err)
+	}
+
+	// SecurityHeadersFilter.java
+	if err := g.writeTemplate(
+		"java/api/config/SecurityHeadersFilter.java.tmpl",
+		g.javaPath("API", filepath.Join("config", "SecurityHeadersFilter.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate SecurityHeadersFilter.java: %w", err)
+	}
+
 	// application.yml
 	if err := g.writeTemplate(
 		"java/api/resources/application.yml.tmpl",

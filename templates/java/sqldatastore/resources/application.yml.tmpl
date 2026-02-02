@@ -1,15 +1,16 @@
 # Database Configuration for {{.ProjectNamePascal}}
 # These defaults are for local development. Override in production via environment variables.
+# SECURITY: Always use SSL in production and set strong passwords.
 
 spring:
   datasource:
 {{- if eq .Database "postgresql"}}
-    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}}
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:prefer}}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 {{- else if eq .Database "mysql"}}
-    url: ${DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectName}}}?useSSL=false&allowPublicKeyRetrieval=true}
+    url: ${DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectName}}}?useSSL=${DB_USE_SSL:true}&requireSSL=${DB_REQUIRE_SSL:false}&verifyServerCertificate=${DB_VERIFY_CERT:false}}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver

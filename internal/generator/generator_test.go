@@ -127,6 +127,8 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		"API/src/main/java/com/company/platform/api/controller/HealthController.java",
 		"API/src/main/java/com/company/platform/api/controller/PlaceholderController.java",
 		"API/src/main/java/com/company/platform/api/config/WebConfig.java",
+		"API/src/main/java/com/company/platform/api/config/GlobalExceptionHandler.java",
+		"API/src/main/java/com/company/platform/api/config/SecurityHeadersFilter.java",
 		"API/src/main/resources/application.yml",
 		// Run configuration
 		".run/API.run.xml",
