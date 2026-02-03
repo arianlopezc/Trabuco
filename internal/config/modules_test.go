@@ -51,6 +51,21 @@ func TestResolveDependencies(t *testing.T) {
 			selected: []string{"API", "SQLDatastore"},
 			expected: []string{"Model", "SQLDatastore", "API"},
 		},
+		{
+			name:     "Worker adds Jobs dependency",
+			selected: []string{"Worker", "SQLDatastore"},
+			expected: []string{"Model", "Jobs", "SQLDatastore", "Worker"},
+		},
+		{
+			name:     "Worker with NoSQLDatastore",
+			selected: []string{"Worker", "NoSQLDatastore"},
+			expected: []string{"Model", "Jobs", "NoSQLDatastore", "Worker"},
+		},
+		{
+			name:     "All modules with Worker",
+			selected: []string{"Model", "SQLDatastore", "Shared", "API", "Worker"},
+			expected: []string{"Model", "Jobs", "SQLDatastore", "Shared", "API", "Worker"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -132,6 +147,31 @@ func TestValidateModuleSelection(t *testing.T) {
 			selected:  []string{},
 			wantError: true,
 		},
+		{
+			name:      "Valid: Worker with SQLDatastore",
+			selected:  []string{"Worker", "SQLDatastore"},
+			wantError: false,
+		},
+		{
+			name:      "Valid: Worker with NoSQLDatastore",
+			selected:  []string{"Worker", "NoSQLDatastore"},
+			wantError: false,
+		},
+		{
+			name:      "Invalid: Worker without datastore",
+			selected:  []string{"Worker"},
+			wantError: true,
+		},
+		{
+			name:      "Invalid: Worker with Model only (no datastore)",
+			selected:  []string{"Model", "Worker"},
+			wantError: true,
+		},
+		{
+			name:      "Invalid: SQLDatastore and NoSQLDatastore together",
+			selected:  []string{"SQLDatastore", "NoSQLDatastore"},
+			wantError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -142,6 +182,60 @@ func TestValidateModuleSelection(t *testing.T) {
 				t.Errorf("ValidateModuleSelection(%v) error = %v, wantError %v", tt.selected, errMsg, tt.wantError)
 			}
 		})
+	}
+}
+
+func TestGetSelectableModules(t *testing.T) {
+	modules := GetSelectableModules()
+
+	// Jobs should NOT be in the list (it's internal)
+	for _, m := range modules {
+		if m == "Jobs" {
+			t.Error("Jobs should not be in selectable modules (it's internal)")
+		}
+	}
+
+	// Model, SQLDatastore, NoSQLDatastore, Shared, API, Worker should be in the list
+	expected := []string{"Model", "SQLDatastore", "NoSQLDatastore", "Shared", "API", "Worker"}
+	for _, exp := range expected {
+		found := false
+		for _, m := range modules {
+			if m == exp {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected %s to be in selectable modules", exp)
+		}
+	}
+}
+
+func TestJobsModuleIsInternal(t *testing.T) {
+	jobs := GetModule("Jobs")
+	if jobs == nil {
+		t.Fatal("Jobs module should exist")
+	}
+	if !jobs.Internal {
+		t.Error("Jobs module should be marked as Internal")
+	}
+}
+
+func TestWorkerDependsOnJobs(t *testing.T) {
+	worker := GetModule("Worker")
+	if worker == nil {
+		t.Fatal("Worker module should exist")
+	}
+
+	hasJobsDep := false
+	for _, dep := range worker.Dependencies {
+		if dep == "Jobs" {
+			hasJobsDep = true
+			break
+		}
+	}
+	if !hasJobsDep {
+		t.Error("Worker module should have Jobs as a dependency")
 	}
 }
 

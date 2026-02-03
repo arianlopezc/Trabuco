@@ -341,3 +341,128 @@ func TestCompilation_ModelSQLDatastorePostgres_Install(t *testing.T) {
 	runMavenInstall(t, projectDir)
 	t.Log("Model + SQLDatastore (PostgreSQL) project installed successfully")
 }
+
+func TestCompilation_WorkerWithSQLDatastore(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "worker-sql",
+		GroupID:     "com.test.workersql",
+		ArtifactID:  "worker-sql",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Jobs", "SQLDatastore", "Worker"},
+		Database:    "postgresql",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("Worker + SQLDatastore project compiled successfully")
+}
+
+func TestCompilation_WorkerWithNoSQLDatastore_MongoDB(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "worker-mongodb",
+		GroupID:     "com.test.workermongo",
+		ArtifactID:  "worker-mongodb",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Jobs", "NoSQLDatastore", "Worker"},
+		NoSQLDatabase: "mongodb",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("Worker + NoSQLDatastore (MongoDB) project compiled successfully")
+}
+
+func TestCompilation_WorkerWithNoSQLDatastore_Redis(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "worker-redis",
+		GroupID:     "com.test.workerredis",
+		ArtifactID:  "worker-redis",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Jobs", "NoSQLDatastore", "Worker"},
+		NoSQLDatabase: "redis",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("Worker + NoSQLDatastore (Redis) project compiled successfully")
+}
+
+func TestCompilation_AllModulesWithWorker(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "all-with-worker",
+		GroupID:     "com.test.allwithworker",
+		ArtifactID:  "all-with-worker",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Jobs", "SQLDatastore", "Shared", "API", "Worker"},
+		Database:    "postgresql",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("All modules with Worker project compiled successfully")
+}
+
+func TestCompilation_WorkerWithSQLDatastore_Install(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "worker-sql-install",
+		GroupID:     "com.test.workersqlinstall",
+		ArtifactID:  "worker-sql-install",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Jobs", "SQLDatastore", "Worker"},
+		Database:    "postgresql",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenInstall(t, projectDir)
+	t.Log("Worker + SQLDatastore project installed successfully (with tests)")
+}
