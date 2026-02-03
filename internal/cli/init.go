@@ -146,13 +146,16 @@ func runInit(cmd *cobra.Command, args []string) {
 			return
 		}
 
+		// Resolve dependencies (auto-include Jobs when Worker is selected, etc.)
+		resolvedModules := config.ResolveDependencies(modules)
+
 		cfg = &config.ProjectConfig{
 			ProjectName:         flagProjectName,
 			GroupID:             flagGroupID,
 			ArtifactID:          flagProjectName,
 			JavaVersion:         flagJavaVersion,
 			JavaVersionDetected: javaVersionDetected,
-			Modules:             modules,
+			Modules:             resolvedModules,
 			Database:            flagDatabase,
 			NoSQLDatabase:       flagNoSQLDatabase,
 			IncludeCLAUDEMD:     flagIncludeClaude,

@@ -110,11 +110,15 @@ myapp/
 │       │   └── config/              # Web configuration
 │       └── resources/
 │           └── application.yml      # App configuration
+├── Jobs/                            # Job request contracts (auto-included with Worker)
+│   └── src/main/java/.../jobs/
+│       └── placeholder/             # Domain-grouped job requests
+│           └── ProcessPlaceholderJobRequest.java
 ├── Worker/                          # Background jobs (Spring Boot app)
 │   └── src/main/
 │       ├── java/.../worker/
 │       │   ├── config/              # JobRunr configuration
-│       │   └── job/                 # Job classes
+│       │   └── handler/             # JobRequestHandler implementations
 │       └── resources/
 │           └── application.yml      # Worker configuration
 ├── docker-compose.yml               # Local dev stack (database)
@@ -201,27 +205,52 @@ The REST API module — a runnable Spring Boot application.
 
 Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderResponse` for output.
 
+### Jobs
+
+Job request contracts module — contains `JobRequest` classes that can be enqueued from any module.
+
+| What | Description |
+|------|-------------|
+| **JobRequest** | Sealed interface for job requests |
+| **Concrete Requests** | Records implementing `JobRequest` (e.g., `ProcessPlaceholderJobRequest`) |
+
+The Jobs module is **auto-included** when Worker is selected. It uses the **Command Pattern** with sealed interfaces for type safety.
+
+**Enqueueing jobs from any module:**
+```java
+// Fire-and-forget (immediate)
+BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("data"));
+
+// Delayed (at specific time)
+BackgroundJobRequest.schedule(Instant.now().plusHours(1), new ProcessPlaceholderJobRequest("data"));
+
+// Batch (multiple items)
+BackgroundJobRequest.enqueue(items.stream().map(ProcessPlaceholderJobRequest::new));
+```
+
 ### Worker
 
 Background job processing module — a runnable Spring Boot application using JobRunr.
 
 | What | Description |
 |------|-------------|
-| **Jobs** | Job classes with `@Job` annotation |
+| **Handlers** | `JobRequestHandler` implementations that process job requests |
 | **Config** | JobRunr configuration and recurring job registration |
 | **Dashboard** | JobRunr dashboard at `http://localhost:8000` |
 | **Health** | Actuator health endpoints at port 8082 |
 
+**Architecture:** Jobs module contains request contracts, Worker module contains handlers. This allows any module to enqueue jobs without circular dependencies.
+
 **Supported job types:**
 
-| Type | Description | Example |
-|------|-------------|---------|
-| Fire-and-forget | Execute immediately in background | `jobScheduler.<MyJob>enqueue(job -> job.process(data))` |
-| Delayed | Execute at a specific time | `jobScheduler.<MyJob>schedule(instant, job -> job.process(data))` |
-| Recurring | Execute on a CRON schedule | `jobScheduler.scheduleRecurrently("id", Cron.daily(), ...)` |
-| Batch | Process multiple items efficiently | `jobScheduler.<MyJob, String>enqueue(items.stream(), MyJob::process)` |
+| Type | Description | How to Enqueue |
+|------|-------------|----------------|
+| Fire-and-forget | Execute immediately in background | `BackgroundJobRequest.enqueue(request)` |
+| Delayed | Execute at a specific time | `BackgroundJobRequest.schedule(instant, request)` |
+| Recurring | Execute on a CRON schedule | Register in `RecurringJobsConfig` |
+| Batch | Process multiple items efficiently | `BackgroundJobRequest.enqueue(requests.stream())` |
 
-**Note:** Worker requires SQLDatastore or NoSQLDatastore for job persistence.
+**Note:** Worker requires SQLDatastore or NoSQLDatastore for job persistence. Jobs module is auto-included.
 
 ## Configuration Options
 
@@ -245,11 +274,12 @@ Background job processing module — a runnable Spring Boot application using Jo
 | `NoSQLDatastore` | NoSQL Repositories | Model |
 | `Shared` | Services, Circuit breakers | Model |
 | `API` | REST endpoints | Model |
-| `Worker` | Background jobs (JobRunr) | Model + SQLDatastore or NoSQLDatastore |
+| `Worker` | Background jobs (JobRunr) | Model, Jobs (auto), + SQLDatastore or NoSQLDatastore |
 
 **Notes:**
 - SQLDatastore and NoSQLDatastore are mutually exclusive
 - Worker requires a datastore module for job persistence
+- Jobs module is auto-included when Worker is selected (not shown in CLI)
 
 ### Java Version Detection
 

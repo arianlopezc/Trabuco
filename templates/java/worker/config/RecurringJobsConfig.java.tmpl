@@ -1,6 +1,7 @@
 package {{.GroupID}}.worker.config;
 
-import {{.GroupID}}.worker.job.PlaceholderJob;
+import {{.GroupID}}.jobs.placeholder.ProcessPlaceholderJobRequest;
+import org.jobrunr.scheduling.BackgroundJobRequest;
 import org.jobrunr.scheduling.JobScheduler;
 import org.jobrunr.scheduling.cron.Cron;
 import org.slf4j.Logger;
@@ -29,30 +30,28 @@ public class RecurringJobsConfig {
     private static final Logger log = LoggerFactory.getLogger(RecurringJobsConfig.class);
 
     private final JobScheduler jobScheduler;
-    private final PlaceholderJob placeholderJob;
 
-    public RecurringJobsConfig(JobScheduler jobScheduler, PlaceholderJob placeholderJob) {
+    public RecurringJobsConfig(JobScheduler jobScheduler) {
         this.jobScheduler = jobScheduler;
-        this.placeholderJob = placeholderJob;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void registerRecurringJobs() {
         log.info("Registering recurring jobs...");
 
-        // Example: Run a job every hour
+        // Example: Run a job every hour using JobRequest pattern
         // Uncomment to enable:
         // jobScheduler.scheduleRecurrently(
         //     "hourly-placeholder-job",
         //     Cron.hourly(),
-        //     () -> placeholderJob.executeRecurringJob("Hourly job executed")
+        //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Hourly job executed"))
         // );
 
         // Example: Run a job daily at 6 AM
         // jobScheduler.scheduleRecurrently(
         //     "daily-morning-job",
         //     Cron.daily(6, 0),
-        //     () -> placeholderJob.executeRecurringJob("Daily morning job executed")
+        //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Daily morning job executed"))
         // );
 
         log.info("Recurring jobs registered successfully");

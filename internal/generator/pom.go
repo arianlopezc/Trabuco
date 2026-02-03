@@ -11,6 +11,8 @@ func (g *Generator) generateModulePOM(module string) error {
 	switch module {
 	case "Model":
 		templateName = "pom/model.xml.tmpl"
+	case "Jobs":
+		templateName = "pom/jobs.xml.tmpl"
 	case "SQLDatastore":
 		templateName = "pom/sqldatastore.xml.tmpl"
 	case "NoSQLDatastore":

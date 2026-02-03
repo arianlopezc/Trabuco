@@ -1,0 +1,63 @@
+package {{.GroupID}}.worker.handler;
+
+import {{.GroupID}}.jobs.placeholder.ProcessPlaceholderJobRequest;
+import org.jobrunr.jobs.annotations.Job;
+import org.jobrunr.jobs.lambdas.JobRequestHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+/**
+ * Handler for ProcessPlaceholderJobRequest.
+ *
+ * This handler is automatically discovered by JobRunr via the
+ * getJobRequestHandler() method in ProcessPlaceholderJobRequest.
+ *
+ * Handler responsibilities:
+ * - Process the job request
+ * - Log progress and completion
+ * - Handle errors (JobRunr provides automatic retry with exponential backoff)
+ *
+ * Best practices:
+ * - Keep handlers focused on a single responsibility
+ * - Make operations idempotent (jobs may retry on failure)
+ * - Use constructor injection for dependencies
+ * - Log meaningful messages for debugging
+ */
+@Component
+public class ProcessPlaceholderJobRequestHandler implements JobRequestHandler<ProcessPlaceholderJobRequest> {
+
+    private static final Logger log = LoggerFactory.getLogger(ProcessPlaceholderJobRequestHandler.class);
+
+    // Inject dependencies via constructor
+    // Example:
+    // private final PlaceholderService placeholderService;
+    //
+    // public ProcessPlaceholderJobRequestHandler(PlaceholderService placeholderService) {
+    //     this.placeholderService = placeholderService;
+    // }
+
+    /**
+     * Process the job request.
+     *
+     * @param request The job request containing the message to process
+     */
+    @Override
+    @Job(name = "Process Placeholder: %0")
+    public void run(ProcessPlaceholderJobRequest request) {
+        log.info("Processing placeholder job with message: {}", request.message());
+
+        // Simulate work - replace with actual business logic
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Job interrupted", e);
+        }
+
+        // Example: Call service method
+        // placeholderService.process(request.message());
+
+        log.info("Placeholder job completed: {}", request.message());
+    }
+}

@@ -1,0 +1,27 @@
+package {{.GroupID}}.jobs.placeholder;
+
+import org.jobrunr.jobs.lambdas.JobRequest;
+
+/**
+ * Sealed interface for all Placeholder-related job requests.
+ *
+ * Using sealed interfaces provides:
+ * - Compile-time type safety (all job types are known)
+ * - Exhaustive pattern matching in handlers (Java 21+)
+ * - Clear documentation of available job types
+ *
+ * To add a new job type:
+ * 1. Create a new record implementing this interface
+ * 2. Add it to the permits clause
+ * 3. Create a corresponding JobRequestHandler in the Worker module
+ *
+ * Example:
+ * <pre>
+ * public record MyNewJobRequest(String data) implements PlaceholderJobRequest {}
+ * </pre>
+ */
+public sealed interface PlaceholderJobRequest extends JobRequest
+    permits ProcessPlaceholderJobRequest {
+
+    // Marker interface - concrete requests define their own fields
+}

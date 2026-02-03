@@ -147,6 +147,15 @@ func (g *Generator) createDirectories() error {
 		)
 	}
 
+	// Jobs module directories (auto-included with Worker)
+	if g.config.HasModule("Jobs") {
+		jobsBase := filepath.Join(g.outDir, "Jobs", "src", "main", "java", packagePath, "jobs")
+		dirs = append(dirs,
+			jobsBase,
+			filepath.Join(jobsBase, "placeholder"),
+		)
+	}
+
 	// Worker module directories
 	if g.config.HasModule("Worker") {
 		workerBase := filepath.Join(g.outDir, "Worker", "src", "main", "java", packagePath, "worker")
@@ -154,9 +163,9 @@ func (g *Generator) createDirectories() error {
 		dirs = append(dirs,
 			workerBase,
 			filepath.Join(workerBase, "config"),
-			filepath.Join(workerBase, "job"),
+			filepath.Join(workerBase, "handler"),
 			filepath.Join(g.outDir, "Worker", "src", "main", "resources"),
-			filepath.Join(workerTestBase, "job"),
+			filepath.Join(workerTestBase, "handler"),
 			filepath.Join(g.outDir, ".run"), // IntelliJ run configurations (if not already created by API)
 		)
 	}
@@ -176,6 +185,8 @@ func (g *Generator) generateModule(module string) error {
 	switch module {
 	case "Model":
 		return g.generateModelModule()
+	case "Jobs":
+		return g.generateJobsModule()
 	case "SQLDatastore":
 		return g.generateSQLDatastoreModule()
 	case "NoSQLDatastore":

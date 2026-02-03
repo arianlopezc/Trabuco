@@ -26,6 +26,13 @@
             <artifactId>Model</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <!-- Jobs module dependency (job request contracts) -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>Jobs</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 {{if .HasModule "SQLDatastore"}}
         <!-- SQLDatastore module dependency -->
         <dependency>

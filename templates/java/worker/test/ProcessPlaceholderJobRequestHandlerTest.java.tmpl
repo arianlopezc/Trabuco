@@ -1,0 +1,33 @@
+package {{.GroupID}}.worker.handler;
+
+import {{.GroupID}}.jobs.placeholder.ProcessPlaceholderJobRequest;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Unit tests for ProcessPlaceholderJobRequestHandler.
+ *
+ * These tests verify that the handler processes requests correctly.
+ * Integration tests with JobRunr would require a running database.
+ */
+class ProcessPlaceholderJobRequestHandlerTest {
+
+    @Test
+    void run_shouldProcessRequest() {
+        // Given
+        ProcessPlaceholderJobRequestHandler handler = new ProcessPlaceholderJobRequestHandler();
+        ProcessPlaceholderJobRequest request = new ProcessPlaceholderJobRequest("Test message");
+
+        // When/Then - should not throw
+        handler.run(request);
+    }
+
+    @Test
+    void run_shouldHandleEmptyMessage() {
+        // Given
+        ProcessPlaceholderJobRequestHandler handler = new ProcessPlaceholderJobRequestHandler();
+        ProcessPlaceholderJobRequest request = new ProcessPlaceholderJobRequest("");
+
+        // When/Then - should not throw
+        handler.run(request);
+    }
+}

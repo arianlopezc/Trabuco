@@ -5,6 +5,7 @@ type Module struct {
 	Name         string   // Module name (e.g., "Model")
 	Description  string   // Short description for CLI display
 	Required     bool     // If true, cannot be deselected
+	Internal     bool     // If true, not shown in CLI prompts (auto-included when needed)
 	Dependencies []string // Names of modules this depends on (only Model is a real dependency)
 }
 
@@ -18,37 +19,50 @@ var ModuleRegistry = []Module{
 		Name:         "Model",
 		Description:  "DTOs, Entities, Enums, Exceptions",
 		Required:     true,
+		Internal:     false,
 		Dependencies: []string{},
+	},
+	{
+		Name:         "Jobs",
+		Description:  "Job request contracts for background processing",
+		Required:     false,
+		Internal:     true, // Auto-included when Worker is selected
+		Dependencies: []string{"Model"},
 	},
 	{
 		Name:         "SQLDatastore",
 		Description:  "SQL repositories, Flyway migrations (PostgreSQL, MySQL) - exclusive with NoSQLDatastore",
 		Required:     false,
-		Dependencies: []string{"Model"}, // Only Model is required
+		Internal:     false,
+		Dependencies: []string{"Model"},
 	},
 	{
 		Name:         "NoSQLDatastore",
 		Description:  "NoSQL repositories (MongoDB, Redis) - exclusive with SQLDatastore",
 		Required:     false,
-		Dependencies: []string{"Model"}, // Only Model is required
+		Internal:     false,
+		Dependencies: []string{"Model"},
 	},
 	{
 		Name:         "Shared",
 		Description:  "Services, Circuit breaker, Utilities",
 		Required:     false,
-		Dependencies: []string{"Model"}, // Only Model is required (NOT datastores)
+		Internal:     false,
+		Dependencies: []string{"Model"},
 	},
 	{
 		Name:         "API",
 		Description:  "REST endpoints, Validation",
 		Required:     false,
-		Dependencies: []string{"Model"}, // Only Model is required (NOT Shared or datastores)
+		Internal:     false,
+		Dependencies: []string{"Model"},
 	},
 	{
 		Name:         "Worker",
 		Description:  "Background jobs (fire-and-forget, scheduled, delayed, batch)",
 		Required:     false,
-		Dependencies: []string{"Model"}, // Only Model is required; requires a datastore for JobRunr persistence
+		Internal:     false,
+		Dependencies: []string{"Model", "Jobs"}, // Jobs is auto-included; requires a datastore for JobRunr persistence
 	},
 }
 
@@ -173,14 +187,29 @@ func ValidateModuleSelection(selected []string) string {
 }
 
 // GetModuleDisplayOptions returns formatted strings for CLI display
+// Internal modules are excluded from display
 func GetModuleDisplayOptions() []string {
-	options := make([]string, len(ModuleRegistry))
-	for i, m := range ModuleRegistry {
+	var options []string
+	for _, m := range ModuleRegistry {
+		if m.Internal {
+			continue // Skip internal modules
+		}
 		suffix := ""
 		if m.Required {
 			suffix = " (required)"
 		}
-		options[i] = m.Name + " - " + m.Description + suffix
+		options = append(options, m.Name+" - "+m.Description+suffix)
 	}
 	return options
+}
+
+// GetSelectableModules returns names of modules that can be selected by users
+func GetSelectableModules() []string {
+	var modules []string
+	for _, m := range ModuleRegistry {
+		if !m.Internal {
+			modules = append(modules, m.Name)
+		}
+	}
+	return modules
 }

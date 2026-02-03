@@ -300,6 +300,32 @@ func (g *Generator) generateAPIModule() error {
 	return nil
 }
 
+// generateJobsModule generates all Jobs module files (job request contracts)
+func (g *Generator) generateJobsModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("Jobs"); err != nil {
+		return err
+	}
+
+	// PlaceholderJobRequest.java (sealed interface for placeholder domain)
+	if err := g.writeTemplate(
+		"java/jobs/placeholder/PlaceholderJobRequest.java.tmpl",
+		g.javaPath("Jobs", filepath.Join("placeholder", "PlaceholderJobRequest.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderJobRequest.java: %w", err)
+	}
+
+	// ProcessPlaceholderJobRequest.java (concrete job request)
+	if err := g.writeTemplate(
+		"java/jobs/placeholder/ProcessPlaceholderJobRequest.java.tmpl",
+		g.javaPath("Jobs", filepath.Join("placeholder", "ProcessPlaceholderJobRequest.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate ProcessPlaceholderJobRequest.java: %w", err)
+	}
+
+	return nil
+}
+
 // generateWorkerModule generates all Worker module files
 func (g *Generator) generateWorkerModule() error {
 	// Generate module POM
@@ -332,12 +358,12 @@ func (g *Generator) generateWorkerModule() error {
 		return fmt.Errorf("failed to generate RecurringJobsConfig.java: %w", err)
 	}
 
-	// PlaceholderJob.java
+	// ProcessPlaceholderJobRequestHandler.java
 	if err := g.writeTemplate(
-		"java/worker/job/PlaceholderJob.java.tmpl",
-		g.javaPath("Worker", filepath.Join("job", "PlaceholderJob.java")),
+		"java/worker/handler/ProcessPlaceholderJobRequestHandler.java.tmpl",
+		g.javaPath("Worker", filepath.Join("handler", "ProcessPlaceholderJobRequestHandler.java")),
 	); err != nil {
-		return fmt.Errorf("failed to generate PlaceholderJob.java: %w", err)
+		return fmt.Errorf("failed to generate ProcessPlaceholderJobRequestHandler.java: %w", err)
 	}
 
 	// application.yml
@@ -348,12 +374,12 @@ func (g *Generator) generateWorkerModule() error {
 		return fmt.Errorf("failed to generate Worker application.yml: %w", err)
 	}
 
-	// PlaceholderJobTest.java
+	// ProcessPlaceholderJobRequestHandlerTest.java
 	if err := g.writeTemplate(
-		"java/worker/test/PlaceholderJobTest.java.tmpl",
-		g.testJavaPath("Worker", filepath.Join("job", "PlaceholderJobTest.java")),
+		"java/worker/test/ProcessPlaceholderJobRequestHandlerTest.java.tmpl",
+		g.testJavaPath("Worker", filepath.Join("handler", "ProcessPlaceholderJobRequestHandlerTest.java")),
 	); err != nil {
-		return fmt.Errorf("failed to generate PlaceholderJobTest.java: %w", err)
+		return fmt.Errorf("failed to generate ProcessPlaceholderJobRequestHandlerTest.java: %w", err)
 	}
 
 	// IntelliJ IDEA Run Configuration (Maven)

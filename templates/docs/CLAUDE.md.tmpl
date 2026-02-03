@@ -111,35 +111,45 @@ public Placeholder create(PlaceholderRequest request) {  // Don't use interface 
 
 JobRunr provides four types of background jobs. All jobs are persisted to the database, automatically retried on failure, and distributed across Worker instances.
 
+**Architecture:**
+- **Jobs module** - Contains `JobRequest` records (data contracts)
+- **Worker module** - Contains `JobRequestHandler` implementations (processors)
+- Any module can enqueue jobs by depending on the Jobs module
+
 **Fire-and-forget** - Execute immediately in background:
 ```java
-jobScheduler.<MyJobService>enqueue(job -> job.processData(data));
+BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("data"));
 ```
 
 **Delayed** - Execute at a specific time:
 ```java
 Instant executeAt = Instant.now().plus(1, ChronoUnit.HOURS);
-jobScheduler.<MyJobService>schedule(executeAt, job -> job.processData(data));
+BackgroundJobRequest.schedule(executeAt, new ProcessPlaceholderJobRequest("data"));
 ```
 
 **Recurring** - Execute on a CRON schedule (register in RecurringJobsConfig):
 ```java
 jobScheduler.scheduleRecurrently("cleanup-job", Cron.daily(),
-    () -> cleanupService.runCleanup());
+    () -> BackgroundJobRequest.enqueue(new CleanupJobRequest()));
 ```
 
 **Batch** - Process multiple items efficiently:
 ```java
-jobScheduler.<MyJobService, String>enqueue(
-    items.stream(),
-    MyJobService::processItem
-);
+List<ProcessPlaceholderJobRequest> requests = items.stream()
+    .map(ProcessPlaceholderJobRequest::new)
+    .toList();
+BackgroundJobRequest.enqueue(requests.stream());
 ```
 
-**Job method requirements:**
-- Annotate with `@Job(name = "Descriptive name: %0")` (use %0, %1 for params)
-- Keep job methods simple and idempotent (they may retry on failure)
-- Inject dependencies via constructor, not method parameters
+**Creating new job types:**
+1. Add a new record in Jobs module implementing `PlaceholderJobRequest` (or create new sealed interface)
+2. Add corresponding `JobRequestHandler` in Worker module
+3. Handler class name must be `{RequestName}Handler`
+
+**Handler requirements:**
+- Annotate run method with `@Job(name = "Descriptive name: %0")`
+- Keep handlers simple and idempotent (they may retry on failure)
+- Inject dependencies via constructor
 
 **Dashboard:** http://localhost:8000 (when Worker is running)
 {{- end}}
