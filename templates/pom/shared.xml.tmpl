@@ -42,6 +42,14 @@
             <version>${project.version}</version>
         </dependency>
 {{end}}
+{{if .HasModule "Worker"}}
+        <!-- Jobs module dependency (for enqueueing background jobs) -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>Jobs</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{end}}
         <!-- Spring Boot Starter -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

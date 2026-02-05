@@ -19,6 +19,9 @@
         <maven.compiler.target>{{.JavaVersion}}</maven.compiler.target>
         <spring-boot.version>3.4.2</spring-boot.version>
         <testcontainers.version>2.0.3</testcontainers.version>
+{{- if .HasModule "Jobs"}}
+        <jobrunr.version>8.4.0</jobrunr.version>
+{{- end}}
     </properties>
 
     <modules>

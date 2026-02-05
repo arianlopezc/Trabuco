@@ -62,7 +62,7 @@ var ModuleRegistry = []Module{
 		Description:  "Background jobs (fire-and-forget, scheduled, delayed, batch)",
 		Required:     false,
 		Internal:     false,
-		Dependencies: []string{"Model", "Jobs"}, // Jobs is auto-included; requires a datastore for JobRunr persistence
+		Dependencies: []string{"Model", "Jobs"}, // Jobs is auto-included; uses datastore for JobRunr persistence (defaults to PostgreSQL if none)
 	},
 }
 
@@ -145,7 +145,6 @@ func ValidateModuleSelection(selected []string) string {
 	// Check for mutually exclusive modules: SQLDatastore and NoSQLDatastore cannot be selected together
 	hasSQLDatastore := false
 	hasNoSQLDatastore := false
-	hasWorker := false
 	for _, name := range selected {
 		if name == "SQLDatastore" {
 			hasSQLDatastore = true
@@ -153,18 +152,12 @@ func ValidateModuleSelection(selected []string) string {
 		if name == "NoSQLDatastore" {
 			hasNoSQLDatastore = true
 		}
-		if name == "Worker" {
-			hasWorker = true
-		}
 	}
 	if hasSQLDatastore && hasNoSQLDatastore {
 		return "SQLDatastore and NoSQLDatastore cannot be selected together. Choose one datastore type."
 	}
 
-	// Worker requires a datastore module for JobRunr persistence
-	if hasWorker && !hasSQLDatastore && !hasNoSQLDatastore {
-		return "Worker module requires SQLDatastore or NoSQLDatastore for job persistence."
-	}
+	// Note: Worker no longer requires a datastore module - it defaults to PostgreSQL if none selected
 
 	// Check that all required modules are included after resolution
 	resolved := ResolveDependencies(selected)

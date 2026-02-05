@@ -2,16 +2,16 @@ package {{.GroupID}}.worker.handler;
 
 import {{.GroupID}}.jobs.placeholder.ProcessPlaceholderJobRequest;
 import org.jobrunr.jobs.annotations.Job;
-import org.jobrunr.jobs.lambdas.JobRequestHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Handler for ProcessPlaceholderJobRequest.
+ * Concrete handler for ProcessPlaceholderJobRequest.
  *
- * This handler is automatically discovered by JobRunr via the
- * getJobRequestHandler() method in ProcessPlaceholderJobRequest.
+ * Extends the base handler defined in the Jobs module. JobRunr discovers
+ * this Spring bean at processing time via the base class type returned
+ * by {@code ProcessPlaceholderJobRequest.getJobRequestHandler()}.
  *
  * Handler responsibilities:
  * - Process the job request
@@ -23,9 +23,15 @@ import org.springframework.stereotype.Component;
  * - Make operations idempotent (jobs may retry on failure)
  * - Use constructor injection for dependencies
  * - Log meaningful messages for debugging
+ *
+ * Transaction handling:
+ * - If this handler modifies data, consider adding @Transactional
+ * - Use @Transactional(propagation = Propagation.REQUIRES_NEW) for independent transactions
+ * - JobRunr runs handlers outside of any existing transaction context
  */
 @Component
-public class ProcessPlaceholderJobRequestHandler implements JobRequestHandler<ProcessPlaceholderJobRequest> {
+public class ProcessPlaceholderJobRequestHandler
+        extends {{.GroupID}}.jobs.placeholder.ProcessPlaceholderJobRequestHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessPlaceholderJobRequestHandler.class);
 
@@ -47,15 +53,16 @@ public class ProcessPlaceholderJobRequestHandler implements JobRequestHandler<Pr
     public void run(ProcessPlaceholderJobRequest request) {
         log.info("Processing placeholder job with message: {}", request.message());
 
-        // Simulate work - replace with actual business logic
+        // TODO: Remove this sleep and replace with actual business logic
+        // This is just a placeholder to demonstrate job execution
         try {
-            Thread.sleep(1000);
+            Thread.sleep(100); // Brief delay for demo - DELETE THIS
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Job interrupted", e);
         }
 
-        // Example: Call service method
+        // TODO: Replace with actual business logic, e.g.:
         // placeholderService.process(request.message());
 
         log.info("Placeholder job completed: {}", request.message());

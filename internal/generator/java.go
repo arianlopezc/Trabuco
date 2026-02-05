@@ -257,6 +257,16 @@ func (g *Generator) generateAPIModule() error {
 		return fmt.Errorf("failed to generate PlaceholderController.java: %w", err)
 	}
 
+	// PlaceholderJobController.java (only when Worker module is selected)
+	if g.config.HasModule("Worker") {
+		if err := g.writeTemplate(
+			"java/api/controller/PlaceholderJobController.java.tmpl",
+			g.javaPath("API", filepath.Join("controller", "PlaceholderJobController.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate PlaceholderJobController.java: %w", err)
+		}
+	}
+
 	// WebConfig.java
 	if err := g.writeTemplate(
 		"java/api/config/WebConfig.java.tmpl",
@@ -321,6 +331,14 @@ func (g *Generator) generateJobsModule() error {
 		g.javaPath("Jobs", filepath.Join("placeholder", "ProcessPlaceholderJobRequest.java")),
 	); err != nil {
 		return fmt.Errorf("failed to generate ProcessPlaceholderJobRequest.java: %w", err)
+	}
+
+	// ProcessPlaceholderJobRequestHandler.java (abstract handler base class)
+	if err := g.writeTemplate(
+		"java/jobs/placeholder/ProcessPlaceholderJobRequestHandler.java.tmpl",
+		g.javaPath("Jobs", filepath.Join("placeholder", "ProcessPlaceholderJobRequestHandler.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate ProcessPlaceholderJobRequestHandler.java: %w", err)
 	}
 
 	return nil

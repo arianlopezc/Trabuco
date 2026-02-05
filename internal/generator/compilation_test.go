@@ -466,3 +466,69 @@ func TestCompilation_WorkerWithSQLDatastore_Install(t *testing.T) {
 	runMavenInstall(t, projectDir)
 	t.Log("Worker + SQLDatastore project installed successfully (with tests)")
 }
+
+func TestCompilation_WorkerWithPostgresFallback(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Worker without any datastore - should use PostgreSQL fallback for JobRunr
+	cfg := &config.ProjectConfig{
+		ProjectName: "worker-fallback",
+		GroupID:     "com.test.workerfallback",
+		ArtifactID:  "worker-fallback",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Jobs", "Worker"},
+		// No Database or NoSQLDatabase - Worker will use PostgreSQL fallback
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("Worker with PostgreSQL fallback (no datastore) compiled successfully")
+}
+
+func TestCompilation_WorkerAutoResolvesJobs(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Worker without Jobs explicitly listed - Jobs should be auto-resolved
+	modules := config.ResolveDependencies([]string{"Worker", "SQLDatastore"})
+
+	// Verify Jobs was auto-included
+	hasJobs := false
+	for _, m := range modules {
+		if m == "Jobs" {
+			hasJobs = true
+			break
+		}
+	}
+	if !hasJobs {
+		t.Fatal("Jobs module should be auto-resolved when Worker is selected")
+	}
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "worker-auto-jobs",
+		GroupID:     "com.test.workerautojobs",
+		ArtifactID:  "worker-auto-jobs",
+		JavaVersion: "21",
+		Modules:     modules, // Uses resolved modules (Jobs auto-included)
+		Database:    "postgresql",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("Worker with auto-resolved Jobs module compiled successfully")
+}

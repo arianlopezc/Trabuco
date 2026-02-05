@@ -1,7 +1,5 @@
 package {{.GroupID}}.jobs.placeholder;
 
-import org.jobrunr.jobs.lambdas.JobRequestHandler;
-
 /**
  * Job request for processing a placeholder entity.
  *
@@ -24,26 +22,21 @@ import org.jobrunr.jobs.lambdas.JobRequestHandler;
  * BackgroundJobRequest.enqueue(requests.stream());
  * </pre>
  *
- * The handler (ProcessPlaceholderJobRequestHandler) lives in the Worker module.
+ * The base handler ({@link ProcessPlaceholderJobRequestHandler}) is defined in this
+ * module. The {@code @Component} subclass with actual business logic lives in the
+ * Worker module.
  *
  * @param message The message to process
  */
 public record ProcessPlaceholderJobRequest(String message) implements PlaceholderJobRequest {
 
-    private static final String HANDLER_CLASS = "{{.GroupID}}.worker.handler.ProcessPlaceholderJobRequestHandler";
-
     /**
-     * Returns the handler class for this job request.
-     * Uses Class.forName() for runtime lookup to avoid compile-time dependency on Worker module.
+     * Returns the base handler class defined in this module.
+     * At processing time, JobRunr resolves the Spring bean (in the Worker module)
+     * which extends this base class.
      */
     @Override
-    @SuppressWarnings("unchecked")
-    public Class<? extends JobRequestHandler<ProcessPlaceholderJobRequest>> getJobRequestHandler() {
-        try {
-            return (Class<? extends JobRequestHandler<ProcessPlaceholderJobRequest>>) Class.forName(HANDLER_CLASS);
-        } catch (ClassNotFoundException e) {
-            throw new IllegalStateException(
-                "Handler class not found: " + HANDLER_CLASS + ". Ensure Worker module is on the classpath.", e);
-        }
+    public Class<ProcessPlaceholderJobRequestHandler> getJobRequestHandler() {
+        return ProcessPlaceholderJobRequestHandler.class;
     }
 }

@@ -83,7 +83,7 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		GroupID:     "com.company.platform",
 		ArtifactID:  "my-platform",
 		JavaVersion: "21",
-		Modules:     []string{"Model", "SQLDatastore", "Shared", "API"},
+		Modules:     []string{"Model", "Jobs", "SQLDatastore", "Shared", "API", "Worker"},
 		Database:    "postgresql",
 	}
 
@@ -108,6 +108,11 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		"Model/src/main/java/com/company/platform/model/entities/Placeholder.java",
 		"Model/src/main/java/com/company/platform/model/dto/PlaceholderRequest.java",
 		"Model/src/main/java/com/company/platform/model/dto/PlaceholderResponse.java",
+		// Jobs
+		"Jobs/pom.xml",
+		"Jobs/src/main/java/com/company/platform/jobs/placeholder/PlaceholderJobRequest.java",
+		"Jobs/src/main/java/com/company/platform/jobs/placeholder/ProcessPlaceholderJobRequest.java",
+		"Jobs/src/main/java/com/company/platform/jobs/placeholder/ProcessPlaceholderJobRequestHandler.java",
 		// SQLDatastore
 		"SQLDatastore/pom.xml",
 		"SQLDatastore/src/main/java/com/company/platform/sqldatastore/config/DatabaseConfig.java",
@@ -126,12 +131,22 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		"API/src/main/java/com/company/platform/api/MyPlatformApiApplication.java",
 		"API/src/main/java/com/company/platform/api/controller/HealthController.java",
 		"API/src/main/java/com/company/platform/api/controller/PlaceholderController.java",
+		"API/src/main/java/com/company/platform/api/controller/PlaceholderJobController.java",
 		"API/src/main/java/com/company/platform/api/config/WebConfig.java",
 		"API/src/main/java/com/company/platform/api/config/GlobalExceptionHandler.java",
 		"API/src/main/java/com/company/platform/api/config/SecurityHeadersFilter.java",
 		"API/src/main/resources/application.yml",
-		// Run configuration
+		// Worker
+		"Worker/pom.xml",
+		"Worker/src/main/java/com/company/platform/worker/MyPlatformWorkerApplication.java",
+		"Worker/src/main/java/com/company/platform/worker/config/JobRunrConfig.java",
+		"Worker/src/main/java/com/company/platform/worker/config/RecurringJobsConfig.java",
+		"Worker/src/main/java/com/company/platform/worker/handler/ProcessPlaceholderJobRequestHandler.java",
+		"Worker/src/main/resources/application.yml",
+		"Worker/src/test/java/com/company/platform/worker/handler/ProcessPlaceholderJobRequestHandlerTest.java",
+		// Run configurations
 		".run/API.run.xml",
+		".run/Worker.run.xml",
 		// Docker
 		"docker-compose.yml",
 		".env.example",
@@ -142,6 +157,97 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("Expected file %s to exist", path)
 		}
+	}
+}
+
+// TestGenerator_Generate_SelectedModulesMatchGenerated verifies that every module
+// in the config produces its corresponding directory, and no extra module directories
+// appear. This catches bugs where module selection maps to wrong modules.
+func TestGenerator_Generate_SelectedModulesMatchGenerated(t *testing.T) {
+	tests := []struct {
+		name            string
+		modules         []string
+		database        string
+		noSQLDatabase   string
+		expectedDirs    []string
+		notExpectedDirs []string
+	}{
+		{
+			name:            "Worker selected produces Worker dir, not just Jobs",
+			modules:         []string{"Model", "Jobs", "Worker"},
+			expectedDirs:    []string{"Model", "Jobs", "Worker"},
+			notExpectedDirs: []string{"API", "SQLDatastore", "NoSQLDatastore", "Shared"},
+		},
+		{
+			name:            "API selected does not produce Worker",
+			modules:         []string{"Model", "API"},
+			expectedDirs:    []string{"Model", "API"},
+			notExpectedDirs: []string{"Worker", "Jobs", "SQLDatastore", "NoSQLDatastore", "Shared"},
+		},
+		{
+			name:            "NoSQLDatastore with MongoDB",
+			modules:         []string{"Model", "NoSQLDatastore"},
+			noSQLDatabase:   "mongodb",
+			expectedDirs:    []string{"Model", "NoSQLDatastore"},
+			notExpectedDirs: []string{"SQLDatastore", "Worker", "Jobs", "API", "Shared"},
+		},
+		{
+			name:            "Full stack with Worker",
+			modules:         []string{"Model", "Jobs", "SQLDatastore", "Shared", "API", "Worker"},
+			database:        "postgresql",
+			expectedDirs:    []string{"Model", "Jobs", "SQLDatastore", "Shared", "API", "Worker"},
+			notExpectedDirs: []string{"NoSQLDatastore"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tempDir)
+
+			oldWd, _ := os.Getwd()
+			os.Chdir(tempDir)
+			defer os.Chdir(oldWd)
+
+			cfg := &config.ProjectConfig{
+				ProjectName:   "test-project",
+				GroupID:       "com.test.project",
+				ArtifactID:    "test-project",
+				JavaVersion:   "21",
+				Modules:       tt.modules,
+				Database:      tt.database,
+				NoSQLDatabase: tt.noSQLDatabase,
+			}
+
+			gen, err := New(cfg)
+			if err != nil {
+				t.Fatalf("Failed to create generator: %v", err)
+			}
+
+			if err := gen.Generate(); err != nil {
+				t.Fatalf("Failed to generate project: %v", err)
+			}
+
+			for _, dir := range tt.expectedDirs {
+				path := filepath.Join("test-project", dir)
+				info, err := os.Stat(path)
+				if os.IsNotExist(err) {
+					t.Errorf("Expected directory %s to exist", dir)
+				} else if !info.IsDir() {
+					t.Errorf("Expected %s to be a directory", dir)
+				}
+			}
+
+			for _, dir := range tt.notExpectedDirs {
+				path := filepath.Join("test-project", dir)
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Errorf("Directory %s should NOT exist for this module selection", dir)
+				}
+			}
+		})
 	}
 }
 
@@ -177,6 +283,49 @@ func TestGenerator_Generate_DirectoryExists(t *testing.T) {
 	err = gen.Generate()
 	if err == nil {
 		t.Error("Expected error when directory already exists")
+	}
+}
+
+func TestGenerator_Generate_APIWithoutWorker_NoJobController(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(oldWd)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "api-no-worker",
+		GroupID:     "com.test.apinoworker",
+		ArtifactID:  "api-no-worker",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "API"},
+	}
+
+	gen, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("Failed to generate project: %v", err)
+	}
+
+	// PlaceholderJobController should NOT exist when Worker is not selected
+	jobControllerPath := filepath.Join("api-no-worker", "API", "src", "main", "java",
+		"com", "test", "apinoworker", "api", "controller", "PlaceholderJobController.java")
+	if _, err := os.Stat(jobControllerPath); !os.IsNotExist(err) {
+		t.Error("PlaceholderJobController.java should NOT exist when Worker module is not selected")
+	}
+
+	// PlaceholderController should still exist
+	controllerPath := filepath.Join("api-no-worker", "API", "src", "main", "java",
+		"com", "test", "apinoworker", "api", "controller", "PlaceholderController.java")
+	if _, err := os.Stat(controllerPath); os.IsNotExist(err) {
+		t.Error("PlaceholderController.java should exist")
 	}
 }
 

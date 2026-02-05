@@ -250,7 +250,11 @@ Background job processing module — a runnable Spring Boot application using Jo
 | Recurring | Execute on a CRON schedule | Register in `RecurringJobsConfig` |
 | Batch | Process multiple items efficiently | `BackgroundJobRequest.enqueue(requests.stream())` |
 
-**Note:** Worker requires SQLDatastore or NoSQLDatastore for job persistence. Jobs module is auto-included.
+**Storage notes:**
+- Worker uses your selected datastore (SQL or MongoDB) for job persistence
+- If you select Redis, Worker uses PostgreSQL for job storage (Redis is deprecated in JobRunr 8+)
+- If no datastore is selected, Worker defaults to PostgreSQL
+- Jobs module is auto-included when Worker is selected
 
 ## Configuration Options
 

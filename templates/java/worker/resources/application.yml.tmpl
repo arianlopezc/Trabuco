@@ -6,6 +6,56 @@ spring:
     name: {{.ProjectName}}-worker
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
+{{- if .JobRunrUsesSql}}
+
+  # JobRunr storage datasource (separate from application data for production flexibility)
+  #
+  # SECURITY WARNING: The credentials below are for LOCAL DEVELOPMENT ONLY.
+  # For production, override via environment variables:
+  # - SPRING_DATASOURCE_URL
+  # - SPRING_DATASOURCE_USERNAME
+  # - SPRING_DATASOURCE_PASSWORD
+  datasource:
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+    url: jdbc:postgresql://localhost:5433/{{.ProjectName}}
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+    url: jdbc:mysql://localhost:3307/{{.ProjectName}}?useSSL=true&requireSSL=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+{{- else}}
+    # PostgreSQL fallback for JobRunr storage (Redis not supported in JobRunr 8+)
+    url: jdbc:postgresql://localhost:5434/{{.ProjectName}}_jobs
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+{{- end}}
+    # HikariCP settings for JobRunr storage (separate from application pool)
+    # These are intentionally smaller since JobRunr has modest connection needs
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+{{- end}}
+{{- if .JobRunrUsesMongoDB}}
+
+  # JobRunr MongoDB storage configuration
+  # By default, this uses the same MongoDB as your application data.
+  # In production, you may want a separate database for job metadata.
+  #
+  # SECURITY WARNING: This URI has no authentication for LOCAL DEVELOPMENT.
+  # For production, override via environment variable:
+  # - SPRING_DATA_MONGODB_URI=mongodb://user:pass@host:27017/dbname?authSource=admin
+  #
+  # Note: This config is duplicated from NoSQLDatastore intentionally so that
+  # the Worker module can run independently and be configured separately.
+  data:
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
+{{- end}}
 
 # Server configuration (for actuator health endpoints)
 server:
@@ -26,40 +76,39 @@ management:
       show-details: when_authorized
 
 # JobRunr Configuration
-org:
-  jobrunr:
-    # Enable the background job server (processes jobs)
-    background-job-server:
-      enabled: true
-      # Number of worker threads (default: 2x CPU cores)
-      # worker-count: 4
-    # Enable the dashboard (http://localhost:8000)
-    dashboard:
-      enabled: true
-      port: 8000
-    # Job configuration
-    jobs:
-      # Default number of retries (with exponential backoff)
-      default-number-of-retries: 10
-      # How often to check for new jobs (in seconds)
-      # poll-interval-in-seconds: 15
-    # Database configuration (uses Spring datasource automatically)
-    database:
-      # Skip database creation (set to false to auto-create tables)
-      skip-create: false
-{{if .HasModule "SQLDatastore"}}
-      # Use SQL storage (auto-detected from spring.datasource)
-      type: sql
-{{end}}
-{{if .HasModule "NoSQLDatastore"}}
-{{if eq .NoSQLDatabase "mongodb"}}
-      # Use MongoDB storage
-      type: mongodb
-{{else if eq .NoSQLDatabase "redis"}}
-      # Use Redis storage
-      type: redis-lettuce
-{{end}}
-{{end}}
+jobrunr:
+  # Enable the background job server (processes jobs)
+  background-job-server:
+    enabled: true
+    # Poll interval in seconds (minimum 5, lower = faster job pickup, higher database load)
+    poll-interval-in-seconds: 5
+    # Number of worker threads (default: 2x CPU cores)
+    # worker-count: 4
+  # JobRunr Dashboard (http://localhost:8000)
+  # WARNING: The dashboard has no authentication by default!
+  # For production, either:
+  # 1. Disable the dashboard (enabled: false)
+  # 2. Use a reverse proxy with authentication
+  # 3. Use JobRunr Pro with built-in authentication
+  # See: https://www.jobrunr.io/en/guides/authentication/basic-authentication/
+  dashboard:
+    enabled: ${JOBRUNR_DASHBOARD_ENABLED:true}
+    port: ${JOBRUNR_DASHBOARD_PORT:8000}
+  # Job configuration
+  jobs:
+    # Default number of retries (with exponential backoff)
+    default-number-of-retries: 10
+  # Database configuration
+  database:
+    # Skip database creation (set to false to auto-create tables)
+    skip-create: false
+{{- if .JobRunrUsesSql}}
+    # Use SQL storage
+    type: sql
+{{- else if .JobRunrUsesMongoDB}}
+    # Use MongoDB storage
+    type: mongodb
+{{- end}}
 
 # Logging
 logging:

@@ -161,6 +161,14 @@ func runInit(cmd *cobra.Command, args []string) {
 			IncludeCLAUDEMD:     flagIncludeClaude,
 		}
 
+		// Warn about Redis + Worker combination
+		if cfg.ShowRedisWorkerWarning() {
+			yellow.Fprintf(os.Stderr, "\nWarning: Redis support is deprecated in JobRunr 8+.\n")
+			fmt.Fprintln(os.Stderr, "  JobRunr will use PostgreSQL for job storage instead.")
+			fmt.Fprintln(os.Stderr, "  A separate PostgreSQL instance will be added to docker-compose.yml.")
+			fmt.Fprintln(os.Stderr)
+		}
+
 		fmt.Println("Running in non-interactive mode...")
 	} else {
 		// Interactive mode - run prompts
@@ -185,6 +193,14 @@ func runInit(cmd *cobra.Command, args []string) {
 	}
 	if cfg.HasModule("NoSQLDatastore") {
 		fmt.Printf("  NoSQL DB:   %s\n", cfg.NoSQLDatabase)
+	}
+	if cfg.HasModule("Worker") {
+		storageType := cfg.JobRunrStorageType()
+		storageInfo := storageType
+		if cfg.WorkerUsesPostgresFallback() {
+			storageInfo = "postgresql (fallback)"
+		}
+		fmt.Printf("  JobRunr:    %s\n", storageInfo)
 	}
 	if cfg.IncludeCLAUDEMD {
 		fmt.Printf("  CLAUDE.md:  Yes\n")
@@ -212,6 +228,13 @@ func runInit(cmd *cobra.Command, args []string) {
 	// Reminder if Java version was not detected
 	if !cfg.JavaVersionDetected {
 		yellow.Printf("Reminder: Java %s was not detected. Install before building.\n\n", cfg.JavaVersion)
+	}
+
+	// Reminder about PostgreSQL fallback for Worker + Redis
+	if cfg.ShowRedisWorkerWarning() {
+		yellow.Println("Note: Worker module uses PostgreSQL for job storage (Redis is deprecated in JobRunr 8+).")
+		fmt.Println("      Start docker-compose to run the PostgreSQL instance for JobRunr.")
+		fmt.Println()
 	}
 
 	fmt.Println("Next steps:")

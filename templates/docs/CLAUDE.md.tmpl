@@ -152,4 +152,23 @@ BackgroundJobRequest.enqueue(requests.stream());
 - Inject dependencies via constructor
 
 **Dashboard:** http://localhost:8000 (when Worker is running)
+
+**Storage configuration:**
+{{- if .JobRunrUsesSql}}
+{{- if .HasModule "SQLDatastore"}}
+- JobRunr uses the same {{.Database}} database as your application data
+{{- else}}
+- JobRunr uses PostgreSQL for job storage (configured separately from application data)
+{{- end}}
+{{- else if .JobRunrUsesMongoDB}}
+- JobRunr uses the same MongoDB database as your application data
+{{- end}}
+- Storage configuration is in `Worker/src/main/resources/application.yml`
+- For production, consider using a separate database for job metadata (override via environment variables)
+
+**Security (IMPORTANT for production):**
+- Dashboard has NO authentication by default - disable or put behind a reverse proxy
+- Database credentials in application.yml are for development only
+- Override via environment variables: `SPRING_DATASOURCE_*` or `SPRING_DATA_MONGODB_URI`
+- Disable dashboard in production: `JOBRUNR_DASHBOARD_ENABLED=false`
 {{- end}}

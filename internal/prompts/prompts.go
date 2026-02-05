@@ -53,11 +53,11 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		return nil, err
 	}
 
-	// Convert indices to module names
-	moduleNames := config.GetModuleNames()
+	// Convert indices to module names (use selectable modules to match display options)
+	selectableModules := config.GetSelectableModules()
 	selectedModules := make([]string, len(selectedIndices))
 	for i, idx := range selectedIndices {
-		selectedModules[i] = moduleNames[idx]
+		selectedModules[i] = selectableModules[idx]
 	}
 
 	// Resolve dependencies (only adds Model if not selected)
@@ -91,6 +91,15 @@ func RunPrompts() (*config.ProjectConfig, error) {
 
 	// 6. NoSQL Database (only if NoSQLDatastore is selected)
 	if cfg.HasModule("NoSQLDatastore") {
+		// Show warning if Worker is selected - Redis has limited support
+		if cfg.HasModule("Worker") {
+			yellow := color.New(color.FgYellow)
+			yellow.Println("\n⚠ Worker module note: Redis support is deprecated in JobRunr 8+.")
+			fmt.Println("  If you select Redis, JobRunr will use PostgreSQL for job storage.")
+			fmt.Println("  MongoDB is recommended for Worker + NoSQLDatastore.")
+			fmt.Println()
+		}
+
 		if err := survey.AskOne(&survey.Select{
 			Message: "NoSQL Database:",
 			Options: []string{
@@ -103,6 +112,14 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		}
 		// Normalize NoSQL database value
 		cfg.NoSQLDatabase = normalizeNoSQLDatabaseChoice(cfg.NoSQLDatabase)
+
+		// Additional warning if Redis was selected with Worker
+		if cfg.HasModule("Worker") && cfg.NoSQLDatabase == "redis" {
+			yellow := color.New(color.FgYellow)
+			yellow.Println("\n⚠ Redis selected with Worker: JobRunr will use PostgreSQL for job storage.")
+			fmt.Println("  A separate PostgreSQL instance will be added to docker-compose.yml.")
+			fmt.Println()
+		}
 	}
 
 	// 7. CLAUDE.md (AI assistant context file)
@@ -169,11 +186,12 @@ func validateModuleSelection(val interface{}) error {
 	}
 
 	// Convert indices to module names and check for conflicts
-	moduleNames := config.GetModuleNames()
+	// Use selectable modules (excludes internal) to match display option indices
+	selectableModules := config.GetSelectableModules()
 	var selectedModules []string
 	for _, idx := range selectedIndices {
-		if idx < len(moduleNames) {
-			selectedModules = append(selectedModules, moduleNames[idx])
+		if idx < len(selectableModules) {
+			selectedModules = append(selectedModules, selectableModules[idx])
 		}
 	}
 

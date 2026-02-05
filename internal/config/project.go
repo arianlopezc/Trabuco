@@ -93,3 +93,108 @@ func (c *ProjectConfig) HasAnyDatastore() bool {
 func (c *ProjectConfig) HasBothDatastores() bool {
 	return c.HasModule("SQLDatastore") && c.HasModule("NoSQLDatastore")
 }
+
+// JobRunr Storage Configuration Helpers
+// These determine what storage backend JobRunr should use for job persistence.
+// The storage is separate from the main application datastore to allow for
+// independent scaling and configuration in production.
+
+// JobRunrStorageType returns the storage type for JobRunr:
+// - "sql" if SQLDatastore is selected (PostgreSQL or MySQL)
+// - "mongodb" if NoSQLDatastore with MongoDB is selected
+// - "sql" (PostgreSQL fallback) if NoSQLDatastore with Redis is selected (Redis deprecated in JobRunr 8)
+// - "sql" (PostgreSQL fallback) if no datastore is selected but Worker is
+// - "" if Worker is not selected (no storage needed)
+func (c *ProjectConfig) JobRunrStorageType() string {
+	// Only relevant when Worker module is selected
+	if !c.HasModule("Worker") {
+		return ""
+	}
+
+	if c.HasModule("SQLDatastore") {
+		return "sql"
+	}
+	if c.HasModule("NoSQLDatastore") {
+		if c.NoSQLDatabase == "mongodb" {
+			return "mongodb"
+		}
+		// Redis is deprecated in JobRunr 8, fallback to PostgreSQL
+		return "sql"
+	}
+	// No datastore selected but Worker module is, fallback to PostgreSQL
+	return "sql"
+}
+
+// JobRunrUsesSql returns true if JobRunr should use SQL storage
+func (c *ProjectConfig) JobRunrUsesSql() bool {
+	return c.JobRunrStorageType() == "sql"
+}
+
+// JobRunrUsesMongoDB returns true if JobRunr should use MongoDB storage
+func (c *ProjectConfig) JobRunrUsesMongoDB() bool {
+	return c.JobRunrStorageType() == "mongodb"
+}
+
+// JobRunrSqlDatabase returns the SQL database type for JobRunr storage:
+// - If SQLDatastore is selected, uses the same database type
+// - Otherwise, defaults to "postgresql" (for Redis fallback or no datastore)
+func (c *ProjectConfig) JobRunrSqlDatabase() string {
+	if c.HasModule("SQLDatastore") {
+		return c.Database
+	}
+	return "postgresql"
+}
+
+// WorkerUsesPostgresFallback returns true if Worker is using PostgreSQL
+// as a fallback because the user selected Redis (which is deprecated in JobRunr 8)
+// or no datastore at all
+func (c *ProjectConfig) WorkerUsesPostgresFallback() bool {
+	if !c.HasModule("Worker") {
+		return false
+	}
+	// Redis fallback - Redis is deprecated in JobRunr 8+
+	if c.HasModule("NoSQLDatastore") && c.NoSQLDatabase == "redis" {
+		return true
+	}
+	// No datastore selected - Worker uses PostgreSQL fallback for JobRunr storage
+	if !c.HasModule("SQLDatastore") && !c.HasModule("NoSQLDatastore") {
+		return true
+	}
+	return false
+}
+
+// WorkerNeedsOwnPostgres returns true if Worker needs its own PostgreSQL
+// instance because no SQL datastore is available for JobRunr storage.
+// This happens when:
+// - NoSQLDatastore with Redis is selected (Redis deprecated in JobRunr 8+)
+// - No datastore is selected at all
+func (c *ProjectConfig) WorkerNeedsOwnPostgres() bool {
+	if !c.HasModule("Worker") {
+		return false
+	}
+	// If NoSQLDatastore with Redis is selected, Worker needs PostgreSQL for JobRunr
+	if c.HasModule("NoSQLDatastore") && c.NoSQLDatabase == "redis" {
+		return true
+	}
+	// If no datastore is selected, Worker needs PostgreSQL for JobRunr
+	if !c.HasModule("SQLDatastore") && !c.HasModule("NoSQLDatastore") {
+		return true
+	}
+	return false
+}
+
+// NeedsDockerCompose returns true if docker-compose.yml should be generated.
+// This is the case when a runtime module (API or Worker) needs a datastore,
+// or when Worker needs its own PostgreSQL for JobRunr storage.
+func (c *ProjectConfig) NeedsDockerCompose() bool {
+	hasDatastore := (c.HasModule("SQLDatastore") && c.Database != "") ||
+		(c.HasModule("NoSQLDatastore") && c.NoSQLDatabase != "")
+	hasRuntime := c.HasModule("API") || c.HasModule("Worker")
+	return (hasRuntime && hasDatastore) || c.WorkerNeedsOwnPostgres()
+}
+
+// ShowRedisWorkerWarning returns true if a warning should be shown about
+// Redis + Worker combination (Redis is deprecated in JobRunr 8+)
+func (c *ProjectConfig) ShowRedisWorkerWarning() bool {
+	return c.HasModule("Worker") && c.HasModule("NoSQLDatastore") && c.NoSQLDatabase == "redis"
+}

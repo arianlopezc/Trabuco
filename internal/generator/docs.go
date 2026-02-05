@@ -19,10 +19,8 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
-	// Generate docker-compose.yml and .env.example when API and a datastore module are selected
-	hasDatastore := (g.config.HasModule("SQLDatastore") && g.config.Database != "") ||
-		(g.config.HasModule("NoSQLDatastore") && g.config.NoSQLDatabase != "")
-	if g.config.HasModule("API") && hasDatastore {
+	// Generate docker-compose.yml and .env.example when a runtime module needs a datastore
+	if g.config.NeedsDockerCompose() {
 		if err := g.writeTemplate("docker/docker-compose.yml.tmpl", "docker-compose.yml"); err != nil {
 			return err
 		}

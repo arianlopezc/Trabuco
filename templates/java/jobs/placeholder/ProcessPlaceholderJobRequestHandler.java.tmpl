@@ -1,0 +1,28 @@
+package {{.GroupID}}.jobs.placeholder;
+
+import org.jobrunr.jobs.lambdas.JobRequestHandler;
+
+/**
+ * Concrete base handler for {@link ProcessPlaceholderJobRequest}.
+ *
+ * This class lives in the Jobs module so that {@code getJobRequestHandler()} can
+ * reference it without a runtime dependency on the Worker module. JobRunr validates
+ * that the handler class and its {@code run} method exist at enqueue time, so both
+ * must be concrete (not abstract) and on the classpath.
+ *
+ * The {@code @Component} subclass in the Worker module overrides {@code run()} with
+ * the actual business logic. At processing time, JobRunr resolves the Spring bean
+ * by this type, which returns the Worker-side subclass.
+ */
+public class ProcessPlaceholderJobRequestHandler implements JobRequestHandler<ProcessPlaceholderJobRequest> {
+
+    /**
+     * Default no-op implementation — exists solely to satisfy JobRunr's method
+     * validation at enqueue time. The concrete {@code @Component} in the Worker
+     * module overrides this with actual business logic.
+     */
+    @Override
+    public void run(ProcessPlaceholderJobRequest request) {
+        // No-op: overridden by the Worker module's @Component subclass
+    }
+}

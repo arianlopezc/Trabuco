@@ -16,14 +16,20 @@ A Java multi-module Maven project.
 {{- if .HasModule "NoSQLDatastore"}}
 ├── NoSQLDatastore/              # NoSQL repositories, Configuration
 {{- end}}
+{{- if .HasModule "Jobs"}}
+├── Jobs/                        # Background job request contracts
+{{- end}}
 {{- if .HasModule "Shared"}}
 ├── Shared/                      # Services, Circuit breaker
 {{- end}}
 {{- if .HasModule "API"}}
 ├── API/                         # REST endpoints (port 8080)
 {{- end}}
-{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
-├── docker-compose.yml           # Local development database
+{{- if .HasModule "Worker"}}
+├── Worker/                      # Background job processor (port 8081)
+{{- end}}
+{{- if .NeedsDockerCompose}}
+├── docker-compose.yml           # Local development services
 ├── .env.example                 # Environment variables template
 {{- end}}
 └── README.md
@@ -33,41 +39,33 @@ A Java multi-module Maven project.
 
 - Java {{.JavaVersion}}
 - Maven 3.9+
-{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
+{{- if .NeedsDockerCompose}}
 - Docker & Docker Compose (for local development)
 {{- end}}
 
 ## Quick Start
 
-{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
+{{- if .NeedsDockerCompose}}
 
-### 1. Start the database
+### 1. Start local services
 
 ```bash
 docker-compose up -d
 ```
 
-{{- if and (.HasModule "SQLDatastore") (ne .Database "")}}
-This starts a {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}} container with:
-{{- if eq .Database "postgresql"}}
-- **Host:** localhost:5433 (uses non-standard port to avoid conflicts)
-- **Database:** {{.ProjectName}}
-- **User:** postgres
-- **Password:** postgres
-{{- else if eq .Database "mysql"}}
-- **Host:** localhost:3307 (uses non-standard port to avoid conflicts)
-- **Database:** {{.ProjectName}}
-- **User:** root
-- **Password:** root
+This starts the required services for local development:
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+- **PostgreSQL** — localhost:5433 (database: {{.ProjectName}}, user: postgres/postgres)
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+- **MySQL** — localhost:3307 (database: {{.ProjectName}}, user: root/root)
 {{- end}}
-{{- else if .HasModule "NoSQLDatastore"}}
-This starts a {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}} container with:
-{{- if eq .NoSQLDatabase "mongodb"}}
-- **Host:** localhost:27017
-- **Database:** {{.ProjectName}}
-{{- else if eq .NoSQLDatabase "redis"}}
-- **Host:** localhost:6379
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+- **MongoDB** — localhost:27017 (database: {{.ProjectName}})
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+- **Redis** — localhost:6379
 {{- end}}
+{{- if .WorkerNeedsOwnPostgres}}
+- **PostgreSQL (JobRunr)** — localhost:5434 (database: {{.ProjectName}}_jobs, user: postgres/postgres)
 {{- end}}
 
 ### 2. Build the project
@@ -85,7 +83,7 @@ mvn clean compile
 {{- end}}
 {{- if .HasModule "API"}}
 
-### {{if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}3{{else}}2{{end}}. Run the API
+### {{if .NeedsDockerCompose}}3{{else}}2{{end}}. Run the API
 
 ```bash
 cd API
@@ -98,6 +96,20 @@ The API will be available at http://localhost:8080
 ```bash
 curl http://localhost:8080/actuator/health
 ```
+{{- end}}
+{{- if .HasModule "Worker"}}
+
+### {{if and .NeedsDockerCompose (.HasModule "API")}}4{{else if or .NeedsDockerCompose (.HasModule "API")}}3{{else}}2{{end}}. Run the Worker
+
+```bash
+cd Worker
+mvn spring-boot:run
+```
+
+The Worker processes background jobs using [JobRunr](https://www.jobrunr.io/).
+
+- **Health check:** http://localhost:8081/actuator/health
+- **Dashboard:** http://localhost:8000 (no authentication by default)
 {{- end}}
 
 ## Build Commands
@@ -115,15 +127,15 @@ mvn clean package
 # Install to local repository
 mvn clean install
 ```
-{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
+{{- if .NeedsDockerCompose}}
 
-## Database Management
+## Docker Services
 
 ```bash
-# Start database
+# Start services
 docker-compose up -d
 
-# Stop database (keeps data)
+# Stop services (keeps data)
 docker-compose stop
 
 # Stop and remove containers (keeps data)
@@ -135,6 +147,7 @@ docker-compose down -v
 # View logs
 docker-compose logs -f
 ```
+{{- if or (and (.HasModule "SQLDatastore") (ne .Database "")) (.HasModule "NoSQLDatastore")}}
 
 ### Custom Database Configuration
 
@@ -143,6 +156,7 @@ If you prefer to use your own database instead of Docker:
 1. Copy `.env.example` to `.env`
 2. Update the values to match your database
 3. The application will use these environment variables
+{{- end}}
 {{- end}}
 
 ## Modules
@@ -158,15 +172,20 @@ If you prefer to use your own database instead of Docker:
 {{- if .HasModule "NoSQLDatastore"}}
 | NoSQLDatastore | NoSQL repositories, {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}} configuration |
 {{- end}}
+{{- if .HasModule "Jobs"}}
+| Jobs | Background job request contracts (shared between modules) |
+{{- end}}
 {{- if .HasModule "Shared"}}
 | Shared | Business services, Circuit breaker utilities |
 {{- end}}
 {{- if .HasModule "API"}}
 | API | REST controllers, Web configuration |
 {{- end}}
+{{- if .HasModule "Worker"}}
+| Worker | Background job processor ([JobRunr](https://www.jobrunr.io/)) |
+{{- end}}
 
 ## Configuration
-
 {{- if .HasModule "SQLDatastore"}}
 
 ### Database Environment Variables
@@ -195,6 +214,22 @@ If you prefer to use your own database instead of Docker:
 {{- else if eq .NoSQLDatabase "redis"}}
 | `REDIS_HOST` | Redis host | localhost |
 | `REDIS_PORT` | Redis port | 6379 |
+{{- end}}
+{{- end}}
+{{- if .HasModule "Worker"}}
+
+### Worker Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `JOBRUNR_DASHBOARD_ENABLED` | Enable JobRunr dashboard | true |
+| `JOBRUNR_DASHBOARD_PORT` | JobRunr dashboard port | 8000 |
+{{- if .JobRunrUsesSql}}
+| `SPRING_DATASOURCE_URL` | JobRunr database URL | {{if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}jdbc:postgresql://localhost:5433/{{.ProjectName}}{{else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}jdbc:mysql://localhost:3307/{{.ProjectName}}{{else}}jdbc:postgresql://localhost:5434/{{.ProjectName}}_jobs{{end}} |
+| `SPRING_DATASOURCE_USERNAME` | JobRunr database user | {{if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}root{{else}}postgres{{end}} |
+| `SPRING_DATASOURCE_PASSWORD` | JobRunr database password | {{if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}root{{else}}postgres{{end}} |
+{{- else if .JobRunrUsesMongoDB}}
+| `SPRING_DATA_MONGODB_URI` | JobRunr MongoDB URI | mongodb://localhost:27017/{{.ProjectName}} |
 {{- end}}
 {{- end}}
 {{- if .HasModule "Shared"}}

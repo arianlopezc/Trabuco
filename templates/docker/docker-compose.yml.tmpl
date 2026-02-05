@@ -68,6 +68,28 @@ services:
       timeout: 5s
       retries: 5
 {{- end}}
+{{- /* PostgreSQL for JobRunr when using Redis (since Redis is deprecated in JobRunr 8+) */}}
+{{- if .WorkerNeedsOwnPostgres}}
+
+  # PostgreSQL for JobRunr storage (Redis is deprecated in JobRunr 8+)
+  # This is separate from your Redis application data store
+  postgres-jobrunr:
+    image: postgres:15-alpine
+    container_name: {{.ProjectName}}-postgres-jobrunr
+    environment:
+      POSTGRES_DB: {{.ProjectName}}_jobs
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"  # Different port for JobRunr database
+    volumes:
+      - postgres_jobrunr_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+{{- end}}
 
 volumes:
 {{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
@@ -79,4 +101,7 @@ volumes:
   mongodb_data:
 {{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
   redis_data:
+{{- end}}
+{{- if .WorkerNeedsOwnPostgres}}
+  postgres_jobrunr_data:
 {{- end}}

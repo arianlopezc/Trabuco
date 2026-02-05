@@ -65,6 +65,21 @@ spring:
           min-idle: 0
 {{- end}}
 {{- end}}
+{{- if and (.HasModule "Worker") (and (not (.HasModule "SQLDatastore")) (.JobRunrUsesSql))}}
+
+  # PostgreSQL datasource for JobRunr job storage (enqueue-only)
+  # This is needed because no SQLDatastore module is selected.
+  # Use docker-compose up -d to start the database container.
+  datasource:
+    url: jdbc:postgresql://localhost:5434/{{.ProjectName}}_jobs
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+{{- end}}
 {{- if .HasModule "Shared"}}
 
 # Resilience4j configuration
@@ -116,6 +131,22 @@ management:
   info:
     env:
       enabled: false
+
+{{- if .HasModule "Worker"}}
+# JobRunr Configuration (enqueue-only — background server runs in the Worker module)
+jobrunr:
+  background-job-server:
+    enabled: false
+  dashboard:
+    enabled: false
+  database:
+    skip-create: false
+{{- if .JobRunrUsesSql}}
+    type: sql
+{{- else if .JobRunrUsesMongoDB}}
+    type: mongodb
+{{- end}}
+{{- end}}
 
 # Logging
 logging:

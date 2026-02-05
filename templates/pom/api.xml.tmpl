@@ -46,6 +46,39 @@
             <version>${project.version}</version>
         </dependency>
 {{end}}
+{{- if and (.HasModule "Worker") (not (.HasModule "Shared"))}}
+        <!-- Jobs module dependency (for enqueueing background jobs directly from API) -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>Jobs</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{- end}}
+{{- if .HasModule "Worker"}}
+        <!-- JobRunr Spring Boot Starter (initializes JobRequestScheduler for enqueueing) -->
+        <dependency>
+            <groupId>org.jobrunr</groupId>
+            <artifactId>jobrunr-spring-boot-3-starter</artifactId>
+            <version>${jobrunr.version}</version>
+        </dependency>
+{{- end}}
+{{- /* JobRunr SQL storage dependencies - needed when Worker is selected but SQLDatastore is NOT, and JobRunr uses SQL (PostgreSQL fallback) */}}
+{{- if and (.HasModule "Worker") (and (not (.HasModule "SQLDatastore")) (.JobRunrUsesSql))}}
+        <!-- JobRunr SQL storage (PostgreSQL fallback for job persistence) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
+{{- end}}
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
