@@ -29,5 +29,12 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
+	// Generate .dockerignore when API or Worker is selected
+	if g.config.HasModule("API") || g.config.HasModule("Worker") {
+		if err := g.writeTemplate("docker/dockerignore.tmpl", ".dockerignore"); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

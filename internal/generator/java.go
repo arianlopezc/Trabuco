@@ -299,6 +299,22 @@ func (g *Generator) generateAPIModule() error {
 		return fmt.Errorf("failed to generate application.yml: %w", err)
 	}
 
+	// logback-spring.xml (structured logging)
+	if err := g.writeTemplate(
+		"java/api/resources/logback-spring.xml.tmpl",
+		g.resourcePath("API", "logback-spring.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate API logback-spring.xml: %w", err)
+	}
+
+	// Dockerfile
+	if err := g.writeTemplate(
+		"docker/api.Dockerfile.tmpl",
+		filepath.Join("API", "Dockerfile"),
+	); err != nil {
+		return fmt.Errorf("failed to generate API Dockerfile: %w", err)
+	}
+
 	// IntelliJ IDEA Run Configuration (Maven)
 	if err := g.writeTemplate(
 		"idea/run/API__Maven_.run.xml.tmpl",
@@ -398,6 +414,22 @@ func (g *Generator) generateWorkerModule() error {
 		g.testJavaPath("Worker", filepath.Join("handler", "ProcessPlaceholderJobRequestHandlerTest.java")),
 	); err != nil {
 		return fmt.Errorf("failed to generate ProcessPlaceholderJobRequestHandlerTest.java: %w", err)
+	}
+
+	// logback-spring.xml (structured logging)
+	if err := g.writeTemplate(
+		"java/worker/resources/logback-spring.xml.tmpl",
+		g.resourcePath("Worker", "logback-spring.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate Worker logback-spring.xml: %w", err)
+	}
+
+	// Dockerfile
+	if err := g.writeTemplate(
+		"docker/worker.Dockerfile.tmpl",
+		filepath.Join("Worker", "Dockerfile"),
+	); err != nil {
+		return fmt.Errorf("failed to generate Worker Dockerfile: %w", err)
 	}
 
 	// IntelliJ IDEA Run Configuration (Maven)

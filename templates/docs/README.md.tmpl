@@ -32,6 +32,9 @@ A Java multi-module Maven project.
 ├── docker-compose.yml           # Local development services
 ├── .env.example                 # Environment variables template
 {{- end}}
+{{- if or (.HasModule "API") (.HasModule "Worker")}}
+├── .dockerignore                # Docker build exclusions
+{{- end}}
 └── README.md
 ```
 
@@ -41,6 +44,8 @@ A Java multi-module Maven project.
 - Maven 3.9+
 {{- if .NeedsDockerCompose}}
 - Docker & Docker Compose (for local development)
+{{- else if or (.HasModule "API") (.HasModule "Worker")}}
+- Docker (optional, for container builds)
 {{- end}}
 
 ## Quick Start
@@ -108,7 +113,7 @@ mvn spring-boot:run
 
 The Worker processes background jobs using [JobRunr](https://www.jobrunr.io/).
 
-- **Health check:** http://localhost:8081/actuator/health
+- **Health check:** http://localhost:8082/actuator/health (management port)
 - **Dashboard:** http://localhost:8000 (no authentication by default)
 {{- end}}
 
@@ -127,6 +132,40 @@ mvn clean package
 # Install to local repository
 mvn clean install
 ```
+{{- if or (.HasModule "API") (.HasModule "Worker")}}
+
+## Docker Build
+
+Build and run the application containers:
+
+```bash
+{{- if .HasModule "API"}}
+# Build API image
+docker build -f API/Dockerfile -t {{.ProjectName}}-api .
+
+# Run API container
+docker run -p 8080:8080 {{.ProjectName}}-api
+{{- end}}
+{{- if .HasModule "Worker"}}
+
+# Build Worker image
+docker build -f Worker/Dockerfile -t {{.ProjectName}}-worker .
+
+# Run Worker container
+docker run -p 8081:8081 {{.ProjectName}}-worker
+{{- end}}
+```
+
+Override JVM settings with the `JAVA_OPTS` environment variable:
+
+```bash
+{{- if .HasModule "API"}}
+docker run -e JAVA_OPTS="-XX:MaxRAMPercentage=50.0" -p 8080:8080 {{.ProjectName}}-api
+{{- else}}
+docker run -e JAVA_OPTS="-XX:MaxRAMPercentage=50.0" -p 8081:8081 {{.ProjectName}}-worker
+{{- end}}
+```
+{{- end}}
 {{- if .NeedsDockerCompose}}
 
 ## Docker Services
@@ -186,6 +225,24 @@ If you prefer to use your own database instead of Docker:
 {{- end}}
 
 ## Configuration
+{{- if or (.HasModule "API") (.HasModule "Worker")}}
+
+### General Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SPRING_PROFILES_ACTIVE` | Spring profile — `local` for console logs, other values for JSON | local |
+{{- if .HasModule "API"}}
+| `SERVER_PORT` | API server port | 8080 |
+| `LOG_LEVEL` | Application log level | DEBUG |
+{{- end}}
+
+### Logging
+
+- **`local` profile** — colored console output for development
+- **Other profiles** — structured JSON output (suitable for log aggregation)
+- Log levels are configured in each module's `application.yml`
+{{- end}}
 {{- if .HasModule "SQLDatastore"}}
 
 ### Database Environment Variables

@@ -1,174 +1,124 @@
-# Build & Test Commands
+# {{.ProjectName}}
 
-```bash
-mvn clean compile                # Compile all modules
-mvn clean install                # Build and install to local repo
-mvn test                         # Run all tests
-mvn test -pl Model               # Test single module
-{{- if .HasModule "API"}}
-mvn spring-boot:run -pl API      # Run API (port 8080)
-{{- end}}
-{{- if .HasModule "Worker"}}
-mvn spring-boot:run -pl Worker   # Run Worker (dashboard at port 8000)
-{{- end}}
-{{- if .HasModule "SQLDatastore"}}
-mvn flyway:migrate -pl SQLDatastore  # Run migrations manually
-{{- end}}
-{{- if .HasModule "NoSQLDatastore"}}
-mvn test -pl NoSQLDatastore      # Run NoSQL repository tests (requires Docker)
-{{- end}}
-```
+Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}.
 
-# Immutables - IMPORTANT
+## Immutables
 
-This project uses [Immutables](https://immutables.github.io/) for all DTOs and entities.
+This project uses [Immutables](https://immutables.github.io/) for all DTOs and entities. This is a critical pattern — Claude must follow it.
 
-**Always prefer:**
-- `ImmutableX` concrete types over interface types in method signatures
-- Builder pattern for object creation: `ImmutablePlaceholder.builder()...build()`
-- Never use `new` for Immutable objects, always use builders
+**Rules:**
+- Always use `ImmutableX` concrete types in method signatures, not interface types
+- Always use builders: `ImmutablePlaceholder.builder()...build()`
+- Never use `new` for Immutable objects
+- Always add `@JsonSerialize` and `@JsonDeserialize` annotations
+- Enums do NOT use Immutables
 
-**Example - CORRECT:**
+**Correct:**
 ```java
 public ImmutablePlaceholder create(ImmutablePlaceholderRequest request) {
     return ImmutablePlaceholder.builder()
         .name(request.name())
-        .description(request.description())
         .build();
 }
 ```
 
-**Example - AVOID:**
+**Wrong:**
 ```java
-public Placeholder create(PlaceholderRequest request) {  // Don't use interface types
-    return Placeholder.fromRecord(record);  // Don't use factory methods
+public Placeholder create(PlaceholderRequest request) {  // interface type
+    return new Placeholder(...);  // constructor
 }
 ```
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 
+## Persistence Boundaries
 {{- if .HasModule "SQLDatastore"}}
 
-**Database persistence:**
-- Use `PlaceholderRecord` (Java record) only at the repository boundary
+**SQL (Spring Data JDBC):**
+- `PlaceholderRecord` (Java record) exists only at repository boundary
 - Convert to `ImmutablePlaceholder` immediately after repository calls
-- Never expose `PlaceholderRecord` outside the repository/service layer
+- Never expose `PlaceholderRecord` outside repository/service layer
+- Flyway migrations: `V{number}__{description}.sql` — never modify existing migrations
 {{- end}}
 {{- if .HasModule "NoSQLDatastore"}}
 
-**NoSQL persistence:**
-- Use `PlaceholderDocument` (Java record) only at the repository boundary
+**NoSQL ({{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}):**
+- `PlaceholderDocument` (Java record) exists only at repository boundary
 - Convert to `ImmutablePlaceholder` immediately after repository calls
-- Never expose `PlaceholderDocument` outside the repository/service layer
+- Never expose `PlaceholderDocument` outside repository/service layer
 {{- if eq .NoSQLDatabase "mongodb"}}
 - MongoDB auto-generates `_id` when `id` is null on save
 {{- else if eq .NoSQLDatabase "redis"}}
 - Redis auto-generates `id` when null on save (uses UUID)
 {{- end}}
 {{- end}}
-
-# Code Style
-
-- Use Immutables for all DTOs and entities: `@Value.Immutable` + `@ImmutableStyle`
-- Always add `@JsonSerialize` and `@JsonDeserialize` annotations for Jackson
-- Enums do NOT use Immutables (they're already immutable)
-{{- if .HasModule "SQLDatastore"}}
-- Spring Data JDBC (not JPA) - no lazy loading, no proxies
-- Flyway migrations: `V{number}__{description}.sql`
-{{- end}}
-{{- if .HasModule "NoSQLDatastore"}}
-{{- if eq .NoSQLDatabase "mongodb"}}
-- Spring Data MongoDB with `@Document` annotation on entities
-- Use `@Indexed` for fields that need secondary indexes
-{{- else if eq .NoSQLDatabase "redis"}}
-- Spring Data Redis with `@RedisHash` annotation on entities
-- Use `@Indexed` for fields that need secondary indexes
-{{- end}}
-{{- end}}
-{{- if .HasModule "Shared"}}
-- Use `@CircuitBreaker(name = "default")` on service methods that call external resources
-{{- end}}
-
-# Workflow
-
-- Run `mvn clean compile` after code changes to verify build
-{{- if .HasModule "SQLDatastore"}}
-- Create new migration files for any schema changes (never modify existing migrations)
-- Repository tests use Testcontainers - Docker must be running
-{{- end}}
-{{- if .HasModule "NoSQLDatastore"}}
-- Repository tests use Testcontainers - Docker must be running
-{{- if eq .NoSQLDatabase "mongodb"}}
-- MongoDB collections are created automatically on first document insert
-{{- else if eq .NoSQLDatabase "redis"}}
-- Redis keys are created automatically on first save
-{{- end}}
 {{- end}}
 {{- if .HasModule "API"}}
-- Validate request DTOs with Jakarta annotations (@NotBlank, @Size, etc.)
+
+## Exception Handling
+
+`GlobalExceptionHandler` handles all common exceptions — do not add try-catch in controllers for:
+- Validation errors (400)
+- JSON parsing errors (400)
+- Missing/mistyped parameters (400)
+- Not found (404)
+- Method not allowed (405)
+- Unsupported media type (415)
+- Uncaught exceptions (500)
 {{- end}}
 {{- if .HasModule "Worker"}}
 
-# Background Jobs (JobRunr)
-
-JobRunr provides four types of background jobs. All jobs are persisted to the database, automatically retried on failure, and distributed across Worker instances.
+## Background Jobs (JobRunr)
 
 **Architecture:**
-- **Jobs module** - Contains `JobRequest` records (data contracts)
-- **Worker module** - Contains `JobRequestHandler` implementations (processors)
-- Any module can enqueue jobs by depending on the Jobs module
+- `Jobs` module contains `JobRequest` records (data contracts)
+- `Worker` module contains `JobRequestHandler` implementations
+- Any module can enqueue jobs by depending on Jobs module
+- Handler class name must be `{RequestName}Handler`
 
-**Fire-and-forget** - Execute immediately in background:
+**Enqueueing jobs:**
 ```java
+// Fire-and-forget
 BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("data"));
-```
 
-**Delayed** - Execute at a specific time:
-```java
-Instant executeAt = Instant.now().plus(1, ChronoUnit.HOURS);
-BackgroundJobRequest.schedule(executeAt, new ProcessPlaceholderJobRequest("data"));
-```
+// Delayed
+BackgroundJobRequest.schedule(Instant.now().plus(1, ChronoUnit.HOURS),
+    new ProcessPlaceholderJobRequest("data"));
 
-**Recurring** - Execute on a CRON schedule (register in RecurringJobsConfig):
-```java
-jobScheduler.scheduleRecurrently("cleanup-job", Cron.daily(),
-    () -> BackgroundJobRequest.enqueue(new CleanupJobRequest()));
-```
-
-**Batch** - Process multiple items efficiently:
-```java
-List<ProcessPlaceholderJobRequest> requests = items.stream()
-    .map(ProcessPlaceholderJobRequest::new)
-    .toList();
+// Batch
 BackgroundJobRequest.enqueue(requests.stream());
 ```
 
-**Creating new job types:**
-1. Add a new record in Jobs module implementing `PlaceholderJobRequest` (or create new sealed interface)
-2. Add corresponding `JobRequestHandler` in Worker module
-3. Handler class name must be `{RequestName}Handler`
+**Recurring jobs:** Register in `RecurringJobsConfig` using `jobScheduler.scheduleRecurrently()`
 
 **Handler requirements:**
-- Annotate run method with `@Job(name = "Descriptive name: %0")`
-- Keep handlers simple and idempotent (they may retry on failure)
-- Inject dependencies via constructor
+- Annotate with `@Job(name = "Descriptive name: %0")`
+- Keep handlers idempotent (they retry on failure)
 
-**Dashboard:** http://localhost:8000 (when Worker is running)
+**Ports:**
+- 8081 — Worker application
+- 8082 — Management/actuator (health checks use this port, not 8081)
+- 8000 — JobRunr Dashboard (no auth by default — disable in production)
+{{- end}}
 
-**Storage configuration:**
-{{- if .JobRunrUsesSql}}
-{{- if .HasModule "SQLDatastore"}}
-- JobRunr uses the same {{.Database}} database as your application data
-{{- else}}
-- JobRunr uses PostgreSQL for job storage (configured separately from application data)
-{{- end}}
-{{- else if .JobRunrUsesMongoDB}}
-- JobRunr uses the same MongoDB database as your application data
-{{- end}}
-- Storage configuration is in `Worker/src/main/resources/application.yml`
-- For production, consider using a separate database for job metadata (override via environment variables)
+## Configuration
+{{- if or (.HasModule "API") (.HasModule "Worker")}}
 
-**Security (IMPORTANT for production):**
-- Dashboard has NO authentication by default - disable or put behind a reverse proxy
-- Database credentials in application.yml are for development only
-- Override via environment variables: `SPRING_DATASOURCE_*` or `SPRING_DATA_MONGODB_URI`
-- Disable dashboard in production: `JOBRUNR_DASHBOARD_ENABLED=false`
+- Use `${ENV_VAR:default}` pattern in `application.yml` — never hardcode credentials
+- Log format is in `logback-spring.xml`, log levels are in `application.yml` — do not mix these
+- Default profile is `local` (colored console); other profiles use JSON logging
 {{- end}}
+{{- if .HasModule "Shared"}}
+- Use `@CircuitBreaker(name = "default")` on methods calling external resources
+{{- end}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+## Testing
+
+Repository tests use Testcontainers — Docker must be running.
+{{- end}}
+
+## Git
+
+These files are local and already in `.gitignore`:
+- `CLAUDE.local.md`, `.claude/settings.local.json` — personal Claude Code settings
+- `*PLAN.md` — plan mode scratch files

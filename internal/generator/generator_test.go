@@ -101,6 +101,7 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		// Root
 		"pom.xml",
 		".gitignore",
+		".dockerignore",
 		"README.md",
 		// Model
 		"Model/pom.xml",
@@ -128,6 +129,7 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		"Shared/src/test/java/com/company/platform/shared/service/PlaceholderServiceTest.java",
 		// API
 		"API/pom.xml",
+		"API/Dockerfile",
 		"API/src/main/java/com/company/platform/api/MyPlatformApiApplication.java",
 		"API/src/main/java/com/company/platform/api/controller/HealthController.java",
 		"API/src/main/java/com/company/platform/api/controller/PlaceholderController.java",
@@ -136,13 +138,16 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		"API/src/main/java/com/company/platform/api/config/GlobalExceptionHandler.java",
 		"API/src/main/java/com/company/platform/api/config/SecurityHeadersFilter.java",
 		"API/src/main/resources/application.yml",
+		"API/src/main/resources/logback-spring.xml",
 		// Worker
 		"Worker/pom.xml",
+		"Worker/Dockerfile",
 		"Worker/src/main/java/com/company/platform/worker/MyPlatformWorkerApplication.java",
 		"Worker/src/main/java/com/company/platform/worker/config/JobRunrConfig.java",
 		"Worker/src/main/java/com/company/platform/worker/config/RecurringJobsConfig.java",
 		"Worker/src/main/java/com/company/platform/worker/handler/ProcessPlaceholderJobRequestHandler.java",
 		"Worker/src/main/resources/application.yml",
+		"Worker/src/main/resources/logback-spring.xml",
 		"Worker/src/test/java/com/company/platform/worker/handler/ProcessPlaceholderJobRequestHandlerTest.java",
 		// Run configurations
 		".run/API.run.xml",
@@ -375,12 +380,12 @@ func TestGenerator_Generate_WithCLAUDEMD(t *testing.T) {
 
 	contentStr := string(content)
 	// Should contain SQLDatastore-specific content
-	if !contains(contentStr, "flyway") {
+	if !contains(contentStr, "Flyway") {
 		t.Error("CLAUDE.md should contain Flyway reference when SQLDatastore is selected")
 	}
 	// Should contain API-specific content
-	if !contains(contentStr, "spring-boot:run") {
-		t.Error("CLAUDE.md should contain spring-boot:run when API is selected")
+	if !contains(contentStr, "GlobalExceptionHandler") {
+		t.Error("CLAUDE.md should contain GlobalExceptionHandler when API is selected")
 	}
 }
 
