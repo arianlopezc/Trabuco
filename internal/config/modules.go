@@ -64,6 +64,20 @@ var ModuleRegistry = []Module{
 		Internal:     false,
 		Dependencies: []string{"Model", "Jobs"}, // Jobs is auto-included; uses datastore for JobRunr persistence (defaults to PostgreSQL if none)
 	},
+	{
+		Name:         "Events",
+		Description:  "Event contracts for event-driven processing",
+		Required:     false,
+		Internal:     true, // Auto-included when EventConsumer is selected
+		Dependencies: []string{"Model"},
+	},
+	{
+		Name:         "EventConsumer",
+		Description:  "Event listeners (Kafka, RabbitMQ)",
+		Required:     false,
+		Internal:     false,
+		Dependencies: []string{"Model", "Events"}, // Events is auto-included
+	},
 }
 
 // GetModule returns a module by name, or nil if not found

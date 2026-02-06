@@ -22,7 +22,7 @@
 {{- if .HasModule "Jobs"}}
         <jobrunr.version>8.4.0</jobrunr.version>
 {{- end}}
-{{- if or (.HasModule "API") (.HasModule "Worker")}}
+{{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
         <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
 {{- end}}
     </properties>

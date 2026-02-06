@@ -1,0 +1,24 @@
+package {{.GroupID}}.eventconsumer;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * Event Consumer Application.
+ *
+ * <p>This application consumes events from {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}} and processes them.</p>
+ *
+ * <p>Ports:
+ * <ul>
+ *   <li>8083 - Application (not used for HTTP, but available)</li>
+ *   <li>8084 - Management/Actuator (health checks)</li>
+ * </ul>
+ * </p>
+ */
+@SpringBootApplication
+public class {{.ProjectNamePascal}}EventConsumerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run({{.ProjectNamePascal}}EventConsumerApplication.class, args);
+    }
+}

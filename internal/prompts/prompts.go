@@ -122,7 +122,23 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		}
 	}
 
-	// 7. CLAUDE.md (AI assistant context file)
+	// 7. Message Broker (only if EventConsumer is selected)
+	if cfg.HasModule("EventConsumer") {
+		if err := survey.AskOne(&survey.Select{
+			Message: "Message Broker:",
+			Options: []string{
+				"Kafka (Recommended - High throughput, partitioned)",
+				"RabbitMQ (Traditional message queue)",
+			},
+			Default: "Kafka (Recommended - High throughput, partitioned)",
+		}, &cfg.MessageBroker); err != nil {
+			return nil, err
+		}
+		// Normalize message broker value
+		cfg.MessageBroker = normalizeMessageBrokerChoice(cfg.MessageBroker)
+	}
+
+	// 8. CLAUDE.md (AI assistant context file)
 	if err := survey.AskOne(&survey.Confirm{
 		Message: "Generate CLAUDE.md?",
 		Default: false,
@@ -232,6 +248,17 @@ func normalizeNoSQLDatabaseChoice(choice string) string {
 		return "redis"
 	default:
 		return "mongodb"
+	}
+}
+
+func normalizeMessageBrokerChoice(choice string) string {
+	switch {
+	case strings.HasPrefix(choice, "Kafka"):
+		return "kafka"
+	case strings.HasPrefix(choice, "RabbitMQ"):
+		return "rabbitmq"
+	default:
+		return "kafka"
 	}
 }
 

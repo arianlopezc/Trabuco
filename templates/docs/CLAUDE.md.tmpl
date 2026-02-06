@@ -1,6 +1,6 @@
 # {{.ProjectName}}
 
-Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}.
+Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}{{if .HasModule "EventConsumer"}} and {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}} for event-driven processing{{end}}.
 
 ## Immutables
 
@@ -99,9 +99,48 @@ BackgroundJobRequest.enqueue(requests.stream());
 - 8082 — Management/actuator (health checks use this port, not 8081)
 - 8000 — JobRunr Dashboard (no auth by default — disable in production)
 {{- end}}
+{{- if .HasModule "EventConsumer"}}
+
+## Event-Driven Processing ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}})
+
+**Architecture:**
+- `Events` module contains sealed interfaces for event contracts
+- `EventConsumer` module contains event listeners
+- `Shared` module contains `EventPublisher` for publishing events
+
+**Event contracts (Events module):**
+```java
+public sealed interface PlaceholderEvent
+    permits PlaceholderCreatedEvent {
+    String eventId();
+    Instant occurredAt();
+}
+```
+
+**Publishing events (from Shared/API):**
+```java
+@Autowired
+private EventPublisher eventPublisher;
+
+eventPublisher.publish("placeholder-events", PlaceholderCreatedEvent.create("123", "name"));
+```
+
+**Listener pattern:**
+{{- if .UsesKafka}}
+- Use `@RetryableTopic` with DLT suffix for dead letter queue
+- Use `@KafkaListener` with topics from `${app.kafka.topics.xxx}`
+{{- else if .UsesRabbitMQ}}
+- Use `@RabbitListener` with queue names from `${app.rabbitmq.queues.xxx}`
+- Dead letter exchange is configured automatically with `.dlx` suffix
+{{- end}}
+
+**Ports:**
+- 8083 — EventConsumer application
+- 8084 — Management/actuator (health checks use this port, not 8083)
+{{- end}}
 
 ## Configuration
-{{- if or (.HasModule "API") (.HasModule "Worker")}}
+{{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
 
 - Use `${ENV_VAR:default}` pattern in `application.yml` — never hardcode credentials
 - Log format is in `logback-spring.xml`, log levels are in `application.yml` — do not mix these

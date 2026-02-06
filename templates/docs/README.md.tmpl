@@ -28,11 +28,17 @@ A Java multi-module Maven project.
 {{- if .HasModule "Worker"}}
 ├── Worker/                      # Background job processor (port 8081)
 {{- end}}
+{{- if .HasModule "Events"}}
+├── Events/                      # Event contracts for event-driven processing
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+├── EventConsumer/               # Event listener ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}}, port 8083)
+{{- end}}
 {{- if .NeedsDockerCompose}}
 ├── docker-compose.yml           # Local development services
 ├── .env.example                 # Environment variables template
 {{- end}}
-{{- if or (.HasModule "API") (.HasModule "Worker")}}
+{{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
 ├── .dockerignore                # Docker build exclusions
 {{- end}}
 └── README.md
@@ -44,7 +50,7 @@ A Java multi-module Maven project.
 - Maven 3.9+
 {{- if .NeedsDockerCompose}}
 - Docker & Docker Compose (for local development)
-{{- else if or (.HasModule "API") (.HasModule "Worker")}}
+{{- else if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
 - Docker (optional, for container builds)
 {{- end}}
 
@@ -71,6 +77,12 @@ This starts the required services for local development:
 {{- end}}
 {{- if .WorkerNeedsOwnPostgres}}
 - **PostgreSQL (JobRunr)** — localhost:5434 (database: {{.ProjectName}}_jobs, user: postgres/postgres)
+{{- end}}
+{{- if and (.HasModule "EventConsumer") (.UsesKafka)}}
+- **Kafka** — localhost:9092
+- **Zookeeper** — localhost:2181
+{{- else if and (.HasModule "EventConsumer") (.UsesRabbitMQ)}}
+- **RabbitMQ** — localhost:5672 (AMQP), localhost:15672 (Management UI: guest/guest)
 {{- end}}
 
 ### 2. Build the project
@@ -116,6 +128,19 @@ The Worker processes background jobs using [JobRunr](https://www.jobrunr.io/).
 - **Health check:** http://localhost:8082/actuator/health (management port)
 - **Dashboard:** http://localhost:8000 (no authentication by default)
 {{- end}}
+{{- if .HasModule "EventConsumer"}}
+
+### {{if and (and .NeedsDockerCompose (.HasModule "API")) (.HasModule "Worker")}}5{{else if and .NeedsDockerCompose (or (.HasModule "API") (.HasModule "Worker"))}}4{{else if or (or .NeedsDockerCompose (.HasModule "API")) (.HasModule "Worker")}}3{{else}}2{{end}}. Run the EventConsumer
+
+```bash
+cd EventConsumer
+mvn spring-boot:run
+```
+
+The EventConsumer listens for events from {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}} and processes them.
+
+- **Health check:** http://localhost:8084/actuator/health (management port)
+{{- end}}
 
 ## Build Commands
 
@@ -132,7 +157,7 @@ mvn clean package
 # Install to local repository
 mvn clean install
 ```
-{{- if or (.HasModule "API") (.HasModule "Worker")}}
+{{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
 
 ## Docker Build
 
@@ -154,6 +179,14 @@ docker build -f Worker/Dockerfile -t {{.ProjectName}}-worker .
 # Run Worker container
 docker run -p 8081:8081 {{.ProjectName}}-worker
 {{- end}}
+{{- if .HasModule "EventConsumer"}}
+
+# Build EventConsumer image
+docker build -f EventConsumer/Dockerfile -t {{.ProjectName}}-eventconsumer .
+
+# Run EventConsumer container
+docker run -p 8083:8083 {{.ProjectName}}-eventconsumer
+{{- end}}
 ```
 
 Override JVM settings with the `JAVA_OPTS` environment variable:
@@ -161,8 +194,10 @@ Override JVM settings with the `JAVA_OPTS` environment variable:
 ```bash
 {{- if .HasModule "API"}}
 docker run -e JAVA_OPTS="-XX:MaxRAMPercentage=50.0" -p 8080:8080 {{.ProjectName}}-api
-{{- else}}
+{{- else if .HasModule "Worker"}}
 docker run -e JAVA_OPTS="-XX:MaxRAMPercentage=50.0" -p 8081:8081 {{.ProjectName}}-worker
+{{- else}}
+docker run -e JAVA_OPTS="-XX:MaxRAMPercentage=50.0" -p 8083:8083 {{.ProjectName}}-eventconsumer
 {{- end}}
 ```
 {{- end}}
@@ -222,6 +257,12 @@ If you prefer to use your own database instead of Docker:
 {{- end}}
 {{- if .HasModule "Worker"}}
 | Worker | Background job processor ([JobRunr](https://www.jobrunr.io/)) |
+{{- end}}
+{{- if .HasModule "Events"}}
+| Events | Event contracts for event-driven processing |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| EventConsumer | Event listener ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}}) |
 {{- end}}
 
 ## Configuration
@@ -287,6 +328,23 @@ If you prefer to use your own database instead of Docker:
 | `SPRING_DATASOURCE_PASSWORD` | JobRunr database password | {{if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}root{{else}}postgres{{end}} |
 {{- else if .JobRunrUsesMongoDB}}
 | `SPRING_DATA_MONGODB_URI` | JobRunr MongoDB URI | mongodb://localhost:27017/{{.ProjectName}} |
+{{- end}}
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+
+### EventConsumer Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+{{- if .UsesKafka}}
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker addresses | localhost:9092 |
+| `KAFKA_CONSUMER_GROUP` | Consumer group ID | {{.ProjectName}}-consumers |
+{{- else if .UsesRabbitMQ}}
+| `RABBITMQ_HOST` | RabbitMQ host | localhost |
+| `RABBITMQ_PORT` | RabbitMQ port | 5672 |
+| `RABBITMQ_USERNAME` | RabbitMQ username | guest |
+| `RABBITMQ_PASSWORD` | RabbitMQ password | guest |
+| `RABBITMQ_VHOST` | RabbitMQ virtual host | / |
 {{- end}}
 {{- end}}
 {{- if .HasModule "Shared"}}

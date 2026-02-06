@@ -1,0 +1,49 @@
+package {{.GroupID}}.eventconsumer.listener;
+
+import {{.GroupID}}.events.placeholder.PlaceholderCreatedEvent;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+
+/**
+ * Unit tests for PlaceholderEventListener.
+ *
+ * <p>These tests verify that the listener can process events without errors.
+ * For integration tests with {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}}, use
+{{- if .UsesKafka}}
+ * @EmbeddedKafka or Testcontainers.</p>
+{{- else if .UsesRabbitMQ}}
+ * Testcontainers with RabbitMQ.</p>
+{{- end}}
+ */
+@ExtendWith(MockitoExtension.class)
+class PlaceholderEventListenerTest {
+
+    @InjectMocks
+    private PlaceholderEventListener listener;
+
+    @Test
+    void handlePlaceholderEvent_withCreatedEvent_processesSuccessfully() {
+        // Arrange
+        PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("123", "Test Placeholder");
+
+        // Act & Assert
+        assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event));
+    }
+
+    @Test
+    void handlePlaceholderEvent_withMultipleEvents_processesAll() {
+        // Arrange
+        PlaceholderCreatedEvent event1 = PlaceholderCreatedEvent.create("1", "First");
+        PlaceholderCreatedEvent event2 = PlaceholderCreatedEvent.create("2", "Second");
+
+        // Act & Assert
+        assertDoesNotThrow(() -> {
+            listener.handlePlaceholderEvent(event1);
+            listener.handlePlaceholderEvent(event2);
+        });
+    }
+}

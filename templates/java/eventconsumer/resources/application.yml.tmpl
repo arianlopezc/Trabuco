@@ -1,0 +1,62 @@
+spring:
+  application:
+    name: {{.ProjectName}}-event-consumer
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+{{- if .UsesKafka}}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:{{.ProjectName}}-consumers}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    producer:
+      # Producer config for DLT (Dead Letter Topic) publishing
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+app:
+  kafka:
+    topics:
+      placeholder-events: ${KAFKA_TOPIC_PLACEHOLDER:placeholder-events}
+{{- else if .UsesRabbitMQ}}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+
+app:
+  rabbitmq:
+    queues:
+      placeholder-events: ${RABBITMQ_QUEUE_PLACEHOLDER:placeholder-events}
+    exchanges:
+      placeholder: ${RABBITMQ_EXCHANGE_PLACEHOLDER:placeholder-exchange}
+{{- end}}
+
+server:
+  port: ${SERVER_PORT:8083}
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8084}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    {{.GroupID}}: ${LOG_LEVEL:DEBUG}
+{{- if .UsesKafka}}
+    org.apache.kafka: WARN
+    org.springframework.kafka: INFO
+{{- else if .UsesRabbitMQ}}
+    org.springframework.amqp: INFO
+{{- end}}

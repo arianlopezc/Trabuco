@@ -50,6 +50,27 @@
             <version>${project.version}</version>
         </dependency>
 {{end}}
+{{if .HasModule "Events"}}
+        <!-- Events module dependency (for publishing events) -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>Events</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{if .UsesKafka}}
+        <!-- Spring Kafka (for event publishing) -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+{{else if .UsesRabbitMQ}}
+        <!-- Spring AMQP (for event publishing) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+{{end}}
+{{end}}
         <!-- Spring Boot Starter -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

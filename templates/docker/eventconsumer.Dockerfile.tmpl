@@ -1,0 +1,47 @@
+# Build stage
+FROM maven:3-eclipse-temurin-{{.JavaVersion}} AS build
+WORKDIR /build
+
+# Copy POM files first for dependency caching
+COPY pom.xml .
+{{- range .Modules}}
+COPY {{.}}/pom.xml {{.}}/pom.xml
+{{- end}}
+
+# Resolve dependencies (cached unless POMs change)
+RUN mvn dependency:resolve -pl EventConsumer -am -B 2>/dev/null || true
+
+# Copy all source code
+{{- range .Modules}}
+COPY {{.}}/src {{.}}/src
+{{- end}}
+
+# Build the EventConsumer module (skip tests for faster builds)
+RUN mvn clean package -pl EventConsumer -am -DskipTests -q
+
+# Runtime stage
+FROM eclipse-temurin:{{.JavaVersion}}-jre-alpine
+
+# Create non-root user
+RUN addgroup -S app && adduser -S app -G app
+
+WORKDIR /app
+
+# Copy fat jar from build stage
+COPY --from=build /build/EventConsumer/target/*.jar app.jar
+
+# Set ownership
+RUN chown -R app:app /app
+
+USER app
+
+# JVM flags for container environments
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+EXPOSE 8083
+EXPOSE 8084
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD wget -qO- http://localhost:8084/actuator/health || exit 1
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

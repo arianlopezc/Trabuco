@@ -22,6 +22,9 @@ type ProjectConfig struct {
 	// NoSQL Database (only if NoSQLDatastore selected)
 	NoSQLDatabase string // "mongodb" or "redis"
 
+	// Message Broker (only if EventConsumer selected)
+	MessageBroker string // "kafka" or "rabbitmq"
+
 	// Documentation
 	IncludeCLAUDEMD bool // Generate CLAUDE.md file
 }
@@ -185,16 +188,34 @@ func (c *ProjectConfig) WorkerNeedsOwnPostgres() bool {
 
 // NeedsDockerCompose returns true if docker-compose.yml should be generated.
 // This is the case when a runtime module (API or Worker) needs a datastore,
-// or when Worker needs its own PostgreSQL for JobRunr storage.
+// when Worker needs its own PostgreSQL for JobRunr storage,
+// or when EventConsumer needs a message broker.
 func (c *ProjectConfig) NeedsDockerCompose() bool {
 	hasDatastore := (c.HasModule("SQLDatastore") && c.Database != "") ||
 		(c.HasModule("NoSQLDatastore") && c.NoSQLDatabase != "")
 	hasRuntime := c.HasModule("API") || c.HasModule("Worker")
-	return (hasRuntime && hasDatastore) || c.WorkerNeedsOwnPostgres()
+	return (hasRuntime && hasDatastore) || c.WorkerNeedsOwnPostgres() || c.EventConsumerNeedsDockerCompose()
 }
 
 // ShowRedisWorkerWarning returns true if a warning should be shown about
 // Redis + Worker combination (Redis is deprecated in JobRunr 8+)
 func (c *ProjectConfig) ShowRedisWorkerWarning() bool {
 	return c.HasModule("Worker") && c.HasModule("NoSQLDatastore") && c.NoSQLDatabase == "redis"
+}
+
+// Event Consumer Configuration Helpers
+
+// UsesKafka returns true if Kafka is the selected message broker
+func (c *ProjectConfig) UsesKafka() bool {
+	return c.MessageBroker == "kafka"
+}
+
+// UsesRabbitMQ returns true if RabbitMQ is the selected message broker
+func (c *ProjectConfig) UsesRabbitMQ() bool {
+	return c.MessageBroker == "rabbitmq"
+}
+
+// EventConsumerNeedsDockerCompose returns true if EventConsumer needs docker-compose services
+func (c *ProjectConfig) EventConsumerNeedsDockerCompose() bool {
+	return c.HasModule("EventConsumer") && c.MessageBroker != ""
 }

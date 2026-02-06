@@ -1,0 +1,40 @@
+package {{.GroupID}}.events.placeholder;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * Event published when a placeholder is created.
+ *
+ * <p>This event is published after a successful placeholder creation and can be
+ * consumed by any service that needs to react to new placeholders.</p>
+ *
+ * @param eventId Unique identifier for this event instance (for idempotency)
+ * @param occurredAt Timestamp when the placeholder was created
+ * @param placeholderId The ID of the created placeholder
+ * @param name The name of the created placeholder
+ */
+public record PlaceholderCreatedEvent(
+    @JsonProperty("eventId") String eventId,
+    @JsonProperty("occurredAt") Instant occurredAt,
+    @JsonProperty("placeholderId") String placeholderId,
+    @JsonProperty("name") String name
+) implements PlaceholderEvent {
+
+    /**
+     * Factory method for creating a new event with auto-generated ID and timestamp.
+     *
+     * @param placeholderId The ID of the created placeholder
+     * @param name The name of the created placeholder
+     * @return A new PlaceholderCreatedEvent
+     */
+    public static PlaceholderCreatedEvent create(String placeholderId, String name) {
+        return new PlaceholderCreatedEvent(
+            UUID.randomUUID().toString(),
+            Instant.now(),
+            placeholderId,
+            name
+        );
+    }
+}

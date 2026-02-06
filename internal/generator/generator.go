@@ -170,6 +170,28 @@ func (g *Generator) createDirectories() error {
 		)
 	}
 
+	// Events module directories (auto-included with EventConsumer)
+	if g.config.HasModule("Events") {
+		eventsBase := filepath.Join(g.outDir, "Events", "src", "main", "java", packagePath, "events")
+		dirs = append(dirs,
+			eventsBase,
+			filepath.Join(eventsBase, "placeholder"),
+		)
+	}
+
+	// EventConsumer module directories
+	if g.config.HasModule("EventConsumer") {
+		eventConsumerBase := filepath.Join(g.outDir, "EventConsumer", "src", "main", "java", packagePath, "eventconsumer")
+		eventConsumerTestBase := filepath.Join(g.outDir, "EventConsumer", "src", "test", "java", packagePath, "eventconsumer")
+		dirs = append(dirs,
+			eventConsumerBase,
+			filepath.Join(eventConsumerBase, "config"),
+			filepath.Join(eventConsumerBase, "listener"),
+			filepath.Join(g.outDir, "EventConsumer", "src", "main", "resources"),
+			filepath.Join(eventConsumerTestBase, "listener"),
+		)
+	}
+
 	// Create all directories
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -197,6 +219,10 @@ func (g *Generator) generateModule(module string) error {
 		return g.generateAPIModule()
 	case "Worker":
 		return g.generateWorkerModule()
+	case "Events":
+		return g.generateEventsModule()
+	case "EventConsumer":
+		return g.generateEventConsumerModule()
 	default:
 		return fmt.Errorf("unknown module: %s", module)
 	}

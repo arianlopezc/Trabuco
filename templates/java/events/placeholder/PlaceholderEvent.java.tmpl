@@ -1,0 +1,38 @@
+package {{.GroupID}}.events.placeholder;
+
+import java.time.Instant;
+
+/**
+ * Sealed interface for placeholder-related events.
+ * All placeholder event types must be records that implement this interface.
+ *
+ * <p>Events are immutable data contracts shared between publishers and consumers.
+ * They should contain only the data needed to process the event, not behavior.</p>
+ *
+ * <p>Usage:
+ * <pre>{@code
+ * // Publishing
+ * eventPublisher.publish(PlaceholderCreatedEvent.create("123", "My Placeholder"));
+ *
+ * // Consuming (pattern matching)
+ * switch (event) {
+ *     case PlaceholderCreatedEvent e -> handleCreated(e);
+ *     // Add more cases as event types grow
+ * }
+ * }</pre>
+ * </p>
+ */
+public sealed interface PlaceholderEvent
+    permits PlaceholderCreatedEvent {
+
+    /**
+     * Unique event identifier for idempotency and tracing.
+     * Consumers should use this to detect duplicate events.
+     */
+    String eventId();
+
+    /**
+     * Timestamp when the event occurred (not when it was published or received).
+     */
+    Instant occurredAt();
+}

@@ -214,6 +214,16 @@ func (g *Generator) generateSharedModule() error {
 		return fmt.Errorf("failed to generate PlaceholderService.java: %w", err)
 	}
 
+	// EventPublisher.java (only when Events module is selected)
+	if g.config.HasModule("Events") {
+		if err := g.writeTemplate(
+			"java/shared/service/EventPublisher.java.tmpl",
+			g.javaPath("Shared", filepath.Join("service", "EventPublisher.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate EventPublisher.java: %w", err)
+		}
+	}
+
 	// PlaceholderServiceTest.java
 	if err := g.writeTemplate(
 		"java/shared/test/PlaceholderServiceTest.java.tmpl",
@@ -438,6 +448,113 @@ func (g *Generator) generateWorkerModule() error {
 		filepath.Join(".run", "Worker.run.xml"),
 	); err != nil {
 		return fmt.Errorf("failed to generate Worker run configuration: %w", err)
+	}
+
+	return nil
+}
+
+// generateEventsModule generates the Events module (event contracts)
+func (g *Generator) generateEventsModule() error {
+	// pom.xml
+	if err := g.writeTemplate(
+		"pom/events.xml.tmpl",
+		filepath.Join("Events", "pom.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate Events pom.xml: %w", err)
+	}
+
+	// PlaceholderEvent.java (sealed interface)
+	if err := g.writeTemplate(
+		"java/events/placeholder/PlaceholderEvent.java.tmpl",
+		g.javaPath("Events", filepath.Join("placeholder", "PlaceholderEvent.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderEvent.java: %w", err)
+	}
+
+	// PlaceholderCreatedEvent.java (concrete event)
+	if err := g.writeTemplate(
+		"java/events/placeholder/PlaceholderCreatedEvent.java.tmpl",
+		g.javaPath("Events", filepath.Join("placeholder", "PlaceholderCreatedEvent.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderCreatedEvent.java: %w", err)
+	}
+
+	return nil
+}
+
+// generateEventConsumerModule generates the EventConsumer module
+func (g *Generator) generateEventConsumerModule() error {
+	// pom.xml
+	if err := g.writeTemplate(
+		"pom/eventconsumer.xml.tmpl",
+		filepath.Join("EventConsumer", "pom.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate EventConsumer pom.xml: %w", err)
+	}
+
+	// Application.java
+	if err := g.writeTemplate(
+		"java/eventconsumer/EventConsumerApplication.java.tmpl",
+		g.javaPath("EventConsumer", g.config.ProjectNamePascal()+"EventConsumerApplication.java"),
+	); err != nil {
+		return fmt.Errorf("failed to generate EventConsumerApplication.java: %w", err)
+	}
+
+	// Config (Kafka or RabbitMQ)
+	if g.config.UsesKafka() {
+		if err := g.writeTemplate(
+			"java/eventconsumer/config/KafkaConfig.java.tmpl",
+			g.javaPath("EventConsumer", filepath.Join("config", "KafkaConfig.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate KafkaConfig.java: %w", err)
+		}
+	} else if g.config.UsesRabbitMQ() {
+		if err := g.writeTemplate(
+			"java/eventconsumer/config/RabbitConfig.java.tmpl",
+			g.javaPath("EventConsumer", filepath.Join("config", "RabbitConfig.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate RabbitConfig.java: %w", err)
+		}
+	}
+
+	// PlaceholderEventListener.java
+	if err := g.writeTemplate(
+		"java/eventconsumer/listener/PlaceholderEventListener.java.tmpl",
+		g.javaPath("EventConsumer", filepath.Join("listener", "PlaceholderEventListener.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderEventListener.java: %w", err)
+	}
+
+	// application.yml
+	if err := g.writeTemplate(
+		"java/eventconsumer/resources/application.yml.tmpl",
+		g.resourcePath("EventConsumer", "application.yml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate EventConsumer application.yml: %w", err)
+	}
+
+	// logback-spring.xml
+	if err := g.writeTemplate(
+		"java/eventconsumer/resources/logback-spring.xml.tmpl",
+		g.resourcePath("EventConsumer", "logback-spring.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate EventConsumer logback-spring.xml: %w", err)
+	}
+
+	// Dockerfile
+	if err := g.writeTemplate(
+		"docker/eventconsumer.Dockerfile.tmpl",
+		filepath.Join("EventConsumer", "Dockerfile"),
+	); err != nil {
+		return fmt.Errorf("failed to generate EventConsumer Dockerfile: %w", err)
+	}
+
+	// Test
+	if err := g.writeTemplate(
+		"java/eventconsumer/test/PlaceholderEventListenerTest.java.tmpl",
+		g.testJavaPath("EventConsumer", filepath.Join("listener", "PlaceholderEventListenerTest.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderEventListenerTest.java: %w", err)
 	}
 
 	return nil

@@ -1,0 +1,123 @@
+package {{.GroupID}}.eventconsumer.listener;
+
+import {{.GroupID}}.events.placeholder.PlaceholderCreatedEvent;
+import {{.GroupID}}.events.placeholder.PlaceholderEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+{{- if .UsesKafka}}
+import org.springframework.kafka.annotation.DltHandler;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.DltStrategy;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.retry.annotation.Backoff;
+{{- else if .UsesRabbitMQ}}
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+{{- end}}
+
+/**
+ * Event listener for placeholder-related events.
+ *
+ * <p>Consumes events from {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}} and processes them.
+ * Uses pattern matching on the sealed PlaceholderEvent interface to handle
+ * different event types.</p>
+ *
+ * <p>Error handling:
+ * <ul>
+{{- if .UsesKafka}}
+ *   <li>Automatic retries with exponential backoff (4 attempts)</li>
+ *   <li>Failed events are sent to Dead Letter Topic (DLT)</li>
+{{- else if .UsesRabbitMQ}}
+ *   <li>Failed events are rejected (sent to DLX if configured)</li>
+{{- end}}
+ * </ul>
+ * </p>
+ */
+@Component
+public class PlaceholderEventListener {
+
+    private static final Logger logger = LoggerFactory.getLogger(PlaceholderEventListener.class);
+{{if .UsesKafka}}
+    /**
+     * Main event handler with automatic retry and DLT support.
+     *
+     * <p>Retry configuration:
+     * <ul>
+     *   <li>4 total attempts (1 initial + 3 retries)</li>
+     *   <li>Exponential backoff starting at 1 second, multiplier 2.0</li>
+     *   <li>Failed events go to DLT after exhausting retries</li>
+     * </ul>
+     * </p>
+     */
+    @RetryableTopic(
+        attempts = "4",
+        backoff = @Backoff(delay = 1000, multiplier = 2.0),
+        dltStrategy = DltStrategy.FAIL_ON_ERROR,
+        autoCreateTopics = "false"
+    )
+    @KafkaListener(
+        topics = "${app.kafka.topics.placeholder-events}",
+        groupId = "${spring.kafka.consumer.group-id}"
+    )
+    public void handlePlaceholderEvent(PlaceholderEvent event) {
+        logger.info("Received event: eventId={}, type={}",
+            event.eventId(), event.getClass().getSimpleName());
+
+        switch (event) {
+            case PlaceholderCreatedEvent created -> handleCreated(created);
+            // Add more cases as event types grow
+        }
+    }
+
+    /**
+     * Dead Letter Topic handler for events that failed after all retries.
+     *
+     * <p>This method is called when an event cannot be processed after
+     * exhausting all retry attempts. Use this for alerting, logging,
+     * or storing for manual review.</p>
+     */
+    @DltHandler
+    public void handleDlt(PlaceholderEvent event, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
+        logger.error("Event sent to DLT: topic={}, eventId={}, type={}",
+            topic, event.eventId(), event.getClass().getSimpleName());
+        // TODO: Add alerting, store for manual review, etc.
+    }
+{{else if .UsesRabbitMQ}}
+    /**
+     * Main event handler for RabbitMQ messages.
+     *
+     * <p>If processing fails, the message is rejected (not requeued).
+     * Configure a Dead Letter Exchange (DLX) on the queue for failed messages.</p>
+     */
+    @RabbitListener(queues = "${app.rabbitmq.queues.placeholder-events}")
+    public void handlePlaceholderEvent(PlaceholderEvent event) {
+        logger.info("Received event: eventId={}, type={}",
+            event.eventId(), event.getClass().getSimpleName());
+
+        switch (event) {
+            case PlaceholderCreatedEvent created -> handleCreated(created);
+            // Add more cases as event types grow
+        }
+    }
+{{end}}
+
+    /**
+     * Handles PlaceholderCreatedEvent.
+     *
+     * <p>This is where you implement the business logic for reacting
+     * to placeholder creation events.</p>
+     */
+    private void handleCreated(PlaceholderCreatedEvent event) {
+        logger.info("Processing PlaceholderCreatedEvent: placeholderId={}, name={}, occurredAt={}",
+            event.placeholderId(), event.name(), event.occurredAt());
+
+        // TODO: Implement your business logic here
+        // Examples:
+        // - Send notification
+        // - Update search index
+        // - Trigger downstream processing
+        // - Update analytics
+    }
+}
