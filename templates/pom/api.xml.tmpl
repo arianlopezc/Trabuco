@@ -54,6 +54,14 @@
             <version>${project.version}</version>
         </dependency>
 {{- end}}
+{{- if .HasModule "EventConsumer"}}
+        <!-- Events module dependency (for publishing events - includes broker dependencies) -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>Events</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{- end}}
 {{- if .HasModule "Worker"}}
         <!-- JobRunr Spring Boot Starter (initializes JobRequestScheduler for enqueueing) -->
         <dependency>

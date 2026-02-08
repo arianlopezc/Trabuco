@@ -1,52 +1,50 @@
 package {{.GroupID}}.eventconsumer.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Declarables;
+import org.springframework.amqp.core.FanoutExchange;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.listener.RabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * RabbitMQ consumer configuration.
+ * RabbitMQ configuration for queue, exchange, and binding declarations.
  *
- * <p>Configures the RabbitMQ listener container factory with JSON message
- * conversion and appropriate error handling.</p>
+ * <p>This configuration auto-creates the required RabbitMQ infrastructure
+ * on application startup:</p>
+ * <ul>
+ *   <li>Main queue with Dead Letter Exchange (DLX) routing</li>
+ *   <li>Dead Letter Queue for failed messages</li>
+ *   <li>Fanout exchanges for both main and DLX</li>
+ * </ul>
  */
 @Configuration
 public class RabbitConfig {
 
-    /**
-     * JSON message converter using Jackson.
-     *
-     * <p>Automatically deserializes JSON messages to Java objects
-     * based on type information in message headers.</p>
-     */
+    @Value("${app.rabbitmq.queues.placeholder-events}")
+    private String placeholderQueueName;
+
+    @Value("${app.rabbitmq.exchanges.placeholder}")
+    private String placeholderExchangeName;
+
+    // ==================== Message Converter ====================
+
     @Bean
     public Jackson2JsonMessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
     }
 
-    /**
-     * RabbitMQ listener container factory.
-     *
-     * <p>Configures:
-     * <ul>
-     *   <li>3 concurrent consumers (min)</li>
-     *   <li>10 max concurrent consumers</li>
-     *   <li>Rejected messages are NOT requeued (send to DLX if configured)</li>
-     * </ul>
-     * </p>
-     *
-     * <p>For failed messages, configure a Dead Letter Exchange (DLX) on your queue:
-     * <pre>
-     * x-dead-letter-exchange: dlx.placeholder
-     * x-dead-letter-routing-key: placeholder.dlq
-     * </pre>
-     * </p>
-     */
+    // ==================== Listener Factory ====================
+
     @Bean
     public RabbitListenerContainerFactory<SimpleMessageListenerContainer> rabbitListenerContainerFactory(
             ConnectionFactory connectionFactory,
@@ -56,7 +54,45 @@ public class RabbitConfig {
         factory.setMessageConverter(converter);
         factory.setConcurrentConsumers(3);
         factory.setMaxConcurrentConsumers(10);
-        factory.setDefaultRequeueRejected(false); // Don't requeue failed messages
+        factory.setDefaultRequeueRejected(false);
         return factory;
+    }
+
+    // ==================== Queue & Exchange Declarations ====================
+
+    /**
+     * Declares all RabbitMQ infrastructure: queues, exchanges, and bindings.
+     *
+     * <p>Using Declarables avoids bean injection ambiguity issues with multiple
+     * Queue/Exchange beans.</p>
+     */
+    @Bean
+    public Declarables rabbitDeclarables() {
+        // Main queue with DLX routing
+        Queue mainQueue = QueueBuilder.durable(placeholderQueueName)
+            .withArgument("x-dead-letter-exchange", placeholderExchangeName + ".dlx")
+            .build();
+
+        // Main exchange
+        FanoutExchange mainExchange = new FanoutExchange(placeholderExchangeName, true, false);
+
+        // Dead letter queue
+        Queue dlq = QueueBuilder.durable(placeholderQueueName + ".dlq").build();
+
+        // Dead letter exchange
+        FanoutExchange dlx = new FanoutExchange(placeholderExchangeName + ".dlx", true, false);
+
+        // Bindings
+        Binding mainBinding = BindingBuilder.bind(mainQueue).to(mainExchange);
+        Binding dlqBinding = BindingBuilder.bind(dlq).to(dlx);
+
+        return new Declarables(
+            mainQueue,
+            mainExchange,
+            dlq,
+            dlx,
+            mainBinding,
+            dlqBinding
+        );
     }
 }

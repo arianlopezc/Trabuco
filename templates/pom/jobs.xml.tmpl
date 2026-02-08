@@ -24,11 +24,17 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- JobRunr API (for JobRequest interface only, no Spring dependencies) -->
+        <!-- JobRunr API (for BackgroundJobRequest and scheduling) -->
         <dependency>
             <groupId>org.jobrunr</groupId>
             <artifactId>jobrunr</artifactId>
             <version>${jobrunr.version}</version>
+        </dependency>
+
+        <!-- Spring Context (for @Service annotation) -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
         </dependency>
     </dependencies>
 </project>

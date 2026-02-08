@@ -95,6 +95,7 @@ func (g *Generator) createDirectories() error {
 			filepath.Join(modelBase, "exception"),
 			filepath.Join(modelBase, "util"),
 			filepath.Join(modelBase, "events"),
+			filepath.Join(modelBase, "jobs"),
 			filepath.Join(modelBase, "validation"),
 		)
 	}
@@ -148,11 +149,11 @@ func (g *Generator) createDirectories() error {
 	}
 
 	// Jobs module directories (auto-included with Worker)
+	// NOTE: Job request schemas are in Model module; Jobs module contains job services
 	if g.config.HasModule("Jobs") {
 		jobsBase := filepath.Join(g.outDir, "Jobs", "src", "main", "java", packagePath, "jobs")
 		dirs = append(dirs,
 			jobsBase,
-			filepath.Join(jobsBase, "placeholder"),
 		)
 	}
 
@@ -171,11 +172,12 @@ func (g *Generator) createDirectories() error {
 	}
 
 	// Events module directories (auto-included with EventConsumer)
+	// NOTE: Event schemas are now in Model module; Events module contains EventPublisher service
 	if g.config.HasModule("Events") {
 		eventsBase := filepath.Join(g.outDir, "Events", "src", "main", "java", packagePath, "events")
 		dirs = append(dirs,
 			eventsBase,
-			filepath.Join(eventsBase, "placeholder"),
+			filepath.Join(eventsBase, "config"),
 		)
 	}
 

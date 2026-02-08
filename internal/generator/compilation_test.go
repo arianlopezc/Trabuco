@@ -532,3 +532,59 @@ func TestCompilation_WorkerAutoResolvesJobs(t *testing.T) {
 	runMavenCompile(t, projectDir)
 	t.Log("Worker with auto-resolved Jobs module compiled successfully")
 }
+
+func TestCompilation_EventConsumerWithKafka(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Resolve modules to auto-include Events
+	modules := config.ResolveDependencies([]string{"Model", "API", "EventConsumer"})
+
+	cfg := &config.ProjectConfig{
+		ProjectName:   "kafka-events",
+		GroupID:       "com.test.kafkaevents",
+		ArtifactID:    "kafka-events",
+		JavaVersion:   "21",
+		Modules:       modules,
+		MessageBroker: "kafka",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("EventConsumer with Kafka compiled successfully")
+}
+
+func TestCompilation_EventConsumerWithRabbitMQ(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Resolve modules to auto-include Events
+	modules := config.ResolveDependencies([]string{"Model", "API", "EventConsumer"})
+
+	cfg := &config.ProjectConfig{
+		ProjectName:   "rabbitmq-events",
+		GroupID:       "com.test.rabbitmqevents",
+		ArtifactID:    "rabbitmq-events",
+		JavaVersion:   "21",
+		Modules:       modules,
+		MessageBroker: "rabbitmq",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("EventConsumer with RabbitMQ compiled successfully")
+}

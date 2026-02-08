@@ -109,11 +109,13 @@ func TestGenerator_Generate_AllModules(t *testing.T) {
 		"Model/src/main/java/com/company/platform/model/entities/Placeholder.java",
 		"Model/src/main/java/com/company/platform/model/dto/PlaceholderRequest.java",
 		"Model/src/main/java/com/company/platform/model/dto/PlaceholderResponse.java",
-		// Jobs
+		// Jobs module (job service for enqueueing)
 		"Jobs/pom.xml",
-		"Jobs/src/main/java/com/company/platform/jobs/placeholder/PlaceholderJobRequest.java",
-		"Jobs/src/main/java/com/company/platform/jobs/placeholder/ProcessPlaceholderJobRequest.java",
-		"Jobs/src/main/java/com/company/platform/jobs/placeholder/ProcessPlaceholderJobRequestHandler.java",
+		"Jobs/src/main/java/com/company/platform/jobs/PlaceholderJobService.java",
+		// Job request schemas in Model module
+		"Model/src/main/java/com/company/platform/model/jobs/PlaceholderJobRequest.java",
+		"Model/src/main/java/com/company/platform/model/jobs/ProcessPlaceholderJobRequest.java",
+		"Model/src/main/java/com/company/platform/model/jobs/ProcessPlaceholderJobRequestHandler.java",
 		// SQLDatastore
 		"SQLDatastore/pom.xml",
 		"SQLDatastore/src/main/java/com/company/platform/sqldatastore/config/DatabaseConfig.java",

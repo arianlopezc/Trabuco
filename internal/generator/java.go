@@ -64,6 +64,52 @@ func (g *Generator) generateModelModule() error {
 		return fmt.Errorf("failed to generate PlaceholderResponse.java: %w", err)
 	}
 
+	// Event classes (only if EventConsumer is selected)
+	if g.config.HasModule("EventConsumer") {
+		// PlaceholderEvent.java (sealed interface)
+		if err := g.writeTemplate(
+			"java/model/events/PlaceholderEvent.java.tmpl",
+			g.javaPath("Model", filepath.Join("events", "PlaceholderEvent.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate PlaceholderEvent.java: %w", err)
+		}
+
+		// PlaceholderCreatedEvent.java (concrete event)
+		if err := g.writeTemplate(
+			"java/model/events/PlaceholderCreatedEvent.java.tmpl",
+			g.javaPath("Model", filepath.Join("events", "PlaceholderCreatedEvent.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate PlaceholderCreatedEvent.java: %w", err)
+		}
+	}
+
+	// Job request classes (only if Worker is selected)
+	if g.config.HasModule("Worker") {
+		// PlaceholderJobRequest.java (sealed interface for placeholder domain)
+		if err := g.writeTemplate(
+			"java/model/jobs/PlaceholderJobRequest.java.tmpl",
+			g.javaPath("Model", filepath.Join("jobs", "PlaceholderJobRequest.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate PlaceholderJobRequest.java: %w", err)
+		}
+
+		// ProcessPlaceholderJobRequest.java (concrete job request)
+		if err := g.writeTemplate(
+			"java/model/jobs/ProcessPlaceholderJobRequest.java.tmpl",
+			g.javaPath("Model", filepath.Join("jobs", "ProcessPlaceholderJobRequest.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate ProcessPlaceholderJobRequest.java: %w", err)
+		}
+
+		// ProcessPlaceholderJobRequestHandler.java (base handler class)
+		if err := g.writeTemplate(
+			"java/model/jobs/ProcessPlaceholderJobRequestHandler.java.tmpl",
+			g.javaPath("Model", filepath.Join("jobs", "ProcessPlaceholderJobRequestHandler.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate ProcessPlaceholderJobRequestHandler.java: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -214,16 +260,6 @@ func (g *Generator) generateSharedModule() error {
 		return fmt.Errorf("failed to generate PlaceholderService.java: %w", err)
 	}
 
-	// EventPublisher.java (only when Events module is selected)
-	if g.config.HasModule("Events") {
-		if err := g.writeTemplate(
-			"java/shared/service/EventPublisher.java.tmpl",
-			g.javaPath("Shared", filepath.Join("service", "EventPublisher.java")),
-		); err != nil {
-			return fmt.Errorf("failed to generate EventPublisher.java: %w", err)
-		}
-	}
-
 	// PlaceholderServiceTest.java
 	if err := g.writeTemplate(
 		"java/shared/test/PlaceholderServiceTest.java.tmpl",
@@ -274,6 +310,16 @@ func (g *Generator) generateAPIModule() error {
 			g.javaPath("API", filepath.Join("controller", "PlaceholderJobController.java")),
 		); err != nil {
 			return fmt.Errorf("failed to generate PlaceholderJobController.java: %w", err)
+		}
+	}
+
+	// EventController.java (only when EventConsumer module is selected)
+	if g.config.HasModule("EventConsumer") {
+		if err := g.writeTemplate(
+			"java/api/controller/EventController.java.tmpl",
+			g.javaPath("API", filepath.Join("controller", "EventController.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate EventController.java: %w", err)
 		}
 	}
 
@@ -336,35 +382,21 @@ func (g *Generator) generateAPIModule() error {
 	return nil
 }
 
-// generateJobsModule generates all Jobs module files (job request contracts)
+// generateJobsModule generates all Jobs module files
+// NOTE: Job request schemas are generated in the Model module.
+// The Jobs module contains job service classes for enqueueing jobs.
 func (g *Generator) generateJobsModule() error {
 	// Generate module POM
 	if err := g.generateModulePOM("Jobs"); err != nil {
 		return err
 	}
 
-	// PlaceholderJobRequest.java (sealed interface for placeholder domain)
+	// PlaceholderJobService.java (service for enqueueing jobs)
 	if err := g.writeTemplate(
-		"java/jobs/placeholder/PlaceholderJobRequest.java.tmpl",
-		g.javaPath("Jobs", filepath.Join("placeholder", "PlaceholderJobRequest.java")),
+		"java/jobs/PlaceholderJobService.java.tmpl",
+		g.javaPath("Jobs", "PlaceholderJobService.java"),
 	); err != nil {
-		return fmt.Errorf("failed to generate PlaceholderJobRequest.java: %w", err)
-	}
-
-	// ProcessPlaceholderJobRequest.java (concrete job request)
-	if err := g.writeTemplate(
-		"java/jobs/placeholder/ProcessPlaceholderJobRequest.java.tmpl",
-		g.javaPath("Jobs", filepath.Join("placeholder", "ProcessPlaceholderJobRequest.java")),
-	); err != nil {
-		return fmt.Errorf("failed to generate ProcessPlaceholderJobRequest.java: %w", err)
-	}
-
-	// ProcessPlaceholderJobRequestHandler.java (abstract handler base class)
-	if err := g.writeTemplate(
-		"java/jobs/placeholder/ProcessPlaceholderJobRequestHandler.java.tmpl",
-		g.javaPath("Jobs", filepath.Join("placeholder", "ProcessPlaceholderJobRequestHandler.java")),
-	); err != nil {
-		return fmt.Errorf("failed to generate ProcessPlaceholderJobRequestHandler.java: %w", err)
+		return fmt.Errorf("failed to generate PlaceholderJobService.java: %w", err)
 	}
 
 	return nil
@@ -453,7 +485,7 @@ func (g *Generator) generateWorkerModule() error {
 	return nil
 }
 
-// generateEventsModule generates the Events module (event contracts)
+// generateEventsModule generates the Events module (EventPublisher service)
 func (g *Generator) generateEventsModule() error {
 	// pom.xml
 	if err := g.writeTemplate(
@@ -463,20 +495,22 @@ func (g *Generator) generateEventsModule() error {
 		return fmt.Errorf("failed to generate Events pom.xml: %w", err)
 	}
 
-	// PlaceholderEvent.java (sealed interface)
+	// EventPublisher.java (service for publishing events)
 	if err := g.writeTemplate(
-		"java/events/placeholder/PlaceholderEvent.java.tmpl",
-		g.javaPath("Events", filepath.Join("placeholder", "PlaceholderEvent.java")),
+		"java/events/EventPublisher.java.tmpl",
+		g.javaPath("Events", "EventPublisher.java"),
 	); err != nil {
-		return fmt.Errorf("failed to generate PlaceholderEvent.java: %w", err)
+		return fmt.Errorf("failed to generate EventPublisher.java: %w", err)
 	}
 
-	// PlaceholderCreatedEvent.java (concrete event)
-	if err := g.writeTemplate(
-		"java/events/placeholder/PlaceholderCreatedEvent.java.tmpl",
-		g.javaPath("Events", filepath.Join("placeholder", "PlaceholderCreatedEvent.java")),
-	); err != nil {
-		return fmt.Errorf("failed to generate PlaceholderCreatedEvent.java: %w", err)
+	// RabbitConfig.java (RabbitMQ JSON configuration) - only for RabbitMQ
+	if g.config.UsesRabbitMQ() {
+		if err := g.writeTemplate(
+			"java/events/config/RabbitConfig.java.tmpl",
+			g.javaPath("Events", filepath.Join("config", "RabbitConfig.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate Events RabbitConfig.java: %w", err)
+		}
 	}
 
 	return nil
@@ -555,6 +589,14 @@ func (g *Generator) generateEventConsumerModule() error {
 		g.testJavaPath("EventConsumer", filepath.Join("listener", "PlaceholderEventListenerTest.java")),
 	); err != nil {
 		return fmt.Errorf("failed to generate PlaceholderEventListenerTest.java: %w", err)
+	}
+
+	// IntelliJ run configuration
+	if err := g.writeTemplate(
+		"idea/run/EventConsumer__Maven_.run.xml.tmpl",
+		filepath.Join(".run", "EventConsumer.run.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate EventConsumer run configuration: %w", err)
 	}
 
 	return nil

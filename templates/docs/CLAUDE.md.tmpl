@@ -2,6 +2,38 @@
 
 Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}{{if .HasModule "EventConsumer"}} and {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}} for event-driven processing{{end}}.
 
+## Build & Test Commands
+
+```bash
+mvn clean compile          # Build all modules
+mvn test                   # Run all tests
+mvn clean package          # Package all modules
+{{- if .HasModule "API"}}
+cd API && mvn spring-boot:run   # Run API locally
+{{- end}}
+{{- if .HasModule "Worker"}}
+cd Worker && mvn spring-boot:run   # Run Worker locally
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+cd EventConsumer && mvn spring-boot:run   # Run EventConsumer locally
+{{- end}}
+```
+{{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
+
+**Docker:**
+```bash
+{{- if .HasModule "API"}}
+docker build -f API/Dockerfile -t {{.ProjectName}}-api .
+{{- end}}
+{{- if .HasModule "Worker"}}
+docker build -f Worker/Dockerfile -t {{.ProjectName}}-worker .
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+docker build -f EventConsumer/Dockerfile -t {{.ProjectName}}-eventconsumer .
+{{- end}}
+```
+{{- end}}
+
 ## Immutables
 
 This project uses [Immutables](https://immutables.github.io/) for all DTOs and entities. This is a critical pattern — Claude must follow it.

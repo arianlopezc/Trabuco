@@ -28,6 +28,7 @@ var (
 	flagModules       string
 	flagDatabase      string
 	flagNoSQLDatabase string
+	flagMessageBroker string
 	flagJavaVersion   string
 	flagIncludeClaude bool
 	flagStrict        bool
@@ -54,9 +55,10 @@ For non-interactive mode, provide all required flags:
 func init() {
 	initCmd.Flags().StringVar(&flagProjectName, "name", "", "Project name (non-interactive)")
 	initCmd.Flags().StringVar(&flagGroupID, "group-id", "", "Group ID, e.g., com.company.project (non-interactive)")
-	initCmd.Flags().StringVar(&flagModules, "modules", "", "Comma-separated modules: Model,SQLDatastore,NoSQLDatastore,Shared,API (SQLDatastore and NoSQLDatastore are mutually exclusive)")
+	initCmd.Flags().StringVar(&flagModules, "modules", "", "Comma-separated modules: Model,SQLDatastore,NoSQLDatastore,Shared,API,EventConsumer (SQLDatastore and NoSQLDatastore are mutually exclusive)")
 	initCmd.Flags().StringVar(&flagDatabase, "database", "postgresql", "SQL database type: postgresql, mysql, none (non-interactive)")
 	initCmd.Flags().StringVar(&flagNoSQLDatabase, "nosql-database", "mongodb", "NoSQL database type: mongodb, redis (non-interactive)")
+	initCmd.Flags().StringVar(&flagMessageBroker, "message-broker", "kafka", "Message broker type: kafka, rabbitmq (non-interactive, only used when EventConsumer is selected)")
 	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 17, 21, or 25 (non-interactive)")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", true, "Include CLAUDE.md file (non-interactive)")
 	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
@@ -135,6 +137,13 @@ func runInit(cmd *cobra.Command, args []string) {
 			return
 		}
 
+		// Validate message broker type
+		validMessageBrokers := map[string]bool{"kafka": true, "rabbitmq": true, "": true}
+		if !validMessageBrokers[flagMessageBroker] {
+			color.Red("\nError: Invalid message broker type '%s'. Must be kafka or rabbitmq.\n", flagMessageBroker)
+			return
+		}
+
 		modules := strings.Split(flagModules, ",")
 		for i := range modules {
 			modules[i] = strings.TrimSpace(modules[i])
@@ -158,6 +167,7 @@ func runInit(cmd *cobra.Command, args []string) {
 			Modules:             resolvedModules,
 			Database:            flagDatabase,
 			NoSQLDatabase:       flagNoSQLDatabase,
+			MessageBroker:       flagMessageBroker,
 			IncludeCLAUDEMD:     flagIncludeClaude,
 		}
 
@@ -201,6 +211,9 @@ func runInit(cmd *cobra.Command, args []string) {
 			storageInfo = "postgresql (fallback)"
 		}
 		fmt.Printf("  JobRunr:    %s\n", storageInfo)
+	}
+	if cfg.HasModule("EventConsumer") {
+		fmt.Printf("  Broker:     %s\n", cfg.MessageBroker)
 	}
 	if cfg.IncludeCLAUDEMD {
 		fmt.Printf("  CLAUDE.md:  Yes\n")

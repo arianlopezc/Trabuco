@@ -1,11 +1,11 @@
-package {{.GroupID}}.jobs.placeholder;
+package {{.GroupID}}.model.jobs;
 
 import org.jobrunr.jobs.lambdas.JobRequestHandler;
 
 /**
  * Concrete base handler for {@link ProcessPlaceholderJobRequest}.
  *
- * This class lives in the Jobs module so that {@code getJobRequestHandler()} can
+ * This class lives in the Model module so that {@code getJobRequestHandler()} can
  * reference it without a runtime dependency on the Worker module. JobRunr validates
  * that the handler class and its {@code run} method exist at enqueue time, so both
  * must be concrete (not abstract) and on the classpath.

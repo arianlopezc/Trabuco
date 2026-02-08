@@ -9,10 +9,6 @@ import {{.GroupID}}.sqldatastore.repository.PlaceholderRepository;
 import {{.GroupID}}.model.entities.PlaceholderDocument;
 import {{.GroupID}}.nosqldatastore.repository.PlaceholderDocumentRepository;
 {{- end}}
-{{- if .HasModule "Worker"}}
-import {{.GroupID}}.jobs.placeholder.ProcessPlaceholderJobRequest;
-import org.jobrunr.scheduling.BackgroundJobRequest;
-{{- end}}
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Service;
 
@@ -126,29 +122,6 @@ public class PlaceholderService {
         }
         return false;
     }
-{{- if .HasModule "Worker"}}
-
-    // ==================== Background Job Methods ====================
-
-    /**
-     * Enqueue a placeholder processing job for immediate background execution.
-     *
-     * @param message The message to process
-     */
-    public void processAsync(String message) {
-        BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest(message));
-    }
-
-    /**
-     * Schedule a placeholder processing job for delayed execution.
-     *
-     * @param message The message to process
-     * @param runAt   When to execute the job
-     */
-    public void processAt(String message, Instant runAt) {
-        BackgroundJobRequest.schedule(runAt, new ProcessPlaceholderJobRequest(message));
-    }
-{{- end}}
 {{- else if .HasModule "NoSQLDatastore"}}
     private final PlaceholderDocumentRepository repository;
 
@@ -241,29 +214,6 @@ public class PlaceholderService {
         }
         return false;
     }
-{{- if .HasModule "Worker"}}
-
-    // ==================== Background Job Methods ====================
-
-    /**
-     * Enqueue a placeholder processing job for immediate background execution.
-     *
-     * @param message The message to process
-     */
-    public void processAsync(String message) {
-        BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest(message));
-    }
-
-    /**
-     * Schedule a placeholder processing job for delayed execution.
-     *
-     * @param message The message to process
-     * @param runAt   When to execute the job
-     */
-    public void processAt(String message, Instant runAt) {
-        BackgroundJobRequest.schedule(runAt, new ProcessPlaceholderJobRequest(message));
-    }
-{{- end}}
 {{- else}}
     // TODO: No datastore module included.
     // Add SQLDatastore or NoSQLDatastore module for data persistence.
@@ -287,28 +237,5 @@ public class PlaceholderService {
     public boolean delete(Long id) {
         throw new UnsupportedOperationException("Datastore module required");
     }
-{{- if .HasModule "Worker"}}
-
-    // ==================== Background Job Methods ====================
-
-    /**
-     * Enqueue a placeholder processing job for immediate background execution.
-     *
-     * @param message The message to process
-     */
-    public void processAsync(String message) {
-        BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest(message));
-    }
-
-    /**
-     * Schedule a placeholder processing job for delayed execution.
-     *
-     * @param message The message to process
-     * @param runAt   When to execute the job
-     */
-    public void processAt(String message, Instant runAt) {
-        BackgroundJobRequest.schedule(runAt, new ProcessPlaceholderJobRequest(message));
-    }
-{{- end}}
 {{- end}}
 }

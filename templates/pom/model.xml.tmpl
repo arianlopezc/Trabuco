@@ -56,6 +56,15 @@
             <artifactId>spring-data-commons</artifactId>
         </dependency>
 
+{{- if .HasModule "Worker"}}
+        <!-- JobRunr API (for JobRequest interface only, no Spring dependencies) -->
+        <dependency>
+            <groupId>org.jobrunr</groupId>
+            <artifactId>jobrunr</artifactId>
+            <version>${jobrunr.version}</version>
+        </dependency>
+{{- end}}
+
 {{- if .HasModule "SQLDatastore"}}
         <!-- Spring Data Relational for @Table annotation (version managed by Spring Boot BOM) -->
         <dependency>

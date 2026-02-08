@@ -12,12 +12,13 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 
 ## Features
 
-- **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, and Worker
+- **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
 - **Immutables everywhere** — Type-safe, immutable DTOs and entities with builder pattern
 - **Spring Boot 3.4** — Latest LTS with Spring Data JDBC (not JPA — no magic, no surprises)
 - **SQL databases** — PostgreSQL/MySQL support with Flyway migrations out of the box
 - **NoSQL databases** — MongoDB/Redis support with Spring Data repositories
 - **Background jobs** — JobRunr for fire-and-forget, delayed, recurring, and batch jobs
+- **Event-driven messaging** — Kafka or RabbitMQ with type-safe event contracts
 - **Testcontainers 2.x** — Real database tests that actually work with Docker Desktop
 - **Circuit breakers** — Resilience4j configured and ready to use
 - **Docker Compose** — Local development stack included
@@ -58,6 +59,26 @@ trabuco init \
   --group-id=com.company.myapp \
   --modules=Model,SQLDatastore,Shared,API \
   --database=postgresql
+```
+
+### With background jobs
+
+```bash
+trabuco init \
+  --name=myapp \
+  --group-id=com.company.myapp \
+  --modules=Model,SQLDatastore,Shared,API,Worker \
+  --database=postgresql
+```
+
+### With event-driven messaging
+
+```bash
+trabuco init \
+  --name=myapp \
+  --group-id=com.company.myapp \
+  --modules=Model,API,EventConsumer \
+  --message-broker=kafka
 ```
 
 ### Run your new project
@@ -110,10 +131,9 @@ myapp/
 │       │   └── config/              # Web configuration
 │       └── resources/
 │           └── application.yml      # App configuration
-├── Jobs/                            # Job request contracts (auto-included with Worker)
+├── Jobs/                            # Job services (auto-included with Worker)
 │   └── src/main/java/.../jobs/
-│       └── placeholder/             # Domain-grouped job requests
-│           └── ProcessPlaceholderJobRequest.java
+│       └── PlaceholderJobService.java  # Service for enqueueing jobs
 ├── Worker/                          # Background jobs (Spring Boot app)
 │   └── src/main/
 │       ├── java/.../worker/
@@ -121,7 +141,17 @@ myapp/
 │       │   └── handler/             # JobRequestHandler implementations
 │       └── resources/
 │           └── application.yml      # Worker configuration
-├── docker-compose.yml               # Local dev stack (database)
+├── Events/                          # Event publisher (auto-included with EventConsumer)
+│   └── src/main/java/.../events/
+│       └── EventPublisher.java      # Service for publishing events
+├── EventConsumer/                   # Event listeners (Spring Boot app)
+│   └── src/main/
+│       ├── java/.../eventconsumer/
+│       │   ├── config/              # Kafka or RabbitMQ configuration
+│       │   └── listener/            # Event listener implementations
+│       └── resources/
+│           └── application.yml      # Consumer configuration
+├── docker-compose.yml               # Local dev stack (database, message broker)
 ├── .run/                            # IntelliJ run configurations
 ├── CLAUDE.md                        # AI assistant context
 └── README.md                        # Project documentation
@@ -207,25 +237,27 @@ Endpoints use `ImmutablePlaceholderRequest` for input and `ImmutablePlaceholderR
 
 ### Jobs
 
-Job request contracts module — contains `JobRequest` classes that can be enqueued from any module.
+Job service module — contains services for enqueueing background jobs.
 
 | What | Description |
 |------|-------------|
-| **JobRequest** | Sealed interface for job requests |
-| **Concrete Requests** | Records implementing `JobRequest` (e.g., `ProcessPlaceholderJobRequest`) |
+| **PlaceholderJobService** | Service for enqueueing placeholder jobs |
 
-The Jobs module is **auto-included** when Worker is selected. It uses the **Command Pattern** with sealed interfaces for type safety.
+The Jobs module is **auto-included** when Worker is selected. Job request schemas (sealed interfaces and records) live in the Model module for decoupled access.
 
-**Enqueueing jobs from any module:**
+**Enqueueing jobs via service:**
 ```java
+@Autowired
+private PlaceholderJobService jobService;
+
 // Fire-and-forget (immediate)
-BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("data"));
+jobService.processAsync("data");
 
 // Delayed (at specific time)
-BackgroundJobRequest.schedule(Instant.now().plusHours(1), new ProcessPlaceholderJobRequest("data"));
+jobService.processAt("data", Instant.now().plusHours(1));
 
 // Batch (multiple items)
-BackgroundJobRequest.enqueue(items.stream().map(ProcessPlaceholderJobRequest::new));
+jobService.processBatch(List.of("item1", "item2", "item3"));
 ```
 
 ### Worker
@@ -256,6 +288,61 @@ Background job processing module — a runnable Spring Boot application using Jo
 - If no datastore is selected, Worker defaults to PostgreSQL
 - Jobs module is auto-included when Worker is selected
 
+### Events
+
+Event publisher module — contains services for publishing events to message brokers.
+
+| What | Description |
+|------|-------------|
+| **EventPublisher** | Service for publishing events to Kafka or RabbitMQ |
+| **Config** | RabbitMQ JSON serialization configuration (when using RabbitMQ) |
+
+The Events module is **auto-included** when EventConsumer is selected. Event schemas (sealed interfaces and records) live in the Model module for decoupled access.
+
+**Publishing events:**
+```java
+@Autowired
+private EventPublisher eventPublisher;
+
+// Publish an event
+eventPublisher.publish(new PlaceholderCreatedEvent("id-123", "Example", Instant.now()));
+```
+
+### EventConsumer
+
+Event consumer module — a runnable Spring Boot application that listens for events.
+
+| What | Description |
+|------|-------------|
+| **Listeners** | Event listener implementations with `@KafkaListener` or `@RabbitListener` |
+| **Config** | Kafka or RabbitMQ consumer configuration |
+| **Dead Letter Queues** | Automatic DLQ setup for failed messages (RabbitMQ) |
+
+**Supported message brokers:**
+
+| Broker | Description | Use Case |
+|--------|-------------|----------|
+| **Kafka** | High-throughput distributed streaming | Large-scale event streaming, log aggregation |
+| **RabbitMQ** | Feature-rich message broker | Task queues, pub/sub, routing patterns |
+
+**Architecture:** Events module contains the publisher service, EventConsumer module contains listeners. This allows any module to publish events without circular dependencies. Event schemas live in the Model module.
+
+**Kafka listener example:**
+```java
+@KafkaListener(topics = "placeholder-events", groupId = "${spring.kafka.consumer.group-id}")
+public void handleEvent(PlaceholderEvent event) {
+    // Process the event
+}
+```
+
+**RabbitMQ listener example:**
+```java
+@RabbitListener(queues = "${app.rabbitmq.queues.placeholder}")
+public void handleEvent(PlaceholderEvent event) {
+    // Process the event
+}
+```
+
 ## Configuration Options
 
 | Option | Description | Default |
@@ -265,6 +352,7 @@ Background job processing module — a runnable Spring Boot application using Jo
 | `--modules` | Modules to include (comma-separated) | — |
 | `--database` | SQL database type: `postgresql`, `mysql`, `none` | `postgresql` |
 | `--nosql-database` | NoSQL database type: `mongodb`, `redis` | `mongodb` |
+| `--message-broker` | Message broker: `kafka`, `rabbitmq` (when EventConsumer selected) | `kafka` |
 | `--java-version` | Java version: `17`, `21`, or `25` | `21` |
 | `--include-claude` | Generate `CLAUDE.md` for AI assistants | `true` |
 | `--strict` | Fail if specified Java version is not detected | `false` |
@@ -273,17 +361,19 @@ Background job processing module — a runnable Spring Boot application using Jo
 
 | Module | Description | Dependencies |
 |--------|-------------|--------------|
-| `Model` | DTOs, Entities, Enums | None (always included) |
+| `Model` | DTOs, Entities, Enums, Event/Job schemas | None (always included) |
 | `SQLDatastore` | SQL Repositories, Migrations | Model |
 | `NoSQLDatastore` | NoSQL Repositories | Model |
 | `Shared` | Services, Circuit breakers | Model |
 | `API` | REST endpoints | Model |
-| `Worker` | Background jobs (JobRunr) | Model, Jobs (auto), + SQLDatastore or NoSQLDatastore |
+| `Worker` | Background jobs (JobRunr) | Model, Jobs (auto) |
+| `EventConsumer` | Event listeners (Kafka/RabbitMQ) | Model, Events (auto) |
 
 **Notes:**
 - SQLDatastore and NoSQLDatastore are mutually exclusive
-- Worker requires a datastore module for job persistence
+- Worker uses your datastore for job persistence (defaults to PostgreSQL if none selected)
 - Jobs module is auto-included when Worker is selected (not shown in CLI)
+- Events module is auto-included when EventConsumer is selected (not shown in CLI)
 
 ### Java Version Detection
 
@@ -314,6 +404,8 @@ trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=
 | Spring Data JDBC | — | SQL database access |
 | Spring Data MongoDB | — | MongoDB access |
 | Spring Data Redis | — | Redis access |
+| Spring Kafka | — | Kafka messaging |
+| Spring AMQP | — | RabbitMQ messaging |
 | Immutables | 2.10.1 | Immutable value objects |
 | Flyway | — | SQL database migrations |
 | JobRunr | 7.3.2 | Background job processing |
@@ -321,6 +413,8 @@ trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=
 | Resilience4j | — | Circuit breakers |
 | PostgreSQL / MySQL | — | SQL databases |
 | MongoDB / Redis | — | NoSQL databases |
+| Apache Kafka | — | Distributed streaming |
+| RabbitMQ | — | Message broker |
 | HikariCP | — | Connection pooling (SQL) |
 
 ## Local Development
@@ -328,9 +422,11 @@ trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=
 The generated project includes a `docker-compose.yml` for local development:
 
 ```bash
-docker-compose up -d    # Start Postgres
+docker-compose up -d    # Start database (and message broker if EventConsumer selected)
 mvn spring-boot:run -pl API
 ```
+
+If you selected EventConsumer, the docker-compose includes Kafka (with Zookeeper) or RabbitMQ depending on your choice.
 
 ### Running Tests
 

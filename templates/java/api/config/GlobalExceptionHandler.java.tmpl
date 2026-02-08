@@ -20,6 +20,13 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+{{- if .HasModule "EventConsumer"}}
+{{- if .UsesKafka}}
+import org.apache.kafka.common.KafkaException;
+{{- else if .UsesRabbitMQ}}
+import org.springframework.amqp.AmqpException;
+{{- end}}
+{{- end}}
 
 /**
  * Global exception handler for REST API.
@@ -213,6 +220,44 @@ public class GlobalExceptionHandler {
                 .message(ex.getMessage())
                 .build());
     }
+
+{{- if .HasModule "EventConsumer"}}
+{{- if .UsesKafka}}
+    /**
+     * Handle Kafka messaging exceptions.
+     * Returns 503 Service Unavailable when the message broker is unreachable or misconfigured.
+     */
+    @ExceptionHandler(KafkaException.class)
+    public ResponseEntity<ErrorResponse> handleKafkaException(KafkaException ex) {
+        logger.error("Kafka messaging error: {}", ex.getMessage(), ex);
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(ErrorResponse.builder()
+                .timestamp(Instant.now())
+                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
+                .error("Service Unavailable")
+                .message("Unable to publish event. The messaging service is temporarily unavailable.")
+                .build());
+    }
+{{- else if .UsesRabbitMQ}}
+    /**
+     * Handle RabbitMQ messaging exceptions.
+     * Returns 503 Service Unavailable when the message broker is unreachable or misconfigured.
+     */
+    @ExceptionHandler(AmqpException.class)
+    public ResponseEntity<ErrorResponse> handleAmqpException(AmqpException ex) {
+        logger.error("RabbitMQ messaging error: {}", ex.getMessage(), ex);
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(ErrorResponse.builder()
+                .timestamp(Instant.now())
+                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
+                .error("Service Unavailable")
+                .message("Unable to publish event. The messaging service is temporarily unavailable.")
+                .build());
+    }
+{{- end}}
+{{- end}}
 
     /**
      * Handle all other unexpected exceptions.

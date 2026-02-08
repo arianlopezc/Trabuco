@@ -1,6 +1,6 @@
 package {{.GroupID}}.eventconsumer.config;
 
-import {{.GroupID}}.events.placeholder.PlaceholderEvent;
+import {{.GroupID}}.model.events.PlaceholderEvent;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
@@ -36,7 +36,7 @@ public class KafkaConfig {
         Map<String, Object> props = new HashMap<>(kafkaProperties.buildConsumerProperties(null));
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "{{.GroupID}}.events.*");
+        props.put(JsonDeserializer.TRUSTED_PACKAGES, "{{.GroupID}}.model.events");
         props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, true);
 
         return new DefaultKafkaConsumerFactory<>(props);

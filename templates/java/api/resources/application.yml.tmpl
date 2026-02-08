@@ -82,6 +82,24 @@ spring:
       minimum-idle: 2
       connection-timeout: 30000
 {{- end}}
+{{- if and (.HasModule "EventConsumer") (.UsesKafka)}}
+
+  # Kafka Configuration (for event publishing)
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+{{- else if and (.HasModule "EventConsumer") (.UsesRabbitMQ)}}
+
+  # RabbitMQ Configuration (for event publishing)
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+{{- end}}
 {{- if .HasModule "Shared"}}
 
 # Resilience4j configuration
@@ -148,6 +166,21 @@ jobrunr:
 {{- else if .JobRunrUsesMongoDB}}
     type: mongodb
 {{- end}}
+{{- end}}
+{{- if and (.HasModule "EventConsumer") (.UsesKafka)}}
+
+# Kafka topic configuration
+app:
+  kafka:
+    topics:
+      placeholder-events: ${KAFKA_TOPIC_PLACEHOLDER:placeholder-events}
+{{- else if and (.HasModule "EventConsumer") (.UsesRabbitMQ)}}
+
+# RabbitMQ exchange configuration
+app:
+  rabbitmq:
+    exchanges:
+      placeholder: ${RABBITMQ_EXCHANGE_PLACEHOLDER:placeholder-exchange}
 {{- end}}
 
 # Logging

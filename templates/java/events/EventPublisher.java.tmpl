@@ -1,6 +1,6 @@
-package {{.GroupID}}.shared.service;
+package {{.GroupID}}.events;
 
-import {{.GroupID}}.events.placeholder.PlaceholderEvent;
+import {{.GroupID}}.model.events.PlaceholderEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,7 +18,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
  * allowing business code to publish events without knowing
  * whether Kafka or RabbitMQ is being used.</p>
  *
- * <p>Usage in services:
+ * <p>Usage:
  * <pre>{@code
  * @Autowired
  * private EventPublisher eventPublisher;
