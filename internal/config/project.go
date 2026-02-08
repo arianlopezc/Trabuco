@@ -25,8 +25,11 @@ type ProjectConfig struct {
 	// Message Broker (only if EventConsumer selected)
 	MessageBroker string // "kafka" or "rabbitmq"
 
-	// Documentation
-	IncludeCLAUDEMD bool // Generate CLAUDE.md file
+	// AI Coding Agents
+	AIAgents []string // Selected agents: "claude", "cursor", "copilot", "windsurf", "cline"
+
+	// Deprecated: Use AIAgents instead
+	IncludeCLAUDEMD bool // Legacy field for backwards compatibility
 }
 
 // Derived helper methods
@@ -215,7 +218,89 @@ func (c *ProjectConfig) UsesRabbitMQ() bool {
 	return c.MessageBroker == "rabbitmq"
 }
 
+// UsesSQS returns true if AWS SQS is the selected message broker
+func (c *ProjectConfig) UsesSQS() bool {
+	return c.MessageBroker == "sqs"
+}
+
+// UsesPubSub returns true if GCP Pub/Sub is the selected message broker
+func (c *ProjectConfig) UsesPubSub() bool {
+	return c.MessageBroker == "pubsub"
+}
+
 // EventConsumerNeedsDockerCompose returns true if EventConsumer needs docker-compose services
 func (c *ProjectConfig) EventConsumerNeedsDockerCompose() bool {
 	return c.HasModule("EventConsumer") && c.MessageBroker != ""
+}
+
+// AI Agent Configuration Helpers
+
+// AIAgentInfo contains metadata about an AI coding agent
+type AIAgentInfo struct {
+	ID          string // Internal identifier (e.g., "claude", "cursor")
+	Name        string // Display name (e.g., "Claude Code", "Cursor")
+	FilePath    string // Output file path (e.g., "CLAUDE.md", ".cursorrules")
+	Description string // Short description for prompts
+}
+
+// GetAvailableAIAgents returns all supported AI coding agents
+func GetAvailableAIAgents() []AIAgentInfo {
+	return []AIAgentInfo{
+		{ID: "claude", Name: "Claude Code", FilePath: "CLAUDE.md", Description: "Anthropic's Claude Code CLI"},
+		{ID: "cursor", Name: "Cursor", FilePath: ".cursorrules", Description: "AI-first code editor"},
+		{ID: "copilot", Name: "GitHub Copilot", FilePath: ".github/copilot-instructions.md", Description: "GitHub's AI pair programmer"},
+		{ID: "windsurf", Name: "Windsurf", FilePath: ".windsurfrules", Description: "Codeium's agentic IDE"},
+		{ID: "cline", Name: "Cline", FilePath: ".clinerules", Description: "VS Code autonomous agent"},
+	}
+}
+
+// GetAIAgentIDs returns just the agent IDs for validation
+func GetAIAgentIDs() []string {
+	agents := GetAvailableAIAgents()
+	ids := make([]string, len(agents))
+	for i, a := range agents {
+		ids[i] = a.ID
+	}
+	return ids
+}
+
+// GetAIAgentDisplayOptions returns formatted display strings for prompts
+func GetAIAgentDisplayOptions() []string {
+	agents := GetAvailableAIAgents()
+	options := make([]string, len(agents))
+	for i, a := range agents {
+		options[i] = a.Name + " - " + a.Description
+	}
+	return options
+}
+
+// HasAIAgent checks if a specific AI agent is selected
+func (c *ProjectConfig) HasAIAgent(id string) bool {
+	for _, a := range c.AIAgents {
+		if a == id {
+			return true
+		}
+	}
+	// Backwards compatibility: check legacy field for Claude
+	if id == "claude" && c.IncludeCLAUDEMD {
+		return true
+	}
+	return false
+}
+
+// HasAnyAIAgent returns true if any AI agent is selected
+func (c *ProjectConfig) HasAnyAIAgent() bool {
+	return len(c.AIAgents) > 0 || c.IncludeCLAUDEMD
+}
+
+// GetSelectedAIAgents returns info about all selected AI agents
+func (c *ProjectConfig) GetSelectedAIAgents() []AIAgentInfo {
+	allAgents := GetAvailableAIAgents()
+	var selected []AIAgentInfo
+	for _, agent := range allAgents {
+		if c.HasAIAgent(agent.ID) {
+			selected = append(selected, agent)
+		}
+	}
+	return selected
 }

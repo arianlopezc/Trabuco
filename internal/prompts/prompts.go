@@ -129,6 +129,8 @@ func RunPrompts() (*config.ProjectConfig, error) {
 			Options: []string{
 				"Kafka (Recommended - High throughput, partitioned)",
 				"RabbitMQ (Traditional message queue)",
+				"AWS SQS (Managed queue service)",
+				"GCP Pub/Sub (Google Cloud messaging)",
 			},
 			Default: "Kafka (Recommended - High throughput, partitioned)",
 		}, &cfg.MessageBroker); err != nil {
@@ -138,13 +140,23 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		cfg.MessageBroker = normalizeMessageBrokerChoice(cfg.MessageBroker)
 	}
 
-	// 8. CLAUDE.md (AI assistant context file)
-	if err := survey.AskOne(&survey.Confirm{
-		Message: "Generate CLAUDE.md?",
-		Default: false,
-		Help:    "Creates a context file for AI assistants (Claude Code) with project-specific commands and conventions.",
-	}, &cfg.IncludeCLAUDEMD); err != nil {
+	// 8. AI coding agent context files
+	agentOptions := config.GetAIAgentDisplayOptions()
+	var selectedAgentIndices []int
+	if err := survey.AskOne(&survey.MultiSelect{
+		Message: "Generate AI agent context files:",
+		Options: agentOptions,
+		Default: []int{}, // None selected by default
+		Help:    "Creates context files with project-specific commands and conventions for AI coding assistants.",
+	}, &selectedAgentIndices); err != nil {
 		return nil, err
+	}
+
+	// Convert indices to agent IDs
+	allAgents := config.GetAvailableAIAgents()
+	cfg.AIAgents = make([]string, len(selectedAgentIndices))
+	for i, idx := range selectedAgentIndices {
+		cfg.AIAgents[i] = allAgents[idx].ID
 	}
 
 	return cfg, nil
@@ -257,6 +269,10 @@ func normalizeMessageBrokerChoice(choice string) string {
 		return "kafka"
 	case strings.HasPrefix(choice, "RabbitMQ"):
 		return "rabbitmq"
+	case strings.HasPrefix(choice, "AWS SQS"):
+		return "sqs"
+	case strings.HasPrefix(choice, "GCP Pub/Sub"):
+		return "pubsub"
 	default:
 		return "kafka"
 	}

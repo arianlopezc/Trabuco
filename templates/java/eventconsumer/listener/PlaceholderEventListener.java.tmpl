@@ -15,12 +15,20 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.retry.annotation.Backoff;
 {{- else if .UsesRabbitMQ}}
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+{{- else if .UsesSQS}}
+import io.awspring.cloud.sqs.annotation.SqsListener;
+import io.awspring.cloud.sqs.listener.acknowledgement.Acknowledgement;
+{{- else if .UsesPubSub}}
+import com.google.cloud.spring.pubsub.support.BasicAcknowledgeablePubsubMessage;
+import com.google.cloud.spring.pubsub.support.GcpPubSubHeaders;
+import org.springframework.integration.annotation.ServiceActivator;
+import org.springframework.messaging.handler.annotation.Header;
 {{- end}}
 
 /**
  * Event listener for placeholder-related events.
  *
- * <p>Consumes events from {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}} and processes them.
+ * <p>Consumes events from {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}} and processes them.
  * Uses pattern matching on the sealed PlaceholderEvent interface to handle
  * different event types.</p>
  *
@@ -31,6 +39,12 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
  *   <li>Failed events are sent to Dead Letter Topic (DLT)</li>
 {{- else if .UsesRabbitMQ}}
  *   <li>Failed events are rejected (sent to DLX if configured)</li>
+{{- else if .UsesSQS}}
+ *   <li>Failed events return to queue after visibility timeout</li>
+ *   <li>Configure Dead Letter Queue (DLQ) in AWS Console for poison messages</li>
+{{- else if .UsesPubSub}}
+ *   <li>Failed events are nacked and redelivered</li>
+ *   <li>Configure Dead Letter Topic in GCP Console for poison messages</li>
 {{- end}}
  * </ul>
  * </p>
@@ -99,6 +113,64 @@ public class PlaceholderEventListener {
         switch (event) {
             case PlaceholderCreatedEvent created -> handleCreated(created);
             // Add more cases as event types grow
+        }
+    }
+{{else if .UsesSQS}}
+    /**
+     * Main event handler for SQS messages.
+     *
+     * <p>Uses manual acknowledgment for reliable message processing.
+     * If processing fails, the message returns to the queue after
+     * the visibility timeout expires.</p>
+     *
+     * <p>Configure a Dead Letter Queue (DLQ) in AWS Console to capture
+     * messages that exceed the maxReceiveCount.</p>
+     */
+    @SqsListener("${app.sqs.queue.placeholder-events}")
+    public void handlePlaceholderEvent(PlaceholderEvent event, Acknowledgement acknowledgement) {
+        logger.info("Received event: eventId={}, type={}",
+            event.eventId(), event.getClass().getSimpleName());
+
+        try {
+            switch (event) {
+                case PlaceholderCreatedEvent created -> handleCreated(created);
+                // Add more cases as event types grow
+            }
+            acknowledgement.acknowledge();
+        } catch (Exception e) {
+            logger.error("Failed to process event: eventId={}, error={}",
+                event.eventId(), e.getMessage());
+            throw e; // Message returns to queue after visibility timeout
+        }
+    }
+{{else if .UsesPubSub}}
+    /**
+     * Main event handler for Pub/Sub messages.
+     *
+     * <p>Uses manual acknowledgment for reliable message processing.
+     * Successfully processed messages are acked; failed messages are
+     * nacked and will be redelivered.</p>
+     *
+     * <p>Configure a Dead Letter Topic in GCP Console to capture
+     * messages that exceed the maximum delivery attempts.</p>
+     */
+    @ServiceActivator(inputChannel = "placeholderInputChannel")
+    public void handlePlaceholderEvent(
+            PlaceholderEvent event,
+            @Header(GcpPubSubHeaders.ORIGINAL_MESSAGE) BasicAcknowledgeablePubsubMessage message) {
+        logger.info("Received event: eventId={}, type={}",
+            event.eventId(), event.getClass().getSimpleName());
+
+        try {
+            switch (event) {
+                case PlaceholderCreatedEvent created -> handleCreated(created);
+                // Add more cases as event types grow
+            }
+            message.ack();
+        } catch (Exception e) {
+            logger.error("Failed to process event: eventId={}, error={}",
+                event.eventId(), e.getMessage());
+            message.nack();
         }
     }
 {{end}}

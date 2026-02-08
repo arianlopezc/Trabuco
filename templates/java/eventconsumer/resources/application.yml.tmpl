@@ -35,6 +35,39 @@ app:
       placeholder-events: ${RABBITMQ_QUEUE_PLACEHOLDER:placeholder-events}
     exchanges:
       placeholder: ${RABBITMQ_EXCHANGE_PLACEHOLDER:placeholder-exchange}
+{{- else if .UsesSQS}}
+
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-east-1}
+      credentials:
+        access-key: ${AWS_ACCESS_KEY_ID:test}
+        secret-key: ${AWS_SECRET_ACCESS_KEY:test}
+      sqs:
+        endpoint: ${SQS_ENDPOINT:http://localhost:4566}
+        listener:
+          # Don't fail on startup if queue doesn't exist - useful for testing
+          queue-not-found-strategy: ${SQS_QUEUE_NOT_FOUND_STRATEGY:fail}
+
+app:
+  sqs:
+    queue:
+      placeholder-events: ${SQS_QUEUE_PLACEHOLDER:placeholder-events}
+{{- else if .UsesPubSub}}
+
+  cloud:
+    gcp:
+      project-id: ${GCP_PROJECT_ID:local-project}
+      pubsub:
+        emulator-host: ${PUBSUB_EMULATOR_HOST:localhost:8085}
+
+app:
+  pubsub:
+    subscription:
+      placeholder-events: ${PUBSUB_SUBSCRIPTION_PLACEHOLDER:placeholder-events-sub}
+    topic:
+      placeholder-events: ${PUBSUB_TOPIC_PLACEHOLDER:placeholder-events}
 {{- end}}
 
 server:
@@ -59,4 +92,10 @@ logging:
     org.springframework.kafka: INFO
 {{- else if .UsesRabbitMQ}}
     org.springframework.amqp: INFO
+{{- else if .UsesSQS}}
+    io.awspring.cloud: INFO
+    software.amazon.awssdk: WARN
+{{- else if .UsesPubSub}}
+    com.google.cloud: INFO
+    org.springframework.integration: INFO
 {{- end}}

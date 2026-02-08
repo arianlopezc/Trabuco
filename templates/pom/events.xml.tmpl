@@ -47,6 +47,32 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
+{{else if .UsesSQS}}
+
+        <!-- Spring Cloud AWS SQS (for event publishing) -->
+        <dependency>
+            <groupId>io.awspring.cloud</groupId>
+            <artifactId>spring-cloud-aws-starter-sqs</artifactId>
+        </dependency>
+
+        <!-- Jackson Java 8 date/time support -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+{{else if .UsesPubSub}}
+
+        <!-- Spring Cloud GCP Pub/Sub (for event publishing) -->
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>spring-cloud-gcp-starter-pubsub</artifactId>
+        </dependency>
+
+        <!-- Jackson Java 8 date/time support -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
 {{end}}
     </dependencies>
 </project>

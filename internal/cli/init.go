@@ -30,7 +30,8 @@ var (
 	flagNoSQLDatabase string
 	flagMessageBroker string
 	flagJavaVersion   string
-	flagIncludeClaude bool
+	flagAIAgents      string
+	flagIncludeClaude bool // Deprecated: use flagAIAgents instead
 	flagStrict        bool
 )
 
@@ -58,9 +59,10 @@ func init() {
 	initCmd.Flags().StringVar(&flagModules, "modules", "", "Comma-separated modules: Model,SQLDatastore,NoSQLDatastore,Shared,API,EventConsumer (SQLDatastore and NoSQLDatastore are mutually exclusive)")
 	initCmd.Flags().StringVar(&flagDatabase, "database", "postgresql", "SQL database type: postgresql, mysql, none (non-interactive)")
 	initCmd.Flags().StringVar(&flagNoSQLDatabase, "nosql-database", "mongodb", "NoSQL database type: mongodb, redis (non-interactive)")
-	initCmd.Flags().StringVar(&flagMessageBroker, "message-broker", "kafka", "Message broker type: kafka, rabbitmq (non-interactive, only used when EventConsumer is selected)")
+	initCmd.Flags().StringVar(&flagMessageBroker, "message-broker", "kafka", "Message broker type: kafka, rabbitmq, sqs, pubsub (non-interactive, only used when EventConsumer is selected)")
 	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 17, 21, or 25 (non-interactive)")
-	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", true, "Include CLAUDE.md file (non-interactive)")
+	initCmd.Flags().StringVar(&flagAIAgents, "ai-agents", "", "Comma-separated AI agents: claude,cursor,copilot,windsurf,cline (non-interactive)")
+	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", false, "Deprecated: use --ai-agents=claude instead")
 	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
 }
 
@@ -138,10 +140,46 @@ func runInit(cmd *cobra.Command, args []string) {
 		}
 
 		// Validate message broker type
-		validMessageBrokers := map[string]bool{"kafka": true, "rabbitmq": true, "": true}
+		validMessageBrokers := map[string]bool{"kafka": true, "rabbitmq": true, "sqs": true, "pubsub": true, "": true}
 		if !validMessageBrokers[flagMessageBroker] {
-			color.Red("\nError: Invalid message broker type '%s'. Must be kafka or rabbitmq.\n", flagMessageBroker)
+			color.Red("\nError: Invalid message broker type '%s'. Must be kafka, rabbitmq, sqs, or pubsub.\n", flagMessageBroker)
 			return
+		}
+
+		// Parse and validate AI agents
+		var aiAgents []string
+		if flagAIAgents != "" {
+			validAgents := make(map[string]bool)
+			for _, id := range config.GetAIAgentIDs() {
+				validAgents[id] = true
+			}
+			agents := strings.Split(flagAIAgents, ",")
+			for _, agent := range agents {
+				agent = strings.TrimSpace(strings.ToLower(agent))
+				if agent == "" {
+					continue
+				}
+				if !validAgents[agent] {
+					color.Red("\nError: Invalid AI agent '%s'. Valid options: %s\n", agent, strings.Join(config.GetAIAgentIDs(), ", "))
+					return
+				}
+				aiAgents = append(aiAgents, agent)
+			}
+		}
+
+		// Handle deprecated --include-claude flag
+		if flagIncludeClaude {
+			hasClaudeInList := false
+			for _, a := range aiAgents {
+				if a == "claude" {
+					hasClaudeInList = true
+					break
+				}
+			}
+			if !hasClaudeInList {
+				aiAgents = append(aiAgents, "claude")
+			}
+			yellow.Fprintf(os.Stderr, "\nWarning: --include-claude is deprecated. Use --ai-agents=claude instead.\n\n")
 		}
 
 		modules := strings.Split(flagModules, ",")
@@ -168,7 +206,7 @@ func runInit(cmd *cobra.Command, args []string) {
 			Database:            flagDatabase,
 			NoSQLDatabase:       flagNoSQLDatabase,
 			MessageBroker:       flagMessageBroker,
-			IncludeCLAUDEMD:     flagIncludeClaude,
+			AIAgents:            aiAgents,
 		}
 
 		// Warn about Redis + Worker combination
@@ -215,8 +253,13 @@ func runInit(cmd *cobra.Command, args []string) {
 	if cfg.HasModule("EventConsumer") {
 		fmt.Printf("  Broker:     %s\n", cfg.MessageBroker)
 	}
-	if cfg.IncludeCLAUDEMD {
-		fmt.Printf("  CLAUDE.md:  Yes\n")
+	if cfg.HasAnyAIAgent() {
+		selectedAgents := cfg.GetSelectedAIAgents()
+		agentNames := make([]string, len(selectedAgents))
+		for i, a := range selectedAgents {
+			agentNames[i] = a.Name
+		}
+		fmt.Printf("  AI Agents:  %s\n", strings.Join(agentNames, ", "))
 	}
 	yellow.Println("─────────────────────────────────────────")
 	fmt.Println()

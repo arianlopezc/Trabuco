@@ -4,6 +4,13 @@ import {{.GroupID}}.model.events.PlaceholderCreatedEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+{{- if .UsesSQS}}
+import org.mockito.Mock;
+import io.awspring.cloud.sqs.listener.acknowledgement.Acknowledgement;
+{{- else if .UsesPubSub}}
+import org.mockito.Mock;
+import com.google.cloud.spring.pubsub.support.BasicAcknowledgeablePubsubMessage;
+{{- end}}
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -12,11 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
  * Unit tests for PlaceholderEventListener.
  *
  * <p>These tests verify that the listener can process events without errors.
- * For integration tests with {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}}, use
+ * For integration tests with {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}}, use
 {{- if .UsesKafka}}
  * @EmbeddedKafka or Testcontainers.</p>
 {{- else if .UsesRabbitMQ}}
  * Testcontainers with RabbitMQ.</p>
+{{- else if .UsesSQS}}
+ * Testcontainers with LocalStack.</p>
+{{- else if .UsesPubSub}}
+ * the GCP Pub/Sub emulator.</p>
 {{- end}}
  */
 @ExtendWith(MockitoExtension.class)
@@ -24,14 +35,26 @@ class PlaceholderEventListenerTest {
 
     @InjectMocks
     private PlaceholderEventListener listener;
-
+{{if .UsesSQS}}
+    @Mock
+    private Acknowledgement acknowledgement;
+{{else if .UsesPubSub}}
+    @Mock
+    private BasicAcknowledgeablePubsubMessage message;
+{{end}}
     @Test
     void handlePlaceholderEvent_withCreatedEvent_processesSuccessfully() {
         // Arrange
         PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("123", "Test Placeholder");
 
         // Act & Assert
+{{- if .UsesSQS}}
+        assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, acknowledgement));
+{{- else if .UsesPubSub}}
+        assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, message));
+{{- else}}
         assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event));
+{{- end}}
     }
 
     @Test
@@ -42,8 +65,16 @@ class PlaceholderEventListenerTest {
 
         // Act & Assert
         assertDoesNotThrow(() -> {
+{{- if .UsesSQS}}
+            listener.handlePlaceholderEvent(event1, acknowledgement);
+            listener.handlePlaceholderEvent(event2, acknowledgement);
+{{- else if .UsesPubSub}}
+            listener.handlePlaceholderEvent(event1, message);
+            listener.handlePlaceholderEvent(event2, message);
+{{- else}}
             listener.handlePlaceholderEvent(event1);
             listener.handlePlaceholderEvent(event2);
+{{- end}}
         });
     }
 }

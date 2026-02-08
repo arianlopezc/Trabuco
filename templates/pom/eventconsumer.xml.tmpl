@@ -12,7 +12,7 @@
 
     <artifactId>EventConsumer</artifactId>
     <name>{{.ProjectNamePascal}} Event Consumer</name>
-    <description>Event listeners for {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}}</description>
+    <description>Event listeners for {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}}</description>
 
     <dependencies>
         <!-- Events module (contracts) -->
@@ -54,6 +54,26 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
+{{else if .UsesSQS}}
+
+        <!-- Spring Cloud AWS SQS -->
+        <dependency>
+            <groupId>io.awspring.cloud</groupId>
+            <artifactId>spring-cloud-aws-starter-sqs</artifactId>
+        </dependency>
+{{else if .UsesPubSub}}
+
+        <!-- Spring Cloud GCP Pub/Sub -->
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>spring-cloud-gcp-starter-pubsub</artifactId>
+        </dependency>
+
+        <!-- Spring Integration (for Pub/Sub message channels) -->
+        <dependency>
+            <groupId>org.springframework.integration</groupId>
+            <artifactId>spring-integration-core</artifactId>
+        </dependency>
 {{end}}
 
         <!-- Spring Boot Actuator (health checks) -->
@@ -92,6 +112,18 @@
         <dependency>
             <groupId>org.springframework.amqp</groupId>
             <artifactId>spring-rabbit-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{else if .UsesSQS}}
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>localstack</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{else if .UsesPubSub}}
+        <dependency>
+            <groupId>org.springframework.integration</groupId>
+            <artifactId>spring-integration-test</artifactId>
             <scope>test</scope>
         </dependency>
 {{end}}

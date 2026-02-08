@@ -8,7 +8,7 @@ Trabuco is a command-line tool that generates complete, well-structured Java pro
 
 The generated projects come batteries-included with production-proven technologies: Spring Boot for the application framework, Spring Data JDBC for straightforward database access, Flyway for version-controlled migrations, Testcontainers for realistic integration tests, and Resilience4j for fault tolerance. Everything is pre-configured and working together out of the box. Need PostgreSQL instead of MySQL? Just pick it during setup. Want the latest Java 25 instead of 21? One flag changes everything. The architecture is designed to be solid by default yet flexible when you need it.
 
-The real power lies in the modular structure. Instead of a monolithic source tree where everything depends on everything, Trabuco generates clean, separated modules: Model for your data structures, SQLDatastore or NoSQLDatastore for persistence, Shared for business logic and services, and API for your REST endpoints. Each module has a clear responsibility and well-defined dependencies. This isn't just organization for organization's sake — it enforces good architecture, makes testing straightforward, helps new team members understand the codebase faster, and scales gracefully as your project grows from prototype to production. This clear structure also makes your codebase ideal for AI coding assistants. Tools like Claude Code thrive when they can understand where things belong, and Trabuco's organized layout removes the guesswork. The CLI even generates a `CLAUDE.md` file with project-specific conventions, patterns, and commands — giving AI assistants the context they need to write code that fits naturally into your project.
+The real power lies in the modular structure. Instead of a monolithic source tree where everything depends on everything, Trabuco generates clean, separated modules: Model for your data structures, SQLDatastore or NoSQLDatastore for persistence, Shared for business logic and services, and API for your REST endpoints. Each module has a clear responsibility and well-defined dependencies. This isn't just organization for organization's sake — it enforces good architecture, makes testing straightforward, helps new team members understand the codebase faster, and scales gracefully as your project grows from prototype to production. This clear structure also makes your codebase ideal for AI coding assistants. Tools like Claude Code, Cursor, GitHub Copilot, Windsurf, and Cline thrive when they can understand where things belong, and Trabuco's organized layout removes the guesswork. The CLI can generate context files for your preferred AI coding agents with project-specific conventions, patterns, and commands — giving them the context they need to write code that fits naturally into your project.
 
 ## Features
 
@@ -18,12 +18,12 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - **SQL databases** — PostgreSQL/MySQL support with Flyway migrations out of the box
 - **NoSQL databases** — MongoDB/Redis support with Spring Data repositories
 - **Background jobs** — JobRunr for fire-and-forget, delayed, recurring, and batch jobs
-- **Event-driven messaging** — Kafka or RabbitMQ with type-safe event contracts
+- **Event-driven messaging** — Kafka, RabbitMQ, AWS SQS, or GCP Pub/Sub with type-safe event contracts
 - **Testcontainers 2.x** — Real database tests that actually work with Docker Desktop
 - **Circuit breakers** — Resilience4j configured and ready to use
 - **Docker Compose** — Local development stack included
 - **IntelliJ run configs** — Just open and run
-- **AI-friendly** — Generates `CLAUDE.md` with project conventions for AI assistants
+- **AI-friendly** — Generates context files for Claude, Cursor, GitHub Copilot, Windsurf, and Cline
 
 ## Installation
 
@@ -147,7 +147,7 @@ myapp/
 ├── EventConsumer/                   # Event listeners (Spring Boot app)
 │   └── src/main/
 │       ├── java/.../eventconsumer/
-│       │   ├── config/              # Kafka or RabbitMQ configuration
+│       │   ├── config/              # Message broker configuration
 │       │   └── listener/            # Event listener implementations
 │       └── resources/
 │           └── application.yml      # Consumer configuration
@@ -294,8 +294,8 @@ Event publisher module — contains services for publishing events to message br
 
 | What | Description |
 |------|-------------|
-| **EventPublisher** | Service for publishing events to Kafka or RabbitMQ |
-| **Config** | RabbitMQ JSON serialization configuration (when using RabbitMQ) |
+| **EventPublisher** | Service for publishing events to your chosen message broker |
+| **Config** | Message serialization configuration (broker-specific) |
 
 The Events module is **auto-included** when EventConsumer is selected. Event schemas (sealed interfaces and records) live in the Model module for decoupled access.
 
@@ -314,9 +314,9 @@ Event consumer module — a runnable Spring Boot application that listens for ev
 
 | What | Description |
 |------|-------------|
-| **Listeners** | Event listener implementations with `@KafkaListener` or `@RabbitListener` |
-| **Config** | Kafka or RabbitMQ consumer configuration |
-| **Dead Letter Queues** | Automatic DLQ setup for failed messages (RabbitMQ) |
+| **Listeners** | Event listener implementations for your chosen broker |
+| **Config** | Message broker consumer configuration |
+| **Dead Letter Queues** | Automatic DLQ/DLT setup for failed messages |
 
 **Supported message brokers:**
 
@@ -324,23 +324,29 @@ Event consumer module — a runnable Spring Boot application that listens for ev
 |--------|-------------|----------|
 | **Kafka** | High-throughput distributed streaming | Large-scale event streaming, log aggregation |
 | **RabbitMQ** | Feature-rich message broker | Task queues, pub/sub, routing patterns |
+| **AWS SQS** | Managed queue service | Serverless, AWS-native applications |
+| **GCP Pub/Sub** | Google Cloud messaging | GCP-native applications, global distribution |
 
 **Architecture:** Events module contains the publisher service, EventConsumer module contains listeners. This allows any module to publish events without circular dependencies. Event schemas live in the Model module.
 
-**Kafka listener example:**
-```java
-@KafkaListener(topics = "placeholder-events", groupId = "${spring.kafka.consumer.group-id}")
-public void handleEvent(PlaceholderEvent event) {
-    // Process the event
-}
-```
+**Listener examples:**
 
-**RabbitMQ listener example:**
 ```java
-@RabbitListener(queues = "${app.rabbitmq.queues.placeholder}")
-public void handleEvent(PlaceholderEvent event) {
-    // Process the event
-}
+// Kafka
+@KafkaListener(topics = "${app.kafka.topics.placeholder-events}")
+public void handleEvent(PlaceholderEvent event) { ... }
+
+// RabbitMQ
+@RabbitListener(queues = "${app.rabbitmq.queues.placeholder-events}")
+public void handleEvent(PlaceholderEvent event) { ... }
+
+// AWS SQS
+@SqsListener("${app.sqs.queue.placeholder-events}")
+public void handleEvent(PlaceholderEvent event, Acknowledgement ack) { ... }
+
+// GCP Pub/Sub (uses Spring Integration)
+@ServiceActivator(inputChannel = "placeholderInputChannel")
+public void handleEvent(PlaceholderEvent event, BasicAcknowledgeablePubsubMessage msg) { ... }
 ```
 
 ## Configuration Options
@@ -352,9 +358,9 @@ public void handleEvent(PlaceholderEvent event) {
 | `--modules` | Modules to include (comma-separated) | — |
 | `--database` | SQL database type: `postgresql`, `mysql`, `none` | `postgresql` |
 | `--nosql-database` | NoSQL database type: `mongodb`, `redis` | `mongodb` |
-| `--message-broker` | Message broker: `kafka`, `rabbitmq` (when EventConsumer selected) | `kafka` |
+| `--message-broker` | Message broker: `kafka`, `rabbitmq`, `sqs`, `pubsub` | `kafka` |
 | `--java-version` | Java version: `17`, `21`, or `25` | `21` |
-| `--include-claude` | Generate `CLAUDE.md` for AI assistants | `true` |
+| `--ai-agents` | AI coding agents (comma-separated): `claude`, `cursor`, `copilot`, `windsurf`, `cline` | — |
 | `--strict` | Fail if specified Java version is not detected | `false` |
 
 ### Available Modules
@@ -367,7 +373,7 @@ public void handleEvent(PlaceholderEvent event) {
 | `Shared` | Services, Circuit breakers | Model |
 | `API` | REST endpoints | Model |
 | `Worker` | Background jobs (JobRunr) | Model, Jobs (auto) |
-| `EventConsumer` | Event listeners (Kafka/RabbitMQ) | Model, Events (auto) |
+| `EventConsumer` | Event listeners (Kafka/RabbitMQ/SQS/Pub/Sub) | Model, Events (auto) |
 
 **Notes:**
 - SQLDatastore and NoSQLDatastore are mutually exclusive
@@ -395,6 +401,28 @@ trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=
 trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=25 --strict
 ```
 
+### AI Coding Agents
+
+Trabuco can generate context files for popular AI coding assistants. These files contain project-specific conventions, commands, and patterns that help AI tools write code that fits naturally into your project.
+
+| Agent | Context File | Description |
+|-------|--------------|-------------|
+| Claude Code | `CLAUDE.md` | Anthropic's CLI for Claude |
+| Cursor | `.cursorrules` | AI-first code editor |
+| GitHub Copilot | `.github/copilot-instructions.md` | GitHub's AI pair programmer |
+| Windsurf | `.windsurfrules` | Codeium's agentic IDE |
+| Cline | `.clinerules` | VS Code autonomous agent |
+
+In interactive mode, you'll be prompted to select which agents you want context files for. In non-interactive mode:
+
+```bash
+# Generate for specific agents
+trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents=claude,cursor
+
+# Generate for all agents
+trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents=claude,cursor,copilot,windsurf,cline
+```
+
 ## Tech Stack
 
 | Technology | Version | Purpose |
@@ -406,6 +434,8 @@ trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=
 | Spring Data Redis | — | Redis access |
 | Spring Kafka | — | Kafka messaging |
 | Spring AMQP | — | RabbitMQ messaging |
+| Spring Cloud AWS | 3.2.0 | AWS SQS messaging |
+| Spring Cloud GCP | 5.8.0 | GCP Pub/Sub messaging |
 | Immutables | 2.10.1 | Immutable value objects |
 | Flyway | — | SQL database migrations |
 | JobRunr | 7.3.2 | Background job processing |
@@ -415,6 +445,8 @@ trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=
 | MongoDB / Redis | — | NoSQL databases |
 | Apache Kafka | — | Distributed streaming |
 | RabbitMQ | — | Message broker |
+| AWS SQS | — | Managed queue service (via LocalStack for local dev) |
+| GCP Pub/Sub | — | Google Cloud messaging (via emulator for local dev) |
 | HikariCP | — | Connection pooling (SQL) |
 
 ## Local Development
@@ -426,7 +458,11 @@ docker-compose up -d    # Start database (and message broker if EventConsumer se
 mvn spring-boot:run -pl API
 ```
 
-If you selected EventConsumer, the docker-compose includes Kafka (with Zookeeper) or RabbitMQ depending on your choice.
+If you selected EventConsumer, the docker-compose includes the appropriate local service:
+- **Kafka** — Kafka with Zookeeper
+- **RabbitMQ** — RabbitMQ with management UI
+- **AWS SQS** — LocalStack with auto-created queue
+- **GCP Pub/Sub** — Pub/Sub emulator with auto-created topic/subscription
 
 ### Running Tests
 

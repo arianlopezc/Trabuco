@@ -32,7 +32,7 @@ A Java multi-module Maven project.
 ├── Events/                      # Event contracts for event-driven processing
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-├── EventConsumer/               # Event listener ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}}, port 8083)
+├── EventConsumer/               # Event listener ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}}, port 8083)
 {{- end}}
 {{- if .NeedsDockerCompose}}
 ├── docker-compose.yml           # Local development services
@@ -83,6 +83,10 @@ This starts the required services for local development:
 - **Zookeeper** — localhost:2181
 {{- else if and (.HasModule "EventConsumer") (.UsesRabbitMQ)}}
 - **RabbitMQ** — localhost:5672 (AMQP), localhost:15672 (Management UI: guest/guest)
+{{- else if and (.HasModule "EventConsumer") (.UsesSQS)}}
+- **LocalStack (SQS)** — localhost:4566
+{{- else if and (.HasModule "EventConsumer") (.UsesPubSub)}}
+- **Pub/Sub Emulator** — localhost:8085
 {{- end}}
 
 ### 2. Build the project
@@ -137,7 +141,7 @@ cd EventConsumer
 mvn spring-boot:run
 ```
 
-The EventConsumer listens for events from {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}} and processes them.
+The EventConsumer listens for events from {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}} and processes them.
 
 - **Health check:** http://localhost:8084/actuator/health (management port)
 {{- end}}
@@ -262,7 +266,7 @@ If you prefer to use your own database instead of Docker:
 | Events | Event contracts for event-driven processing |
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-| EventConsumer | Event listener ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}}) |
+| EventConsumer | Event listener ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}}) |
 {{- end}}
 
 ## Configuration
@@ -345,6 +349,17 @@ If you prefer to use your own database instead of Docker:
 | `RABBITMQ_USERNAME` | RabbitMQ username | guest |
 | `RABBITMQ_PASSWORD` | RabbitMQ password | guest |
 | `RABBITMQ_VHOST` | RabbitMQ virtual host | / |
+{{- else if .UsesSQS}}
+| `AWS_REGION` | AWS region | us-east-1 |
+| `AWS_ACCESS_KEY_ID` | AWS access key | test |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key | test |
+| `SQS_ENDPOINT` | SQS endpoint (for LocalStack) | (empty - uses AWS) |
+| `SQS_QUEUE_PLACEHOLDER` | SQS queue name | placeholder-events |
+{{- else if .UsesPubSub}}
+| `GCP_PROJECT_ID` | GCP project ID | local-project |
+| `PUBSUB_EMULATOR_HOST` | Pub/Sub emulator host (for local dev) | (empty - uses GCP) |
+| `PUBSUB_SUBSCRIPTION_PLACEHOLDER` | Subscription name | placeholder-events-sub |
+| `PUBSUB_TOPIC_PLACEHOLDER` | Topic name | placeholder-events |
 {{- end}}
 {{- end}}
 {{- if .HasModule "Shared"}}

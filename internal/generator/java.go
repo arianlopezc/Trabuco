@@ -513,6 +513,16 @@ func (g *Generator) generateEventsModule() error {
 		}
 	}
 
+	// PubSubPublisherConfig.java (Pub/Sub JSON configuration) - only for Pub/Sub
+	if g.config.UsesPubSub() {
+		if err := g.writeTemplate(
+			"java/events/config/PubSubPublisherConfig.java.tmpl",
+			g.javaPath("Events", filepath.Join("config", "PubSubPublisherConfig.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate Events PubSubPublisherConfig.java: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -534,7 +544,7 @@ func (g *Generator) generateEventConsumerModule() error {
 		return fmt.Errorf("failed to generate EventConsumerApplication.java: %w", err)
 	}
 
-	// Config (Kafka or RabbitMQ)
+	// Config (Kafka, RabbitMQ, SQS, or Pub/Sub)
 	if g.config.UsesKafka() {
 		if err := g.writeTemplate(
 			"java/eventconsumer/config/KafkaConfig.java.tmpl",
@@ -548,6 +558,20 @@ func (g *Generator) generateEventConsumerModule() error {
 			g.javaPath("EventConsumer", filepath.Join("config", "RabbitConfig.java")),
 		); err != nil {
 			return fmt.Errorf("failed to generate RabbitConfig.java: %w", err)
+		}
+	} else if g.config.UsesSQS() {
+		if err := g.writeTemplate(
+			"java/eventconsumer/config/SqsConfig.java.tmpl",
+			g.javaPath("EventConsumer", filepath.Join("config", "SqsConfig.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate SqsConfig.java: %w", err)
+		}
+	} else if g.config.UsesPubSub() {
+		if err := g.writeTemplate(
+			"java/eventconsumer/config/PubSubConfig.java.tmpl",
+			g.javaPath("EventConsumer", filepath.Join("config", "PubSubConfig.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate PubSubConfig.java: %w", err)
 		}
 	}
 

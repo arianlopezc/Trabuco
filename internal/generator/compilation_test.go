@@ -588,3 +588,59 @@ func TestCompilation_EventConsumerWithRabbitMQ(t *testing.T) {
 	runMavenCompile(t, projectDir)
 	t.Log("EventConsumer with RabbitMQ compiled successfully")
 }
+
+func TestCompilation_EventConsumerWithSQS(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Resolve modules to auto-include Events
+	modules := config.ResolveDependencies([]string{"Model", "API", "EventConsumer"})
+
+	cfg := &config.ProjectConfig{
+		ProjectName:   "sqs-events",
+		GroupID:       "com.test.sqsevents",
+		ArtifactID:    "sqs-events",
+		JavaVersion:   "21",
+		Modules:       modules,
+		MessageBroker: "sqs",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("EventConsumer with AWS SQS compiled successfully")
+}
+
+func TestCompilation_EventConsumerWithPubSub(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Resolve modules to auto-include Events
+	modules := config.ResolveDependencies([]string{"Model", "API", "EventConsumer"})
+
+	cfg := &config.ProjectConfig{
+		ProjectName:   "pubsub-events",
+		GroupID:       "com.test.pubsubevents",
+		ArtifactID:    "pubsub-events",
+		JavaVersion:   "21",
+		Modules:       modules,
+		MessageBroker: "pubsub",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("EventConsumer with GCP Pub/Sub compiled successfully")
+}

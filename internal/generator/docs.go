@@ -12,9 +12,11 @@ func (g *Generator) generateDocs() error {
 		return err
 	}
 
-	// Generate CLAUDE.md (only if user opted in)
-	if g.config.IncludeCLAUDEMD {
-		if err := g.writeTemplate("docs/CLAUDE.md.tmpl", "CLAUDE.md"); err != nil {
+	// Generate AI agent context files for each selected agent
+	// All agents use the same template content (CLAUDE.md.tmpl), just different file paths
+	// The writeTemplate method handles parent directory creation automatically
+	for _, agent := range g.config.GetSelectedAIAgents() {
+		if err := g.writeTemplate("docs/CLAUDE.md.tmpl", agent.FilePath); err != nil {
 			return err
 		}
 	}
@@ -25,6 +27,13 @@ func (g *Generator) generateDocs() error {
 			return err
 		}
 		if err := g.writeTemplate("docker/env.example.tmpl", ".env.example"); err != nil {
+			return err
+		}
+	}
+
+	// Generate LocalStack init script for SQS
+	if g.config.UsesSQS() {
+		if err := g.writeTemplateExecutable("docker/localstack-init/ready.d/init-sqs.sh.tmpl", "localstack-init/ready.d/init-sqs.sh"); err != nil {
 			return err
 		}
 	}

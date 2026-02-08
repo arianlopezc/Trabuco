@@ -1,6 +1,6 @@
 # {{.ProjectName}}
 
-Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}{{if .HasModule "EventConsumer"}} and {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}} for event-driven processing{{end}}.
+Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}{{if .HasModule "EventConsumer"}} and {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}} for event-driven processing{{end}}.
 
 ## Build & Test Commands
 
@@ -133,12 +133,12 @@ BackgroundJobRequest.enqueue(requests.stream());
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
 
-## Event-Driven Processing ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}})
+## Event-Driven Processing ({{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}})
 
 **Architecture:**
-- `Events` module contains sealed interfaces for event contracts
+- `Events` module contains sealed interfaces for event contracts and `EventPublisher` service
 - `EventConsumer` module contains event listeners
-- `Shared` module contains `EventPublisher` for publishing events
+- API/Shared modules depend on Events to publish events
 
 **Event contracts (Events module):**
 ```java
@@ -149,12 +149,12 @@ public sealed interface PlaceholderEvent
 }
 ```
 
-**Publishing events (from Shared/API):**
+**Publishing events (from API or other modules):**
 ```java
 @Autowired
 private EventPublisher eventPublisher;
 
-eventPublisher.publish("placeholder-events", PlaceholderCreatedEvent.create("123", "name"));
+eventPublisher.publish(PlaceholderCreatedEvent.create("123", "name"));
 ```
 
 **Listener pattern:**
@@ -164,6 +164,14 @@ eventPublisher.publish("placeholder-events", PlaceholderCreatedEvent.create("123
 {{- else if .UsesRabbitMQ}}
 - Use `@RabbitListener` with queue names from `${app.rabbitmq.queues.xxx}`
 - Dead letter exchange is configured automatically with `.dlx` suffix
+{{- else if .UsesSQS}}
+- Use `@SqsListener` with queue names from `${app.sqs.queue.xxx}`
+- Configure Dead Letter Queue (DLQ) in AWS Console for failed messages
+- Use `Acknowledgement` parameter for manual message acknowledgment
+{{- else if .UsesPubSub}}
+- Use `@ServiceActivator(inputChannel = "xxxInputChannel")` for message handling
+- Pub/Sub uses Spring Integration channels configured in `PubSubConfig`
+- Use `BasicAcknowledgeablePubsubMessage` for manual ack/nack
 {{- end}}
 
 **Ports:**

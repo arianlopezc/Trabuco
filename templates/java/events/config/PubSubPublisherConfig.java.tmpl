@@ -1,0 +1,44 @@
+package {{.GroupID}}.events.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.google.cloud.spring.pubsub.support.converter.JacksonPubSubMessageConverter;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+
+/**
+ * GCP Pub/Sub configuration for event publishing.
+ *
+ * <p>Configures Jackson-based message conversion for publishing
+ * Java objects as JSON to Pub/Sub topics.</p>
+ */
+@Configuration
+public class PubSubPublisherConfig {
+
+    /**
+     * ObjectMapper configured for Pub/Sub message serialization.
+     *
+     * <p>Includes JavaTimeModule for proper handling of Instant,
+     * LocalDateTime, and other Java 8 date/time types.</p>
+     */
+    @Bean
+    @Primary
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    }
+
+    /**
+     * Jackson-based message converter for Pub/Sub.
+     *
+     * <p>Converts Java objects to JSON for publishing to Pub/Sub topics.
+     * Uses the configured ObjectMapper with JavaTimeModule support.</p>
+     */
+    @Bean
+    public JacksonPubSubMessageConverter jacksonPubSubMessageConverter(ObjectMapper objectMapper) {
+        return new JacksonPubSubMessageConverter(objectMapper);
+    }
+}

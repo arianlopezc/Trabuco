@@ -1,5 +1,7 @@
 package {{.GroupID}}.model.events;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import java.time.Instant;
 
 /**
@@ -8,6 +10,9 @@ import java.time.Instant;
  *
  * <p>Events are immutable data contracts shared between publishers and consumers.
  * They should contain only the data needed to process the event, not behavior.</p>
+ *
+ * <p>The {@code @JsonTypeInfo} annotation enables polymorphic deserialization,
+ * allowing message brokers to deserialize events to the correct concrete type.</p>
  *
  * <p>Usage:
  * <pre>{@code
@@ -22,6 +27,14 @@ import java.time.Instant;
  * }</pre>
  * </p>
  */
+@JsonTypeInfo(
+    use = JsonTypeInfo.Id.NAME,
+    include = JsonTypeInfo.As.PROPERTY,
+    property = "@type"
+)
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = PlaceholderCreatedEvent.class, name = "PlaceholderCreatedEvent")
+})
 public sealed interface PlaceholderEvent
     permits PlaceholderCreatedEvent {
 

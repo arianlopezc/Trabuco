@@ -271,6 +271,33 @@ func (g *Generator) writeTemplate(templatePath, outputPath string) error {
 	return g.writeFile(fullPath, content)
 }
 
+// writeTemplateExecutable renders a template and writes it as an executable file
+func (g *Generator) writeTemplateExecutable(templatePath, outputPath string) error {
+	content, err := g.renderTemplate(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to render template %s: %w", templatePath, err)
+	}
+
+	fullPath := filepath.Join(g.outDir, outputPath)
+	return g.writeFileExecutable(fullPath, content)
+}
+
+// writeFileExecutable writes content to a file with executable permissions (0755)
+func (g *Generator) writeFileExecutable(path string, content string) error {
+	// Ensure parent directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	// Write file with executable permissions
+	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", path, err)
+	}
+
+	return nil
+}
+
 // javaPath returns the Java source path for a module
 func (g *Generator) javaPath(module, subpackage string) string {
 	packagePath := g.config.PackagePath()

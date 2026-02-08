@@ -125,6 +125,79 @@ services:
       timeout: 10s
       retries: 5
 {{- end}}
+{{- /* LocalStack for AWS SQS */}}
+{{- if and (.HasModule "EventConsumer") (.UsesSQS)}}
+
+  localstack:
+    image: localstack/localstack:3.0
+    container_name: {{.ProjectName}}-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs
+      - DEFAULT_REGION=us-east-1
+      - DEBUG=0
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Init container to create SQS queue
+  localstack-init:
+    image: amazon/aws-cli:latest
+    container_name: {{.ProjectName}}-localstack-init
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Creating SQS queue: placeholder-events"
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name placeholder-events
+        echo "SQS initialization complete"
+{{- end}}
+{{- /* GCP Pub/Sub Emulator */}}
+{{- if and (.HasModule "EventConsumer") (.UsesPubSub)}}
+
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    container_name: {{.ProjectName}}-pubsub-emulator
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=local-project
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Init container to create Pub/Sub topic and subscription
+  pubsub-init:
+    image: curlimages/curl:latest
+    container_name: {{.ProjectName}}-pubsub-init
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Creating Pub/Sub topic: placeholder-events"
+        curl -s -X PUT "http://pubsub-emulator:8085/v1/projects/local-project/topics/placeholder-events"
+        echo ""
+        echo "Creating Pub/Sub subscription: placeholder-events-sub"
+        curl -s -X PUT "http://pubsub-emulator:8085/v1/projects/local-project/subscriptions/placeholder-events-sub" \
+          -H "Content-Type: application/json" \
+          -d '{"topic": "projects/local-project/topics/placeholder-events"}'
+        echo ""
+        echo "Pub/Sub initialization complete"
+{{- end}}
 {{- /* PostgreSQL for JobRunr when using Redis (since Redis is deprecated in JobRunr 8+) */}}
 {{- if .WorkerNeedsOwnPostgres}}
 
@@ -149,7 +222,7 @@ services:
 {{- end}}
 
 {{- /* Only output volumes section if at least one volume is needed */}}
-{{- $needsVolumes := or (or (or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")) .WorkerNeedsOwnPostgres) (and (.HasModule "EventConsumer") (.UsesRabbitMQ)) }}
+{{- $needsVolumes := or (or (or (or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")) .WorkerNeedsOwnPostgres) (and (.HasModule "EventConsumer") (.UsesRabbitMQ))) (and (.HasModule "EventConsumer") (.UsesSQS)) }}
 {{- if $needsVolumes}}
 
 volumes:
@@ -168,5 +241,8 @@ volumes:
 {{- end}}
 {{- if and (.HasModule "EventConsumer") (.UsesRabbitMQ)}}
   rabbitmq_data:
+{{- end}}
+{{- if and (.HasModule "EventConsumer") (.UsesSQS)}}
+  localstack_data:
 {{- end}}
 {{- end}}
