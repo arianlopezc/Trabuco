@@ -13,6 +13,8 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 ## Features
 
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
+- **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
+- **Project health checks** — Validate project structure and consistency with `trabuco doctor`
 - **Immutables everywhere** — Type-safe, immutable DTOs and entities with builder pattern
 - **Spring Boot 3.4** — Latest LTS with Spring Data JDBC (not JPA — no magic, no surprises)
 - **SQL databases** — PostgreSQL/MySQL support with Flyway migrations out of the box
@@ -94,6 +96,130 @@ Your API is now running at `http://localhost:8080`. Try the health endpoint:
 ```bash
 curl http://localhost:8080/health
 ```
+
+## Managing Existing Projects
+
+Trabuco isn't just for creating new projects — it can also validate and extend existing ones. The `doctor` command checks project health, and the `add` command lets you add modules incrementally as your needs evolve.
+
+### Project Health Check
+
+The `trabuco doctor` command validates that your project is healthy and consistent:
+
+```bash
+cd myapp
+trabuco doctor
+```
+
+**Example output:**
+
+```
+Trabuco Project Health Check
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Project: myapp
+Location: /Users/dev/myapp
+Trabuco Version: 1.2.0
+
+Running checks...
+
+  ✓ Project structure valid
+  ✓ Trabuco project detected
+  ✓ Metadata file valid
+  ✓ Parent POM valid
+  ✓ Module POMs exist (4 modules)
+  ✓ Java version consistent (21)
+  ✓ Docker Compose in sync
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Status: HEALTHY
+All 7 checks passed
+```
+
+**Doctor options:**
+
+| Option | Description |
+|--------|-------------|
+| `--verbose` | Show all checks, not just failures |
+| `--fix` | Auto-fix issues that can be fixed automatically |
+| `--json` | Output as JSON (for CI/scripting) |
+
+**Auto-fix capabilities:**
+
+```bash
+trabuco doctor --fix
+```
+
+This can automatically fix common issues like missing `.trabuco.json` metadata, out-of-sync module lists, and inconsistent Java versions across POMs.
+
+### Adding Modules
+
+Start with a minimal project and add modules as you need them:
+
+```bash
+# Create a simple API project
+trabuco init \
+  --name=myapp \
+  --group-id=com.company.myapp \
+  --modules=Model,Shared,API
+
+# Later, add a database
+cd myapp
+trabuco add SQLDatastore --database=postgresql
+
+# Even later, add background jobs
+trabuco add Worker
+
+# Or add event-driven messaging
+trabuco add EventConsumer --message-broker=kafka
+```
+
+The `add` command automatically:
+- Runs `doctor` to validate the project before making changes
+- Creates the module directory structure
+- Updates the parent POM with the new module
+- Adds required properties and dependencies
+- Updates `docker-compose.yml` with necessary services
+- Updates `.trabuco.json` metadata
+- Auto-includes dependent modules (e.g., `Worker` includes `Jobs`)
+
+**Add command options:**
+
+| Option | Description |
+|--------|-------------|
+| `--database` | SQL database type (for SQLDatastore): `postgresql`, `mysql` |
+| `--nosql-database` | NoSQL database type (for NoSQLDatastore): `mongodb`, `redis` |
+| `--message-broker` | Message broker (for EventConsumer): `kafka`, `rabbitmq`, `sqs`, `pubsub` |
+| `--dry-run` | Show what would change without making modifications |
+| `--no-backup` | Skip creating backup before modifications |
+
+**Interactive mode:**
+
+```bash
+trabuco add
+```
+
+If you don't specify a module, Trabuco prompts you to select one and asks for any required options.
+
+**Dry-run example:**
+
+```bash
+trabuco add SQLDatastore --database=postgresql --dry-run
+```
+
+This shows exactly what files will be created and modified without changing anything.
+
+**Backup and recovery:**
+
+By default, `add` creates a backup in `.trabuco-backup/` before modifying files. If something goes wrong, you can restore from this backup. The backup is overwritten on each successful `add` operation.
+
+**Module compatibility:**
+
+| Adding | Conflicts With | Auto-Includes |
+|--------|----------------|---------------|
+| SQLDatastore | NoSQLDatastore | — |
+| NoSQLDatastore | SQLDatastore | — |
+| Worker | — | Jobs, Model |
+| EventConsumer | — | Events, Model |
 
 ## Generated Project Structure
 

@@ -1,5 +1,9 @@
 package generator
 
+import (
+	"github.com/arianlopezc/Trabuco/internal/config"
+)
+
 // generateParentPOM generates the parent pom.xml file
 func (g *Generator) generateParentPOM() error {
 	return g.writeTemplate("pom/parent.xml.tmpl", "pom.xml")
@@ -9,20 +13,24 @@ func (g *Generator) generateParentPOM() error {
 func (g *Generator) generateModulePOM(module string) error {
 	var templateName string
 	switch module {
-	case "Model":
+	case config.ModuleModel:
 		templateName = "pom/model.xml.tmpl"
-	case "Jobs":
+	case config.ModuleJobs:
 		templateName = "pom/jobs.xml.tmpl"
-	case "SQLDatastore":
+	case config.ModuleSQLDatastore:
 		templateName = "pom/sqldatastore.xml.tmpl"
-	case "NoSQLDatastore":
+	case config.ModuleNoSQLDatastore:
 		templateName = "pom/nosqldatastore.xml.tmpl"
-	case "Shared":
+	case config.ModuleShared:
 		templateName = "pom/shared.xml.tmpl"
-	case "API":
+	case config.ModuleAPI:
 		templateName = "pom/api.xml.tmpl"
-	case "Worker":
+	case config.ModuleWorker:
 		templateName = "pom/worker.xml.tmpl"
+	case config.ModuleEvents:
+		templateName = "pom/events.xml.tmpl"
+	case config.ModuleEventConsumer:
+		templateName = "pom/eventconsumer.xml.tmpl"
 	default:
 		return nil
 	}

@@ -2,6 +2,10 @@
 # Run: docker-compose up -d
 # Stop: docker-compose down
 # Reset data: docker-compose down -v
+#
+# SECURITY NOTE: Default passwords are used for local development only.
+# NEVER use these credentials in production environments.
+# Change all passwords before deploying to any shared or production environment.
 
 services:
 {{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
@@ -26,7 +30,7 @@ services:
     image: mysql:8.0
     container_name: {{.ProjectName}}-mysql
     environment:
-      MYSQL_DATABASE: {{.ProjectName}}
+      MYSQL_DATABASE: {{.ProjectNameSnake}}
       MYSQL_ROOT_PASSWORD: root
     ports:
       - "3307:3306"  # Host:Container - uses 3307 to avoid conflicts with local MySQL

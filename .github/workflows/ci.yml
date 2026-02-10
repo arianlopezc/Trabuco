@@ -94,6 +94,134 @@ jobs:
           SPRING_DATASOURCE_USERNAME: test
           SPRING_DATASOURCE_PASSWORD: test
 
+  test-comprehensive-project:
+    name: Test Comprehensive Project (All Modules)
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      zookeeper:
+        image: confluentinc/cp-zookeeper:7.5.0
+        env:
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
+        ports:
+          - 2181:2181
+
+      kafka:
+        image: confluentinc/cp-kafka:7.5.0
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+        ports:
+          - 9092:9092
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trabuco-cli
+
+      - name: Make CLI executable
+        run: chmod +x ./trabuco
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Generate comprehensive project
+        run: |
+          mkdir -p test-comprehensive
+          cd test-comprehensive
+          ../trabuco init \
+            --name=full-project \
+            --group-id=com.test.fullproject \
+            --modules=Model,SQLDatastore,Shared,API,Worker,EventConsumer \
+            --database=postgresql \
+            --message-broker=kafka
+
+      - name: Display generated structure
+        run: |
+          echo "Generated project structure:"
+          find test-comprehensive/full-project -type f \( -name "*.java" -o -name "pom.xml" \) | head -50
+
+      - name: Build and install all modules
+        working-directory: test-comprehensive/full-project
+        run: mvn clean install -B -DskipTests
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+
+      - name: Run unit tests
+        working-directory: test-comprehensive/full-project
+        run: mvn test -B -DskipITs
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+
+      - name: Verify API module starts
+        working-directory: test-comprehensive/full-project/API
+        run: |
+          timeout 60 mvn spring-boot:run -Dspring-boot.run.profiles=local &
+          API_PID=$!
+          sleep 30
+          curl -sf http://localhost:8080/actuator/health || (kill $API_PID 2>/dev/null; exit 1)
+          kill $API_PID 2>/dev/null || true
+          echo "API started successfully"
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+
+      - name: Verify Worker module starts
+        working-directory: test-comprehensive/full-project/Worker
+        run: |
+          timeout 60 mvn spring-boot:run -Dspring-boot.run.profiles=local &
+          WORKER_PID=$!
+          sleep 30
+          curl -sf http://localhost:8082/actuator/health || (kill $WORKER_PID 2>/dev/null; exit 1)
+          kill $WORKER_PID 2>/dev/null || true
+          echo "Worker started successfully"
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          ORG_JOBRUNR_BACKGROUND_JOB_SERVER_ENABLED: "true"
+          ORG_JOBRUNR_DASHBOARD_ENABLED: "false"
+
+      - name: Verify EventConsumer module starts
+        working-directory: test-comprehensive/full-project/EventConsumer
+        run: |
+          timeout 60 mvn spring-boot:run -Dspring-boot.run.profiles=local &
+          CONSUMER_PID=$!
+          sleep 30
+          curl -sf http://localhost:8084/actuator/health || (kill $CONSUMER_PID 2>/dev/null; exit 1)
+          kill $CONSUMER_PID 2>/dev/null || true
+          echo "EventConsumer started successfully"
+        env:
+          SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+
   test-minimal-project:
     name: Test Minimal Project (Model only)
     needs: build

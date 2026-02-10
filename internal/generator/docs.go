@@ -1,5 +1,9 @@
 package generator
 
+import (
+	"github.com/arianlopezc/Trabuco/internal/config"
+)
+
 // generateDocs generates all documentation files
 func (g *Generator) generateDocs() error {
 	// Generate .gitignore
@@ -39,11 +43,17 @@ func (g *Generator) generateDocs() error {
 	}
 
 	// Generate .dockerignore when API or Worker is selected
-	if g.config.HasModule("API") || g.config.HasModule("Worker") {
+	if g.config.HasModule(config.ModuleAPI) || g.config.HasModule(config.ModuleWorker) {
 		if err := g.writeTemplate("docker/dockerignore.tmpl", ".dockerignore"); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// generateMetadata generates the .trabuco.json metadata file
+func (g *Generator) generateMetadata(version string) error {
+	metadata := config.NewMetadataFromConfig(g.config, version)
+	return config.SaveMetadata(g.outDir, metadata)
 }

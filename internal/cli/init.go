@@ -236,13 +236,13 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Printf("  Group ID:   %s\n", cfg.GroupID)
 	fmt.Printf("  Java:       %s\n", cfg.JavaVersion)
 	fmt.Printf("  Modules:    %s\n", strings.Join(cfg.Modules, ", "))
-	if cfg.HasModule("SQLDatastore") {
+	if cfg.HasModule(config.ModuleSQLDatastore) {
 		fmt.Printf("  SQL DB:     %s\n", cfg.Database)
 	}
-	if cfg.HasModule("NoSQLDatastore") {
+	if cfg.HasModule(config.ModuleNoSQLDatastore) {
 		fmt.Printf("  NoSQL DB:   %s\n", cfg.NoSQLDatabase)
 	}
-	if cfg.HasModule("Worker") {
+	if cfg.HasModule(config.ModuleWorker) {
 		storageType := cfg.JobRunrStorageType()
 		storageInfo := storageType
 		if cfg.WorkerUsesPostgresFallback() {
@@ -250,7 +250,7 @@ func runInit(cmd *cobra.Command, args []string) {
 		}
 		fmt.Printf("  JobRunr:    %s\n", storageInfo)
 	}
-	if cfg.HasModule("EventConsumer") {
+	if cfg.HasModule(config.ModuleEventConsumer) {
 		fmt.Printf("  Broker:     %s\n", cfg.MessageBroker)
 	}
 	if cfg.HasAnyAIAgent() {
@@ -265,7 +265,7 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Println()
 
 	// Generate project
-	gen, err := generator.New(cfg)
+	gen, err := generator.NewWithVersion(cfg, Version)
 	if err != nil {
 		color.Red("\nError: %v\n", err)
 		return
@@ -296,7 +296,7 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Println("Next steps:")
 	fmt.Printf("  cd %s\n", cfg.ProjectName)
 	fmt.Printf("  mvn clean install\n")
-	if cfg.HasModule("API") {
-		fmt.Printf("  cd API && mvn spring-boot:run\n")
+	if cfg.HasModule(config.ModuleAPI) {
+		fmt.Printf("  cd %s && mvn spring-boot:run\n", config.ModuleAPI)
 	}
 }

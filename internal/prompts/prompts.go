@@ -73,7 +73,7 @@ func RunPrompts() (*config.ProjectConfig, error) {
 	cfg.JavaVersionDetected = javaDetected
 
 	// 5. SQL Database (only if SQLDatastore is selected)
-	if cfg.HasModule("SQLDatastore") {
+	if cfg.HasModule(config.ModuleSQLDatastore) {
 		if err := survey.AskOne(&survey.Select{
 			Message: "SQL Database:",
 			Options: []string{
@@ -90,9 +90,9 @@ func RunPrompts() (*config.ProjectConfig, error) {
 	}
 
 	// 6. NoSQL Database (only if NoSQLDatastore is selected)
-	if cfg.HasModule("NoSQLDatastore") {
+	if cfg.HasModule(config.ModuleNoSQLDatastore) {
 		// Show warning if Worker is selected - Redis has limited support
-		if cfg.HasModule("Worker") {
+		if cfg.HasModule(config.ModuleWorker) {
 			yellow := color.New(color.FgYellow)
 			yellow.Println("\n⚠ Worker module note: Redis support is deprecated in JobRunr 8+.")
 			fmt.Println("  If you select Redis, JobRunr will use PostgreSQL for job storage.")
@@ -114,7 +114,7 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		cfg.NoSQLDatabase = normalizeNoSQLDatabaseChoice(cfg.NoSQLDatabase)
 
 		// Additional warning if Redis was selected with Worker
-		if cfg.HasModule("Worker") && cfg.NoSQLDatabase == "redis" {
+		if cfg.HasModule(config.ModuleWorker) && cfg.NoSQLDatabase == config.DatabaseRedis {
 			yellow := color.New(color.FgYellow)
 			yellow.Println("\n⚠ Redis selected with Worker: JobRunr will use PostgreSQL for job storage.")
 			fmt.Println("  A separate PostgreSQL instance will be added to docker-compose.yml.")
@@ -123,7 +123,7 @@ func RunPrompts() (*config.ProjectConfig, error) {
 	}
 
 	// 7. Message Broker (only if EventConsumer is selected)
-	if cfg.HasModule("EventConsumer") {
+	if cfg.HasModule(config.ModuleEventConsumer) {
 		if err := survey.AskOne(&survey.Select{
 			Message: "Message Broker:",
 			Options: []string{
@@ -227,15 +227,15 @@ func validateModuleSelection(val interface{}) error {
 	hasSQLDatastore := false
 	hasNoSQLDatastore := false
 	for _, name := range selectedModules {
-		if name == "SQLDatastore" {
+		if name == config.ModuleSQLDatastore {
 			hasSQLDatastore = true
 		}
-		if name == "NoSQLDatastore" {
+		if name == config.ModuleNoSQLDatastore {
 			hasNoSQLDatastore = true
 		}
 	}
 	if hasSQLDatastore && hasNoSQLDatastore {
-		return fmt.Errorf("SQLDatastore and NoSQLDatastore cannot be selected together")
+		return fmt.Errorf("%s and %s cannot be selected together", config.ModuleSQLDatastore, config.ModuleNoSQLDatastore)
 	}
 
 	return nil
@@ -244,9 +244,9 @@ func validateModuleSelection(val interface{}) error {
 func normalizeDatabaseChoice(choice string) string {
 	switch {
 	case strings.HasPrefix(choice, "PostgreSQL"):
-		return "postgresql"
+		return config.DatabasePostgreSQL
 	case strings.HasPrefix(choice, "MySQL"):
-		return "mysql"
+		return config.DatabaseMySQL
 	default:
 		return "generic"
 	}
@@ -255,26 +255,26 @@ func normalizeDatabaseChoice(choice string) string {
 func normalizeNoSQLDatabaseChoice(choice string) string {
 	switch {
 	case strings.HasPrefix(choice, "MongoDB"):
-		return "mongodb"
+		return config.DatabaseMongoDB
 	case strings.HasPrefix(choice, "Redis"):
-		return "redis"
+		return config.DatabaseRedis
 	default:
-		return "mongodb"
+		return config.DatabaseMongoDB
 	}
 }
 
 func normalizeMessageBrokerChoice(choice string) string {
 	switch {
 	case strings.HasPrefix(choice, "Kafka"):
-		return "kafka"
+		return config.BrokerKafka
 	case strings.HasPrefix(choice, "RabbitMQ"):
-		return "rabbitmq"
+		return config.BrokerRabbitMQ
 	case strings.HasPrefix(choice, "AWS SQS"):
-		return "sqs"
+		return config.BrokerSQS
 	case strings.HasPrefix(choice, "GCP Pub/Sub"):
-		return "pubsub"
+		return config.BrokerPubSub
 	default:
-		return "kafka"
+		return config.BrokerKafka
 	}
 }
 

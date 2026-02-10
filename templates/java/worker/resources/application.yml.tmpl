@@ -22,7 +22,7 @@ spring:
     password: postgres
     driver-class-name: org.postgresql.Driver
 {{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
-    url: jdbc:mysql://localhost:3307/{{.ProjectName}}?useSSL=true&requireSSL=true
+    url: jdbc:mysql://localhost:3307/{{.ProjectNameSnake}}?useSSL=true&requireSSL=true
     username: root
     password: root
     driver-class-name: com.mysql.cj.jdbc.Driver

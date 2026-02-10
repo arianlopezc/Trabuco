@@ -1,5 +1,34 @@
 package config
 
+// Module name constants - use these instead of string literals
+const (
+	ModuleModel         = "Model"
+	ModuleJobs          = "Jobs"
+	ModuleSQLDatastore  = "SQLDatastore"
+	ModuleNoSQLDatastore = "NoSQLDatastore"
+	ModuleShared        = "Shared"
+	ModuleAPI           = "API"
+	ModuleWorker        = "Worker"
+	ModuleEvents        = "Events"
+	ModuleEventConsumer = "EventConsumer"
+)
+
+// Database type constants
+const (
+	DatabasePostgreSQL = "postgresql"
+	DatabaseMySQL      = "mysql"
+	DatabaseMongoDB    = "mongodb"
+	DatabaseRedis      = "redis"
+)
+
+// Message broker constants
+const (
+	BrokerKafka    = "kafka"
+	BrokerRabbitMQ = "rabbitmq"
+	BrokerSQS      = "sqs"
+	BrokerPubSub   = "pubsub"
+)
+
 // Module represents a project module with its metadata
 type Module struct {
 	Name         string   // Module name (e.g., "Model")
@@ -16,67 +45,67 @@ type Module struct {
 // actual integrations.
 var ModuleRegistry = []Module{
 	{
-		Name:         "Model",
+		Name:         ModuleModel,
 		Description:  "DTOs, Entities, Enums, Exceptions",
 		Required:     true,
 		Internal:     false,
 		Dependencies: []string{},
 	},
 	{
-		Name:         "Jobs",
+		Name:         ModuleJobs,
 		Description:  "Job request contracts for background processing",
 		Required:     false,
 		Internal:     true, // Auto-included when Worker is selected
-		Dependencies: []string{"Model"},
+		Dependencies: []string{ModuleModel},
 	},
 	{
-		Name:         "SQLDatastore",
+		Name:         ModuleSQLDatastore,
 		Description:  "SQL repositories, Flyway migrations (PostgreSQL, MySQL) - exclusive with NoSQLDatastore",
 		Required:     false,
 		Internal:     false,
-		Dependencies: []string{"Model"},
+		Dependencies: []string{ModuleModel},
 	},
 	{
-		Name:         "NoSQLDatastore",
+		Name:         ModuleNoSQLDatastore,
 		Description:  "NoSQL repositories (MongoDB, Redis) - exclusive with SQLDatastore",
 		Required:     false,
 		Internal:     false,
-		Dependencies: []string{"Model"},
+		Dependencies: []string{ModuleModel},
 	},
 	{
-		Name:         "Shared",
+		Name:         ModuleShared,
 		Description:  "Services, Circuit breaker, Utilities",
 		Required:     false,
 		Internal:     false,
-		Dependencies: []string{"Model"},
+		Dependencies: []string{ModuleModel},
 	},
 	{
-		Name:         "API",
+		Name:         ModuleAPI,
 		Description:  "REST endpoints, Validation",
 		Required:     false,
 		Internal:     false,
-		Dependencies: []string{"Model"},
+		Dependencies: []string{ModuleModel},
 	},
 	{
-		Name:         "Worker",
+		Name:         ModuleWorker,
 		Description:  "Background jobs (fire-and-forget, scheduled, delayed, batch)",
 		Required:     false,
 		Internal:     false,
-		Dependencies: []string{"Model", "Jobs"}, // Jobs is auto-included; uses datastore for JobRunr persistence (defaults to PostgreSQL if none)
+		Dependencies: []string{ModuleModel, ModuleJobs}, // Jobs is auto-included; uses datastore for JobRunr persistence (defaults to PostgreSQL if none)
 	},
 	{
-		Name:         "Events",
+		Name:         ModuleEvents,
 		Description:  "Event contracts for event-driven processing",
 		Required:     false,
 		Internal:     true, // Auto-included when EventConsumer is selected
-		Dependencies: []string{"Model"},
+		Dependencies: []string{ModuleModel},
 	},
 	{
-		Name:         "EventConsumer",
+		Name:         ModuleEventConsumer,
 		Description:  "Event listeners (Kafka, RabbitMQ)",
 		Required:     false,
 		Internal:     false,
-		Dependencies: []string{"Model", "Events"}, // Events is auto-included
+		Dependencies: []string{ModuleModel, ModuleEvents}, // Events is auto-included
 	},
 }
 
@@ -160,15 +189,15 @@ func ValidateModuleSelection(selected []string) string {
 	hasSQLDatastore := false
 	hasNoSQLDatastore := false
 	for _, name := range selected {
-		if name == "SQLDatastore" {
+		if name == ModuleSQLDatastore {
 			hasSQLDatastore = true
 		}
-		if name == "NoSQLDatastore" {
+		if name == ModuleNoSQLDatastore {
 			hasNoSQLDatastore = true
 		}
 	}
 	if hasSQLDatastore && hasNoSQLDatastore {
-		return "SQLDatastore and NoSQLDatastore cannot be selected together. Choose one datastore type."
+		return ModuleSQLDatastore + " and " + ModuleNoSQLDatastore + " cannot be selected together. Choose one datastore type."
 	}
 
 	// Note: Worker no longer requires a datastore module - it defaults to PostgreSQL if none selected

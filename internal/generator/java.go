@@ -3,6 +3,8 @@ package generator
 import (
 	"fmt"
 	"path/filepath"
+
+	"github.com/arianlopezc/Trabuco/internal/config"
 )
 
 // generateModelModule generates all Model module files
@@ -29,7 +31,7 @@ func (g *Generator) generateModelModule() error {
 	}
 
 	// PlaceholderRecord.java (SQL database record) - only if SQLDatastore selected
-	if g.config.HasModule("SQLDatastore") {
+	if g.config.HasModule(config.ModuleSQLDatastore) {
 		if err := g.writeTemplate(
 			"java/model/entities/PlaceholderRecord.java.tmpl",
 			g.javaPath("Model", filepath.Join("entities", "PlaceholderRecord.java")),
@@ -39,7 +41,7 @@ func (g *Generator) generateModelModule() error {
 	}
 
 	// PlaceholderDocument.java (NoSQL document) - only if NoSQLDatastore selected
-	if g.config.HasModule("NoSQLDatastore") {
+	if g.config.HasModule(config.ModuleNoSQLDatastore) {
 		if err := g.writeTemplate(
 			"java/model/entities/PlaceholderDocument.java.tmpl",
 			g.javaPath("Model", filepath.Join("entities", "PlaceholderDocument.java")),
@@ -65,7 +67,7 @@ func (g *Generator) generateModelModule() error {
 	}
 
 	// Event classes (only if EventConsumer is selected)
-	if g.config.HasModule("EventConsumer") {
+	if g.config.HasModule(config.ModuleEventConsumer) {
 		// PlaceholderEvent.java (sealed interface)
 		if err := g.writeTemplate(
 			"java/model/events/PlaceholderEvent.java.tmpl",
@@ -84,7 +86,7 @@ func (g *Generator) generateModelModule() error {
 	}
 
 	// Job request classes (only if Worker is selected)
-	if g.config.HasModule("Worker") {
+	if g.config.HasModule(config.ModuleWorker) {
 		// PlaceholderJobRequest.java (sealed interface for placeholder domain)
 		if err := g.writeTemplate(
 			"java/model/jobs/PlaceholderJobRequest.java.tmpl",
@@ -304,7 +306,7 @@ func (g *Generator) generateAPIModule() error {
 	}
 
 	// PlaceholderJobController.java (only when Worker module is selected)
-	if g.config.HasModule("Worker") {
+	if g.config.HasModule(config.ModuleWorker) {
 		if err := g.writeTemplate(
 			"java/api/controller/PlaceholderJobController.java.tmpl",
 			g.javaPath("API", filepath.Join("controller", "PlaceholderJobController.java")),
@@ -314,7 +316,7 @@ func (g *Generator) generateAPIModule() error {
 	}
 
 	// EventController.java (only when EventConsumer module is selected)
-	if g.config.HasModule("EventConsumer") {
+	if g.config.HasModule(config.ModuleEventConsumer) {
 		if err := g.writeTemplate(
 			"java/api/controller/EventController.java.tmpl",
 			g.javaPath("API", filepath.Join("controller", "EventController.java")),

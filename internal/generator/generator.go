@@ -14,19 +14,26 @@ import (
 
 // Generator handles project generation
 type Generator struct {
-	config *config.ProjectConfig
-	engine *templates.Engine
-	outDir string
+	config  *config.ProjectConfig
+	engine  *templates.Engine
+	outDir  string
+	version string
 }
 
 // New creates a new Generator
 func New(cfg *config.ProjectConfig) (*Generator, error) {
+	return NewWithVersion(cfg, "")
+}
+
+// NewWithVersion creates a new Generator with a specified version
+func NewWithVersion(cfg *config.ProjectConfig, version string) (*Generator, error) {
 	engine := templates.NewEngine()
 
 	return &Generator{
-		config: cfg,
-		engine: engine,
-		outDir: cfg.ProjectName,
+		config:  cfg,
+		engine:  engine,
+		outDir:  cfg.ProjectName,
+		version: version,
 	}, nil
 }
 
@@ -72,6 +79,13 @@ func (g *Generator) Generate() error {
 	}
 	green.Println("  ✓ Created documentation files")
 
+	// Generate metadata file (.trabuco.json)
+	if err := g.generateMetadata(g.version); err != nil {
+		g.cleanup()
+		return fmt.Errorf("failed to generate metadata: %w", err)
+	}
+	green.Println("  ✓ Created .trabuco.json")
+
 	return nil
 }
 
@@ -85,8 +99,8 @@ func (g *Generator) createDirectories() error {
 	}
 
 	// Model module directories (always required)
-	if g.config.HasModule("Model") {
-		modelBase := filepath.Join(g.outDir, "Model", "src", "main", "java", packagePath, "model")
+	if g.config.HasModule(config.ModuleModel) {
+		modelBase := filepath.Join(g.outDir, config.ModuleModel, "src", "main", "java", packagePath, "model")
 		dirs = append(dirs,
 			modelBase,
 			filepath.Join(modelBase, "entities"),
@@ -101,71 +115,71 @@ func (g *Generator) createDirectories() error {
 	}
 
 	// SQLDatastore module directories
-	if g.config.HasModule("SQLDatastore") {
-		sqlBase := filepath.Join(g.outDir, "SQLDatastore", "src", "main", "java", packagePath, "sqldatastore")
-		sqlTestBase := filepath.Join(g.outDir, "SQLDatastore", "src", "test", "java", packagePath, "sqldatastore")
+	if g.config.HasModule(config.ModuleSQLDatastore) {
+		sqlBase := filepath.Join(g.outDir, config.ModuleSQLDatastore, "src", "main", "java", packagePath, "sqldatastore")
+		sqlTestBase := filepath.Join(g.outDir, config.ModuleSQLDatastore, "src", "test", "java", packagePath, "sqldatastore")
 		dirs = append(dirs,
 			filepath.Join(sqlBase, "config"),
 			filepath.Join(sqlBase, "repository"),
-			filepath.Join(g.outDir, "SQLDatastore", "src", "main", "resources", "db", "migration"),
+			filepath.Join(g.outDir, config.ModuleSQLDatastore, "src", "main", "resources", "db", "migration"),
 			filepath.Join(sqlTestBase, "repository"),
 		)
 	}
 
 	// NoSQLDatastore module directories
-	if g.config.HasModule("NoSQLDatastore") {
-		nosqlBase := filepath.Join(g.outDir, "NoSQLDatastore", "src", "main", "java", packagePath, "nosqldatastore")
-		nosqlTestBase := filepath.Join(g.outDir, "NoSQLDatastore", "src", "test", "java", packagePath, "nosqldatastore")
+	if g.config.HasModule(config.ModuleNoSQLDatastore) {
+		nosqlBase := filepath.Join(g.outDir, config.ModuleNoSQLDatastore, "src", "main", "java", packagePath, "nosqldatastore")
+		nosqlTestBase := filepath.Join(g.outDir, config.ModuleNoSQLDatastore, "src", "test", "java", packagePath, "nosqldatastore")
 		dirs = append(dirs,
 			filepath.Join(nosqlBase, "config"),
 			filepath.Join(nosqlBase, "repository"),
-			filepath.Join(g.outDir, "NoSQLDatastore", "src", "main", "resources"),
+			filepath.Join(g.outDir, config.ModuleNoSQLDatastore, "src", "main", "resources"),
 			filepath.Join(nosqlTestBase, "repository"),
 		)
 	}
 
 	// Shared module directories
-	if g.config.HasModule("Shared") {
-		sharedBase := filepath.Join(g.outDir, "Shared", "src", "main", "java", packagePath, "shared")
-		sharedTestBase := filepath.Join(g.outDir, "Shared", "src", "test", "java", packagePath, "shared")
+	if g.config.HasModule(config.ModuleShared) {
+		sharedBase := filepath.Join(g.outDir, config.ModuleShared, "src", "main", "java", packagePath, "shared")
+		sharedTestBase := filepath.Join(g.outDir, config.ModuleShared, "src", "test", "java", packagePath, "shared")
 		dirs = append(dirs,
 			filepath.Join(sharedBase, "config"),
 			filepath.Join(sharedBase, "service"),
-			filepath.Join(g.outDir, "Shared", "src", "main", "resources"),
+			filepath.Join(g.outDir, config.ModuleShared, "src", "main", "resources"),
 			filepath.Join(sharedTestBase, "service"),
 		)
 	}
 
 	// API module directories
-	if g.config.HasModule("API") {
-		apiBase := filepath.Join(g.outDir, "API", "src", "main", "java", packagePath, "api")
+	if g.config.HasModule(config.ModuleAPI) {
+		apiBase := filepath.Join(g.outDir, config.ModuleAPI, "src", "main", "java", packagePath, "api")
 		dirs = append(dirs,
 			apiBase,
 			filepath.Join(apiBase, "controller"),
 			filepath.Join(apiBase, "config"),
-			filepath.Join(g.outDir, "API", "src", "main", "resources"),
+			filepath.Join(g.outDir, config.ModuleAPI, "src", "main", "resources"),
 			filepath.Join(g.outDir, ".run"), // IntelliJ run configurations
 		)
 	}
 
 	// Jobs module directories (auto-included with Worker)
 	// NOTE: Job request schemas are in Model module; Jobs module contains job services
-	if g.config.HasModule("Jobs") {
-		jobsBase := filepath.Join(g.outDir, "Jobs", "src", "main", "java", packagePath, "jobs")
+	if g.config.HasModule(config.ModuleJobs) {
+		jobsBase := filepath.Join(g.outDir, config.ModuleJobs, "src", "main", "java", packagePath, "jobs")
 		dirs = append(dirs,
 			jobsBase,
 		)
 	}
 
 	// Worker module directories
-	if g.config.HasModule("Worker") {
-		workerBase := filepath.Join(g.outDir, "Worker", "src", "main", "java", packagePath, "worker")
-		workerTestBase := filepath.Join(g.outDir, "Worker", "src", "test", "java", packagePath, "worker")
+	if g.config.HasModule(config.ModuleWorker) {
+		workerBase := filepath.Join(g.outDir, config.ModuleWorker, "src", "main", "java", packagePath, "worker")
+		workerTestBase := filepath.Join(g.outDir, config.ModuleWorker, "src", "test", "java", packagePath, "worker")
 		dirs = append(dirs,
 			workerBase,
 			filepath.Join(workerBase, "config"),
 			filepath.Join(workerBase, "handler"),
-			filepath.Join(g.outDir, "Worker", "src", "main", "resources"),
+			filepath.Join(g.outDir, config.ModuleWorker, "src", "main", "resources"),
 			filepath.Join(workerTestBase, "handler"),
 			filepath.Join(g.outDir, ".run"), // IntelliJ run configurations (if not already created by API)
 		)
@@ -173,8 +187,8 @@ func (g *Generator) createDirectories() error {
 
 	// Events module directories (auto-included with EventConsumer)
 	// NOTE: Event schemas are now in Model module; Events module contains EventPublisher service
-	if g.config.HasModule("Events") {
-		eventsBase := filepath.Join(g.outDir, "Events", "src", "main", "java", packagePath, "events")
+	if g.config.HasModule(config.ModuleEvents) {
+		eventsBase := filepath.Join(g.outDir, config.ModuleEvents, "src", "main", "java", packagePath, "events")
 		dirs = append(dirs,
 			eventsBase,
 			filepath.Join(eventsBase, "config"),
@@ -182,14 +196,14 @@ func (g *Generator) createDirectories() error {
 	}
 
 	// EventConsumer module directories
-	if g.config.HasModule("EventConsumer") {
-		eventConsumerBase := filepath.Join(g.outDir, "EventConsumer", "src", "main", "java", packagePath, "eventconsumer")
-		eventConsumerTestBase := filepath.Join(g.outDir, "EventConsumer", "src", "test", "java", packagePath, "eventconsumer")
+	if g.config.HasModule(config.ModuleEventConsumer) {
+		eventConsumerBase := filepath.Join(g.outDir, config.ModuleEventConsumer, "src", "main", "java", packagePath, "eventconsumer")
+		eventConsumerTestBase := filepath.Join(g.outDir, config.ModuleEventConsumer, "src", "test", "java", packagePath, "eventconsumer")
 		dirs = append(dirs,
 			eventConsumerBase,
 			filepath.Join(eventConsumerBase, "config"),
 			filepath.Join(eventConsumerBase, "listener"),
-			filepath.Join(g.outDir, "EventConsumer", "src", "main", "resources"),
+			filepath.Join(g.outDir, config.ModuleEventConsumer, "src", "main", "resources"),
 			filepath.Join(eventConsumerTestBase, "listener"),
 		)
 	}
@@ -207,23 +221,23 @@ func (g *Generator) createDirectories() error {
 // generateModule generates all files for a specific module
 func (g *Generator) generateModule(module string) error {
 	switch module {
-	case "Model":
+	case config.ModuleModel:
 		return g.generateModelModule()
-	case "Jobs":
+	case config.ModuleJobs:
 		return g.generateJobsModule()
-	case "SQLDatastore":
+	case config.ModuleSQLDatastore:
 		return g.generateSQLDatastoreModule()
-	case "NoSQLDatastore":
+	case config.ModuleNoSQLDatastore:
 		return g.generateNoSQLDatastoreModule()
-	case "Shared":
+	case config.ModuleShared:
 		return g.generateSharedModule()
-	case "API":
+	case config.ModuleAPI:
 		return g.generateAPIModule()
-	case "Worker":
+	case config.ModuleWorker:
 		return g.generateWorkerModule()
-	case "Events":
+	case config.ModuleEvents:
 		return g.generateEventsModule()
-	case "EventConsumer":
+	case config.ModuleEventConsumer:
 		return g.generateEventConsumerModule()
 	default:
 		return fmt.Errorf("unknown module: %s", module)

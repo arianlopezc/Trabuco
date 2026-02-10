@@ -30,4 +30,6 @@ func Execute() {
 func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(addCmd)
 }
