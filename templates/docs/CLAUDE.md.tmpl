@@ -189,6 +189,33 @@ eventPublisher.publish(PlaceholderCreatedEvent.create("123", "name"));
 {{- if .HasModule "Shared"}}
 - Use `@CircuitBreaker(name = "default")` on methods calling external resources
 {{- end}}
+{{- if .HasModule "API"}}
+
+## Observability
+
+**Metrics (Prometheus):**
+- All modules expose metrics at `/actuator/prometheus`
+- Metrics configuration is in `application.yml` under `management.metrics`
+
+**API Documentation (OpenAPI/Swagger):**
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- OpenAPI spec: `http://localhost:8080/api-docs`
+- Configuration in `OpenAPIConfig.java` and `application.yml` under `springdoc`
+- Disable with `SPRINGDOC_ENABLED=false`
+
+**Correlation IDs:**
+- `CorrelationIdFilter.java` adds `X-Correlation-ID` header to all requests
+- IDs are included in logs via MDC and returned in response headers
+- Pass existing ID in request header for distributed tracing
+
+**Health Probes:**
+- `/actuator/health` — Overall health
+- `/actuator/health/readiness` — Kubernetes readiness
+- `/actuator/health/liveness` — Kubernetes liveness
+
+**Test Coverage:**
+- JaCoCo reports at `<module>/target/site/jacoco/index.html` after `mvn test`
+{{- end}}
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 
 ## Testing

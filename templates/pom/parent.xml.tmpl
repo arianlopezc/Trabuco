@@ -25,6 +25,10 @@
 {{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
         <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
 {{- end}}
+{{- if .HasModule "API"}}
+        <springdoc.version>2.7.0</springdoc.version>
+{{- end}}
+        <jacoco.version>0.8.12</jacoco.version>
     </properties>
 
     <modules>
@@ -93,6 +97,25 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.2.5</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>prepare-agent</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>report</id>
+                            <phase>test</phase>
+                            <goals>
+                                <goal>report</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
             </plugins>
         </pluginManagement>

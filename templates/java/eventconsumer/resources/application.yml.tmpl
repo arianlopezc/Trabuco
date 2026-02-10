@@ -3,6 +3,8 @@ spring:
     name: {{.ProjectName}}-event-consumer
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
 {{- if .UsesKafka}}
 
   kafka:
@@ -72,6 +74,7 @@ app:
 
 server:
   port: ${SERVER_PORT:8083}
+  shutdown: graceful
 
 management:
   server:
@@ -79,10 +82,21 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: when_authorized
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 logging:
   level:

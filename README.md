@@ -38,6 +38,12 @@ The real power lies in the modular structure. Instead of a monolithic source tre
   - [Worker](#worker)
   - [Events](#events)
   - [EventConsumer](#eventconsumer)
+- [Observability](#observability)
+  - [Metrics](#metrics)
+  - [API Documentation](#api-documentation)
+  - [Request Tracing](#request-tracing)
+  - [Health Checks](#health-checks)
+  - [Test Coverage](#test-coverage)
 - [Configuration Options](#configuration-options)
   - [Available Modules](#available-modules)
   - [Java Version Detection](#java-version-detection)
@@ -61,6 +67,11 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - **Event-driven messaging** — Kafka, RabbitMQ, AWS SQS, or GCP Pub/Sub with type-safe event contracts
 - **Testcontainers 2.x** — Real database tests that actually work with Docker Desktop
 - **Circuit breakers** — Resilience4j configured and ready to use
+- **Prometheus metrics** — Micrometer with `/actuator/prometheus` endpoint
+- **API documentation** — OpenAPI 3.0 with Swagger UI at `/swagger-ui.html`
+- **Correlation IDs** — Request tracing with `X-Correlation-ID` header
+- **Health probes** — Kubernetes-ready readiness and liveness endpoints
+- **Test coverage** — JaCoCo reports for code coverage
 - **Docker Compose** — Local development stack included
 - **IntelliJ run configs** — Just open and run
 - **AI-friendly** — Generates context files for Claude, Cursor, GitHub Copilot, Windsurf, and Cline
@@ -491,6 +502,51 @@ public void handleEvent(PlaceholderEvent event, Acknowledgement ack) { ... }
 // GCP Pub/Sub (uses Spring Integration)
 @ServiceActivator(inputChannel = "placeholderInputChannel")
 public void handleEvent(PlaceholderEvent event, BasicAcknowledgeablePubsubMessage msg) { ... }
+```
+
+## Observability
+
+### Metrics
+
+All runtime modules expose Prometheus metrics at `/actuator/prometheus`. These include:
+- JVM metrics (memory, GC, threads)
+- HTTP request metrics (latency, status codes)
+- Database connection pool metrics
+- Circuit breaker state
+
+### API Documentation
+
+The API module includes Swagger UI for interactive API exploration:
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- OpenAPI spec: `http://localhost:8080/api-docs`
+
+Disable in production by setting `SPRINGDOC_ENABLED=false`.
+
+### Request Tracing
+
+Every request is assigned a correlation ID for distributed tracing:
+- Incoming `X-Correlation-ID` header is preserved
+- If not present, a new UUID is generated
+- Correlation ID is included in all log entries
+- Correlation ID is returned in response headers
+
+### Health Checks
+
+Health endpoints for monitoring and orchestration:
+- `/actuator/health` — Overall health
+- `/actuator/health/readiness` — Kubernetes readiness probe
+- `/actuator/health/liveness` — Kubernetes liveness probe
+
+Database and message broker connectivity is automatically included.
+
+### Test Coverage
+
+JaCoCo is configured for test coverage reporting. After running tests, coverage reports are available at:
+- `<module>/target/site/jacoco/index.html`
+
+Run tests with coverage:
+```bash
+mvn test
 ```
 
 ## Configuration Options

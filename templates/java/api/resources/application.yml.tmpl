@@ -1,11 +1,18 @@
 server:
   port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,application/javascript,text/css
+    min-response-size: 1024
 
 spring:
   application:
     name: {{.ProjectName}}-api
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
 {{- if .HasModule "SQLDatastore"}}
 
   # Database configuration
@@ -166,15 +173,43 @@ management:
   endpoints:
     web:
       exposure:
-        include: ${MANAGEMENT_ENDPOINTS:health,info}
+        include: ${MANAGEMENT_ENDPOINTS:health,info,prometheus,metrics}
       base-path: /actuator
   endpoint:
     health:
       show-details: ${MANAGEMENT_HEALTH_DETAILS:when_authorized}
       show-components: ${MANAGEMENT_HEALTH_COMPONENTS:when_authorized}
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  health:
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+      threshold: 100MB
   info:
     env:
       enabled: false
+
+# OpenAPI/Swagger configuration
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_UI_ENABLED:true}
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
 
 {{- if .HasModule "Worker"}}
 # JobRunr Configuration (enqueue-only — background server runs in the Worker module)

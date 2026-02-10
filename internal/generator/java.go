@@ -349,6 +349,22 @@ func (g *Generator) generateAPIModule() error {
 		return fmt.Errorf("failed to generate SecurityHeadersFilter.java: %w", err)
 	}
 
+	// CorrelationIdFilter.java
+	if err := g.writeTemplate(
+		"java/api/config/CorrelationIdFilter.java.tmpl",
+		g.javaPath("API", filepath.Join("config", "CorrelationIdFilter.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate CorrelationIdFilter.java: %w", err)
+	}
+
+	// OpenAPIConfig.java
+	if err := g.writeTemplate(
+		"java/api/config/OpenAPIConfig.java.tmpl",
+		g.javaPath("API", filepath.Join("config", "OpenAPIConfig.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate OpenAPIConfig.java: %w", err)
+	}
+
 	// application.yml
 	if err := g.writeTemplate(
 		"java/api/resources/application.yml.tmpl",

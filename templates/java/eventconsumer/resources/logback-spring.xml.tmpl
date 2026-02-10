@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-    <!-- Local profile: Spring Boot default colored console output -->
+    <!-- Local profile: colored console output with correlation ID -->
     <springProfile name="local">
         <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
-        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%clr(%d{HH:mm:ss.SSS}){faint} %clr([%X{correlationId:-}]){magenta} %clr([%thread]){faint} %clr(%-5level) %clr(%logger{36}){cyan} %clr(-){faint} %msg%n</pattern>
+            </encoder>
+        </appender>
 
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
@@ -17,6 +22,7 @@
             <encoder class="net.logstash.logback.encoder.LogstashEncoder">
                 <timeZone>UTC</timeZone>
                 <includeContext>false</includeContext>
+                <includeMdcKeyName>correlationId</includeMdcKeyName>
             </encoder>
         </appender>
 

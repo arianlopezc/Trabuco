@@ -15,6 +15,8 @@ import (
 const (
 	JobRunrVersion           = "8.4.0"
 	LogstashEncoderVersion   = "8.0"
+	SpringDocVersion         = "2.7.0"
+	JaCoCoVersion            = "0.8.12"
 	SpringCloudAWSVersion    = "3.2.0"
 	SpringCloudGCPVersion    = "5.8.0"
 	LocalStackImageVersion   = "3.0"
@@ -559,7 +561,20 @@ func (a *ModuleAdder) updateParentPOM(modules []string, messageBroker string) er
 					return fmt.Errorf("failed to add logstash-logback-encoder.version property: %w", err)
 				}
 			}
-		case config.ModuleAPI, config.ModuleEventConsumer:
+		case config.ModuleAPI:
+			// logstash-logback-encoder for structured logging
+			if err := updater.AddProperty("logstash-logback-encoder.version", LogstashEncoderVersion); err != nil {
+				return fmt.Errorf("failed to add logstash-logback-encoder.version property: %w", err)
+			}
+			// springdoc for OpenAPI/Swagger
+			if err := updater.AddProperty("springdoc.version", SpringDocVersion); err != nil {
+				return fmt.Errorf("failed to add springdoc.version property: %w", err)
+			}
+			// jacoco for test coverage
+			if err := updater.AddProperty("jacoco.version", JaCoCoVersion); err != nil {
+				return fmt.Errorf("failed to add jacoco.version property: %w", err)
+			}
+		case config.ModuleEventConsumer:
 			// logstash-logback-encoder for structured logging
 			if err := updater.AddProperty("logstash-logback-encoder.version", LogstashEncoderVersion); err != nil {
 				return fmt.Errorf("failed to add logstash-logback-encoder.version property: %w", err)
