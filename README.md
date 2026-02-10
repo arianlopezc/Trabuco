@@ -10,6 +10,35 @@ The generated projects come batteries-included with production-proven technologi
 
 The real power lies in the modular structure. Instead of a monolithic source tree where everything depends on everything, Trabuco generates clean, separated modules: Model for your data structures, SQLDatastore or NoSQLDatastore for persistence, Shared for business logic and services, and API for your REST endpoints. Each module has a clear responsibility and well-defined dependencies. This isn't just organization for organization's sake — it enforces good architecture, makes testing straightforward, helps new team members understand the codebase faster, and scales gracefully as your project grows from prototype to production. This clear structure also makes your codebase ideal for AI coding assistants. Tools like Claude Code, Cursor, GitHub Copilot, Windsurf, and Cline thrive when they can understand where things belong, and Trabuco's organized layout removes the guesswork. The CLI can generate context files for your preferred AI coding agents with project-specific conventions, patterns, and commands — giving them the context they need to write code that fits naturally into your project.
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Managing Existing Projects](#managing-existing-projects)
+  - [Project Health Check](#project-health-check)
+  - [Adding Modules](#adding-modules)
+- [Generated Project Structure](#generated-project-structure)
+- [Modules](#modules)
+  - [Model](#model)
+  - [SQLDatastore](#sqldatastore)
+  - [NoSQLDatastore](#nosqldatastore)
+  - [Shared](#shared)
+  - [API](#api)
+  - [Jobs](#jobs)
+  - [Worker](#worker)
+  - [Events](#events)
+  - [EventConsumer](#eventconsumer)
+- [Configuration Options](#configuration-options)
+  - [Available Modules](#available-modules)
+  - [Java Version Detection](#java-version-detection)
+  - [AI Coding Agents](#ai-coding-agents)
+- [Tech Stack](#tech-stack)
+- [Local Development](#local-development)
+- [Requirements](#requirements)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Features
 
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
@@ -45,42 +74,22 @@ Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your PATH.
 
 ## Quick Start
 
-### Interactive mode
+**Interactive mode** — just run `trabuco init` and answer a few questions.
+
+**Non-interactive mode** — pass all options as flags:
 
 ```bash
-trabuco init
-```
+# Basic API with PostgreSQL
+trabuco init --name=myapp --group-id=com.company.myapp \
+  --modules=Model,SQLDatastore,Shared,API --database=postgresql
 
-Answer a few questions, and you're done.
+# Add background jobs with Worker
+trabuco init --name=myapp --group-id=com.company.myapp \
+  --modules=Model,SQLDatastore,Shared,API,Worker --database=postgresql
 
-### Non-interactive mode
-
-```bash
-trabuco init \
-  --name=myapp \
-  --group-id=com.company.myapp \
-  --modules=Model,SQLDatastore,Shared,API \
-  --database=postgresql
-```
-
-### With background jobs
-
-```bash
-trabuco init \
-  --name=myapp \
-  --group-id=com.company.myapp \
-  --modules=Model,SQLDatastore,Shared,API,Worker \
-  --database=postgresql
-```
-
-### With event-driven messaging
-
-```bash
-trabuco init \
-  --name=myapp \
-  --group-id=com.company.myapp \
-  --modules=Model,API,EventConsumer \
-  --message-broker=kafka
+# Add event-driven messaging with Kafka
+trabuco init --name=myapp --group-id=com.company.myapp \
+  --modules=Model,API,EventConsumer --message-broker=kafka
 ```
 
 ### Run your new project
