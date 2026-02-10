@@ -6,10 +6,10 @@
     ██║   ██╔══██╗██╔══██║██╔══██╗██║   ██║██║     ██║   ██║
     ██║   ██║  ██║██║  ██║██████╔╝╚██████╔╝╚██████╗╚██████╔╝
     ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝  ╚═════╝  ╚═════╝ ╚═════╝
+
+      Generate production-ready Java projects in seconds.
   </pre>
 </p>
-
-<h3 align="center">Generate production-ready Java projects in seconds.</h3>
 
 Starting a new Java project shouldn't feel like a chore. Yet every time you begin, it's the same story — setting up Maven modules, configuring database connections, writing migration scripts, wiring up test infrastructure, and copying boilerplate from that one project that "mostly works." Hours pass before you write a single line of actual business logic. Trabuco exists because your time is better spent building features, not fighting configuration files.
 
