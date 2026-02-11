@@ -1,0 +1,56 @@
+# AI Context Directory
+
+This directory contains resources for AI coding assistants working on this project.
+
+## Contents
+
+| File/Directory | Purpose |
+|----------------|---------|
+| `checkpoint.json` | Machine-readable project state for session continuity |
+| `prompts/` | Task-specific guides for common development patterns |
+
+## Usage
+
+### Checkpoint
+
+The `checkpoint.json` file tracks:
+- Current work in progress
+- Completed and pending steps
+- Test status
+- Important decisions made
+
+AI assistants should:
+1. Read the checkpoint at session start to understand context
+2. Update the checkpoint when work is completed
+3. Record blockers and decisions for future reference
+
+### Task Prompts
+
+When performing a task, read the corresponding guide in `prompts/`:
+
+| Task | Guide |
+|------|-------|
+| Add new entity | `prompts/add-entity.md` |
+{{- if .HasModule "API"}}
+| Add REST endpoint | `prompts/add-endpoint.md` |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Add background job | `prompts/add-job.md` |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| Add event type | `prompts/add-event.md` |
+{{- end}}
+
+Each prompt contains:
+- Step-by-step instructions
+- File locations for changes
+- Code examples following project patterns
+- Checklist for completion
+- Common mistakes to avoid
+
+## For Humans
+
+These files are designed for AI consumption but are human-readable. Feel free to:
+- Update `checkpoint.json` manually if needed
+- Add custom prompts for recurring tasks
+- Extend the schema for project-specific needs

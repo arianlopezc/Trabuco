@@ -256,3 +256,330 @@ jobs:
       - name: Build minimal project
         working-directory: test-minimal/minimal-project
         run: mvn clean compile test -B
+
+  test-mcp-server:
+    name: Test MCP Server Module
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trabuco-cli
+
+      - name: Make CLI executable
+        run: chmod +x ./trabuco
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Generate project with MCP module
+        run: |
+          mkdir -p test-mcp
+          cd test-mcp
+          ../trabuco init \
+            --name=mcp-project \
+            --group-id=com.test.mcp \
+            --modules=Model,MCP \
+            --skip-build
+
+      - name: Display MCP module structure
+        run: |
+          echo "MCP module structure:"
+          find test-mcp/mcp-project/MCP -type f -name "*.java" -o -name "*.xml"
+          echo ""
+          echo "=== MCP Configuration Files ==="
+          echo "Claude Code (.mcp.json):"
+          cat test-mcp/mcp-project/.mcp.json
+          echo ""
+          echo "Cursor (.cursor/mcp.json):"
+          cat test-mcp/mcp-project/.cursor/mcp.json
+          echo ""
+          echo "VS Code (.vscode/mcp.json):"
+          cat test-mcp/mcp-project/.vscode/mcp.json
+          echo ""
+          echo "MCP README exists:"
+          ls -la test-mcp/mcp-project/MCP/README.md
+
+      - name: Build MCP module
+        working-directory: test-mcp/mcp-project
+        run: mvn clean package -B -DskipTests
+
+      - name: Verify MCP JAR exists
+        run: |
+          JAR_PATH="test-mcp/mcp-project/MCP/target/MCP-1.0-SNAPSHOT.jar"
+          if [ ! -f "$JAR_PATH" ]; then
+            echo "ERROR: MCP JAR not found at $JAR_PATH"
+            exit 1
+          fi
+          echo "MCP JAR found: $(ls -lh $JAR_PATH)"
+
+      - name: Verify MCP config files for all agents
+        run: |
+          cd test-mcp/mcp-project
+          ERRORS=0
+
+          # Claude Code
+          if [ -f ".mcp.json" ]; then
+            echo "✓ .mcp.json (Claude Code)"
+          else
+            echo "✗ .mcp.json MISSING"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # Cursor
+          if [ -f ".cursor/mcp.json" ]; then
+            echo "✓ .cursor/mcp.json (Cursor)"
+          else
+            echo "✗ .cursor/mcp.json MISSING"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # VS Code / Copilot
+          if [ -f ".vscode/mcp.json" ]; then
+            echo "✓ .vscode/mcp.json (VS Code/Copilot)"
+          else
+            echo "✗ .vscode/mcp.json MISSING"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # MCP README
+          if [ -f "MCP/README.md" ]; then
+            echo "✓ MCP/README.md (Setup instructions)"
+          else
+            echo "✗ MCP/README.md MISSING"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          if [ $ERRORS -gt 0 ]; then
+            echo "ERROR: $ERRORS MCP config files missing"
+            exit 1
+          fi
+
+          echo "All MCP configuration files verified ✓"
+
+      - name: Test MCP server initialization
+        working-directory: test-mcp/mcp-project
+        run: |
+          # Create init request file
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' > /tmp/mcp-init.json
+
+          # Run MCP server with input, capture stdout
+          cat /tmp/mcp-init.json | timeout 10 java -jar MCP/target/MCP-1.0-SNAPSHOT.jar > /tmp/mcp-stdout.txt 2>/dev/null || true
+
+          # Check log file for the response (more reliable)
+          cat mcp-server.log 2>/dev/null | tee /tmp/mcp-log.txt || true
+
+          echo "=== MCP Server stdout ==="
+          cat /tmp/mcp-stdout.txt
+
+          # Verify initialize response in stdout
+          if grep -q '"id":1.*"result".*"serverInfo"' /tmp/mcp-stdout.txt; then
+            echo "✓ Initialize response found in stdout"
+          elif grep -q 'mcp-project-mcp' /tmp/mcp-stdout.txt; then
+            echo "✓ Server name found in stdout"
+          else
+            echo "ERROR: Initialize response not found"
+            echo "=== Log file ==="
+            cat /tmp/mcp-log.txt
+            exit 1
+          fi
+
+          # Verify server name is correct
+          if grep -q 'mcp-project-mcp' /tmp/mcp-stdout.txt; then
+            echo "✓ Server name 'mcp-project-mcp' verified"
+          else
+            echo "ERROR: Server name not found"
+            exit 1
+          fi
+
+          echo "MCP server initialized successfully"
+
+      - name: Test MCP tools registration
+        working-directory: test-mcp/mcp-project
+        run: |
+          # Run MCP server briefly and check tool notifications
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | \
+            timeout 5 java -jar MCP/target/MCP-1.0-SNAPSHOT.jar > /tmp/mcp-tools-stdout.txt 2>/dev/null || true
+
+          echo "=== MCP Tool Notifications ==="
+          cat /tmp/mcp-tools-stdout.txt
+
+          # Count tool notifications (each tool triggers a list_changed notification)
+          TOOL_COUNT=$(grep -c 'notifications/tools/list_changed' /tmp/mcp-tools-stdout.txt || echo "0")
+          echo "Tool notifications: $TOOL_COUNT"
+
+          # We expect 9 tools: build, package, clean, test, test-single, list-modules, list-entities, get-config, project-info
+          if [ "$TOOL_COUNT" -ge 9 ]; then
+            echo "✓ All 9 tools registered (found $TOOL_COUNT notifications)"
+          else
+            echo "ERROR: Expected 9 tool notifications, got $TOOL_COUNT"
+            exit 1
+          fi
+
+          # Verify the tools capability is enabled
+          if grep -q '"tools"' /tmp/mcp-tools-stdout.txt; then
+            echo "✓ Tools capability enabled"
+          else
+            echo "ERROR: Tools capability not found"
+            exit 1
+          fi
+
+          echo "MCP tools registration verified successfully"
+
+  test-ai-agents:
+    name: Test AI Agent Files Generation
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trabuco-cli
+
+      - name: Make CLI executable
+        run: chmod +x ./trabuco
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Generate project with all AI agents
+        run: |
+          mkdir -p test-ai
+          cd test-ai
+          ../trabuco init \
+            --name=ai-project \
+            --group-id=com.test.ai \
+            --modules=Model,Shared,API,Worker,EventConsumer,SQLDatastore \
+            --database=postgresql \
+            --message-broker=kafka \
+            --ai-agents=claude,cursor,copilot,windsurf,cline \
+            --skip-build
+
+      - name: Verify all AI agent files exist
+        working-directory: test-ai/ai-project
+        run: |
+          ERRORS=0
+
+          # Check agent instruction files
+          echo "Checking AI agent instruction files..."
+          for file in "CLAUDE.md" ".cursorrules" ".github/copilot-instructions.md" ".windsurfrules" ".clinerules"; do
+            if [ -f "$file" ]; then
+              echo "  ✓ $file exists ($(wc -l < "$file") lines)"
+            else
+              echo "  ✗ $file MISSING"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          # Check AI context directory
+          echo ""
+          echo "Checking .ai directory structure..."
+          for file in ".ai/README.md" ".ai/checkpoint.json"; do
+            if [ -f "$file" ]; then
+              echo "  ✓ $file exists"
+            else
+              echo "  ✗ $file MISSING"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          # Check prompts (should exist based on modules selected)
+          echo ""
+          echo "Checking .ai/prompts directory..."
+          for file in ".ai/prompts/add-entity.md" ".ai/prompts/add-endpoint.md" ".ai/prompts/add-job.md" ".ai/prompts/add-event.md"; do
+            if [ -f "$file" ]; then
+              echo "  ✓ $file exists"
+            else
+              echo "  ✗ $file MISSING"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          if [ $ERRORS -gt 0 ]; then
+            echo ""
+            echo "ERROR: $ERRORS files missing"
+            exit 1
+          fi
+
+          echo ""
+          echo "All AI agent files verified successfully"
+
+      - name: Verify AI agent files have same content
+        working-directory: test-ai/ai-project
+        run: |
+          # All agent files should have identical content (same template)
+          CLAUDE_HASH=$(md5sum CLAUDE.md | cut -d' ' -f1)
+          CURSOR_HASH=$(md5sum .cursorrules | cut -d' ' -f1)
+          WINDSURF_HASH=$(md5sum .windsurfrules | cut -d' ' -f1)
+          CLINE_HASH=$(md5sum .clinerules | cut -d' ' -f1)
+          COPILOT_HASH=$(md5sum .github/copilot-instructions.md | cut -d' ' -f1)
+
+          echo "Content hashes:"
+          echo "  CLAUDE.md:                    $CLAUDE_HASH"
+          echo "  .cursorrules:                 $CURSOR_HASH"
+          echo "  .windsurfrules:               $WINDSURF_HASH"
+          echo "  .clinerules:                  $CLINE_HASH"
+          echo "  .github/copilot-instructions: $COPILOT_HASH"
+
+          if [ "$CLAUDE_HASH" != "$CURSOR_HASH" ] || \
+             [ "$CLAUDE_HASH" != "$WINDSURF_HASH" ] || \
+             [ "$CLAUDE_HASH" != "$CLINE_HASH" ] || \
+             [ "$CLAUDE_HASH" != "$COPILOT_HASH" ]; then
+            echo ""
+            echo "ERROR: AI agent files have different content (should be identical)"
+            exit 1
+          fi
+
+          echo ""
+          echo "All AI agent files have identical content ✓"
+
+      - name: Verify prompts contain module-specific content
+        working-directory: test-ai/ai-project
+        run: |
+          echo "Checking prompt content..."
+
+          # add-entity should mention Immutables
+          if grep -q "Immutables" .ai/prompts/add-entity.md; then
+            echo "  ✓ add-entity.md mentions Immutables"
+          else
+            echo "  ✗ add-entity.md missing Immutables reference"
+            exit 1
+          fi
+
+          # add-endpoint should mention REST/controller
+          if grep -q -i "controller\|endpoint\|REST" .ai/prompts/add-endpoint.md; then
+            echo "  ✓ add-endpoint.md mentions controller/endpoint"
+          else
+            echo "  ✗ add-endpoint.md missing controller reference"
+            exit 1
+          fi
+
+          # add-job should mention JobRunr
+          if grep -q "JobRunr\|JobRequest" .ai/prompts/add-job.md; then
+            echo "  ✓ add-job.md mentions JobRunr"
+          else
+            echo "  ✗ add-job.md missing JobRunr reference"
+            exit 1
+          fi
+
+          # add-event should mention the message broker (kafka)
+          if grep -q -i "kafka\|event\|listener" .ai/prompts/add-event.md; then
+            echo "  ✓ add-event.md mentions kafka/event"
+          else
+            echo "  ✗ add-event.md missing broker reference"
+            exit 1
+          fi
+
+          echo ""
+          echo "All prompts contain expected module-specific content ✓"

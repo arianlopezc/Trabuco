@@ -21,6 +21,7 @@ const (
 	SpringCloudGCPVersion    = "5.8.0"
 	LocalStackImageVersion   = "3.0"
 	ConfluentKafkaVersion    = "7.5.0"
+	MCPSDKVersion            = "0.17.2"
 )
 
 // Module, database, and broker constants are defined in config package
@@ -425,6 +426,13 @@ func (a *ModuleAdder) createModuleDirectories(module string) error {
 			filepath.Join(a.projectPath, config.ModuleEventConsumer, "src", "main", "resources"),
 			filepath.Join(ecTestBase, "listener"),
 		}
+	case config.ModuleMCP:
+		mcpBase := filepath.Join(a.projectPath, config.ModuleMCP, "src", "main", "java", packagePath, "mcp")
+		dirs = []string{
+			mcpBase,
+			filepath.Join(mcpBase, "tools"),
+			filepath.Join(a.projectPath, config.ModuleMCP, "src", "main", "resources"),
+		}
 	}
 
 	for _, dir := range dirs {
@@ -578,6 +586,11 @@ func (a *ModuleAdder) updateParentPOM(modules []string, messageBroker string) er
 			// logstash-logback-encoder for structured logging
 			if err := updater.AddProperty("logstash-logback-encoder.version", LogstashEncoderVersion); err != nil {
 				return fmt.Errorf("failed to add logstash-logback-encoder.version property: %w", err)
+			}
+		case config.ModuleMCP:
+			// MCP SDK version for AI tool integration
+			if err := updater.AddProperty("mcp-sdk.version", MCPSDKVersion); err != nil {
+				return fmt.Errorf("failed to add mcp-sdk.version property: %w", err)
 			}
 		}
 	}
@@ -1004,6 +1017,36 @@ func (a *ModuleAdder) regenerateDocs() error {
 		}
 	}
 
+	// Update .ai directory with new prompts if any AI agent is selected
+	if a.config.HasAnyAIAgent() {
+		if err := gen.generateAIDirectory(); err != nil {
+			return fmt.Errorf("failed to update .ai directory: %w", err)
+		}
+	}
+
+	// Generate MCP configuration files when MCP module is selected
+	if a.config.HasModule(config.ModuleMCP) {
+		// Claude Code: .mcp.json (project root)
+		if err := gen.writeTemplate("docs/mcp.json.tmpl", ".mcp.json"); err != nil {
+			return fmt.Errorf("failed to generate .mcp.json: %w", err)
+		}
+
+		// Cursor: .cursor/mcp.json
+		if err := gen.writeTemplate("docs/cursor-mcp.json.tmpl", ".cursor/mcp.json"); err != nil {
+			return fmt.Errorf("failed to generate .cursor/mcp.json: %w", err)
+		}
+
+		// VS Code / GitHub Copilot: .vscode/mcp.json
+		if err := gen.writeTemplate("docs/vscode-mcp.json.tmpl", ".vscode/mcp.json"); err != nil {
+			return fmt.Errorf("failed to generate .vscode/mcp.json: %w", err)
+		}
+
+		// MCP README with setup instructions for all agents
+		if err := gen.writeTemplate("docs/MCP-README.md.tmpl", "MCP/README.md"); err != nil {
+			return fmt.Errorf("failed to generate MCP/README.md: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1100,6 +1143,21 @@ func (a *ModuleAdder) getModuleFiles(module string) []string {
 			filepath.Join(base, "listener", "PlaceholderEventListener.java"),
 			filepath.Join(config.ModuleEventConsumer, "src", "main", "resources", "application.yml"),
 			filepath.Join(config.ModuleEventConsumer, "Dockerfile"),
+		)
+
+	case config.ModuleMCP:
+		base := filepath.Join(config.ModuleMCP, "src", "main", "java", packagePath, "mcp")
+		files = append(files,
+			filepath.Join(config.ModuleMCP, "pom.xml"),
+			filepath.Join(base, "McpServerApplication.java"),
+			filepath.Join(base, "tools", "BuildTools.java"),
+			filepath.Join(base, "tools", "TestTools.java"),
+			filepath.Join(base, "tools", "ProjectTools.java"),
+			filepath.Join(config.ModuleMCP, "src", "main", "resources", "logback.xml"),
+			filepath.Join(config.ModuleMCP, "README.md"),
+			".mcp.json",
+			".cursor/mcp.json",
+			".vscode/mcp.json",
 		)
 	}
 

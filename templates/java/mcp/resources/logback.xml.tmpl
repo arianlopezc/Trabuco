@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender for STDERR (STDOUT is used for MCP JSON-RPC) -->
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File appender for debugging -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>mcp-server.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root logger - log to file only to avoid interfering with STDIO -->
+    <root level="INFO">
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- MCP SDK logging -->
+    <logger name="io.modelcontextprotocol" level="DEBUG" />
+
+    <!-- Application logging -->
+    <logger name="{{.GroupID}}.mcp" level="DEBUG" />
+</configuration>

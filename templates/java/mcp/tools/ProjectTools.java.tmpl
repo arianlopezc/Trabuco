@@ -1,0 +1,259 @@
+package {{.GroupID}}.mcp.tools;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
+import io.modelcontextprotocol.spec.McpSchema.Tool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
+import java.util.stream.Stream;
+
+/**
+ * MCP tools for project introspection.
+ */
+public class ProjectTools {
+
+    private static final Logger log = LoggerFactory.getLogger(ProjectTools.class);
+    private static final String PROJECT_DIR = System.getProperty("user.dir");
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+        .enable(SerializationFeature.INDENT_OUTPUT);
+
+    private ProjectTools() {
+    }
+
+    /**
+     * Register all project tools with the MCP server.
+     */
+    public static void register(McpSyncServer server) {
+        server.addTool(listModulesTool());
+        server.addTool(listEntitiesTool());
+        server.addTool(getConfigTool());
+        server.addTool(projectInfoTool());
+        log.info("Registered project tools: list-modules, list-entities, get-config, project-info");
+    }
+
+    private static McpServerFeatures.SyncToolSpecification listModulesTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of(),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("list-modules", "List Modules", "List all Maven modules in the project", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                try {
+                    List<Map<String, Object>> modules = new ArrayList<>();
+                    Path projectPath = Paths.get(PROJECT_DIR);
+
+                    // Read parent pom.xml to find modules
+                    Path pomPath = projectPath.resolve("pom.xml");
+                    if (Files.exists(pomPath)) {
+                        String pomContent = Files.readString(pomPath);
+                        // Simple extraction of module names
+                        int modulesStart = pomContent.indexOf("<modules>");
+                        int modulesEnd = pomContent.indexOf("</modules>");
+
+                        if (modulesStart > 0 && modulesEnd > modulesStart) {
+                            String modulesSection = pomContent.substring(modulesStart, modulesEnd);
+                            String[] lines = modulesSection.split("\n");
+                            for (String line : lines) {
+                                if (line.contains("<module>") && line.contains("</module>")) {
+                                    String moduleName = line
+                                        .replace("<module>", "")
+                                        .replace("</module>", "")
+                                        .trim();
+
+                                    Path modulePath = projectPath.resolve(moduleName);
+                                    Map<String, Object> moduleInfo = new LinkedHashMap<>();
+                                    moduleInfo.put("name", moduleName);
+                                    moduleInfo.put("path", modulePath.toString());
+                                    moduleInfo.put("exists", Files.isDirectory(modulePath));
+
+                                    // Check for src directories
+                                    moduleInfo.put("hasSrc", Files.isDirectory(modulePath.resolve("src/main/java")));
+                                    moduleInfo.put("hasTests", Files.isDirectory(modulePath.resolve("src/test/java")));
+                                    moduleInfo.put("hasResources", Files.isDirectory(modulePath.resolve("src/main/resources")));
+
+                                    modules.add(moduleInfo);
+                                }
+                            }
+                        }
+                    }
+
+                    String result = MAPPER.writeValueAsString(modules);
+                    return new CallToolResult(
+                        List.of(new TextContent("Project modules:\n\n" + result)),
+                        false
+                    );
+
+                } catch (Exception e) {
+                    log.error("Failed to list modules", e);
+                    return new CallToolResult(
+                        List.of(new TextContent("Error listing modules: " + e.getMessage())),
+                        true
+                    );
+                }
+            }
+        );
+    }
+
+    private static McpServerFeatures.SyncToolSpecification listEntitiesTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of(),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("list-entities", "List Entities", "List all entity classes in the Model module", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                try {
+                    List<Map<String, String>> entities = new ArrayList<>();
+                    Path modelPath = Paths.get(PROJECT_DIR, "Model", "src", "main", "java");
+
+                    if (Files.isDirectory(modelPath)) {
+                        try (Stream<Path> paths = Files.walk(modelPath)) {
+                            paths.filter(Files::isRegularFile)
+                                .filter(p -> p.toString().endsWith(".java"))
+                                .filter(p -> p.toString().contains("/entities/") || p.toString().contains("\\entities\\"))
+                                .forEach(p -> {
+                                    try {
+                                        String content = Files.readString(p);
+                                        Map<String, String> entity = new LinkedHashMap<>();
+                                        entity.put("file", p.getFileName().toString());
+                                        entity.put("path", modelPath.relativize(p).toString());
+
+                                        // Check if it's an Immutable interface
+                                        if (content.contains("@Value.Immutable")) {
+                                            entity.put("type", "Immutable");
+                                        } else if (content.contains("record ")) {
+                                            entity.put("type", "Record");
+                                        } else {
+                                            entity.put("type", "Class");
+                                        }
+
+                                        entities.add(entity);
+                                    } catch (IOException ignored) {
+                                    }
+                                });
+                        }
+                    }
+
+                    String result = MAPPER.writeValueAsString(entities);
+                    return new CallToolResult(
+                        List.of(new TextContent("Entities in Model module:\n\n" + result)),
+                        false
+                    );
+
+                } catch (Exception e) {
+                    log.error("Failed to list entities", e);
+                    return new CallToolResult(
+                        List.of(new TextContent("Error listing entities: " + e.getMessage())),
+                        true
+                    );
+                }
+            }
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static McpServerFeatures.SyncToolSpecification getConfigTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of("module", (Object) Map.of(
+                "type", "string",
+                "description", "Module name (e.g., 'API', 'Worker'). Required."
+            )),
+            List.of("module"),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("get-config", "Get Config", "Get the application.yml configuration for a module", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                String module = (String) arguments.get("module");
+                if (module == null || module.isEmpty()) {
+                    return new CallToolResult(
+                        List.of(new TextContent("Error: module parameter is required")),
+                        true
+                    );
+                }
+
+                try {
+                    Path configPath = Paths.get(PROJECT_DIR, module, "src", "main", "resources", "application.yml");
+
+                    if (!Files.exists(configPath)) {
+                        return new CallToolResult(
+                            List.of(new TextContent("Configuration file not found: " + configPath)),
+                            true
+                        );
+                    }
+
+                    String content = Files.readString(configPath);
+                    return new CallToolResult(
+                        List.of(new TextContent("Configuration for " + module + ":\n\n```yaml\n" + content + "\n```")),
+                        false
+                    );
+
+                } catch (Exception e) {
+                    log.error("Failed to get config for {}", module, e);
+                    return new CallToolResult(
+                        List.of(new TextContent("Error reading config: " + e.getMessage())),
+                        true
+                    );
+                }
+            }
+        );
+    }
+
+    private static McpServerFeatures.SyncToolSpecification projectInfoTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of(),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("project-info", "Project Info", "Get project metadata from .trabuco.json", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                try {
+                    Path metadataPath = Paths.get(PROJECT_DIR, ".trabuco.json");
+
+                    if (!Files.exists(metadataPath)) {
+                        return new CallToolResult(
+                            List.of(new TextContent("Project metadata not found. This may not be a Trabuco project.")),
+                            true
+                        );
+                    }
+
+                    String content = Files.readString(metadataPath);
+                    return new CallToolResult(
+                        List.of(new TextContent("Project metadata:\n\n```json\n" + content + "\n```")),
+                        false
+                    );
+
+                } catch (Exception e) {
+                    log.error("Failed to read project info", e);
+                    return new CallToolResult(
+                        List.of(new TextContent("Error reading project info: " + e.getMessage())),
+                        true
+                    );
+                }
+            }
+        );
+    }
+}

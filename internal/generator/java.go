@@ -643,3 +643,53 @@ func (g *Generator) generateEventConsumerModule() error {
 
 	return nil
 }
+
+// generateMCPModule generates the MCP (Model Context Protocol) server module
+func (g *Generator) generateMCPModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("MCP"); err != nil {
+		return err
+	}
+
+	// McpServerApplication.java (main class)
+	if err := g.writeTemplate(
+		"java/mcp/McpServerApplication.java.tmpl",
+		g.javaPath("MCP", "McpServerApplication.java"),
+	); err != nil {
+		return fmt.Errorf("failed to generate McpServerApplication.java: %w", err)
+	}
+
+	// BuildTools.java
+	if err := g.writeTemplate(
+		"java/mcp/tools/BuildTools.java.tmpl",
+		g.javaPath("MCP", filepath.Join("tools", "BuildTools.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate BuildTools.java: %w", err)
+	}
+
+	// TestTools.java
+	if err := g.writeTemplate(
+		"java/mcp/tools/TestTools.java.tmpl",
+		g.javaPath("MCP", filepath.Join("tools", "TestTools.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate TestTools.java: %w", err)
+	}
+
+	// ProjectTools.java
+	if err := g.writeTemplate(
+		"java/mcp/tools/ProjectTools.java.tmpl",
+		g.javaPath("MCP", filepath.Join("tools", "ProjectTools.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate ProjectTools.java: %w", err)
+	}
+
+	// logback.xml (logs to file only - STDOUT reserved for MCP JSON-RPC)
+	if err := g.writeTemplate(
+		"java/mcp/resources/logback.xml.tmpl",
+		g.resourcePath("MCP", "logback.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate MCP logback.xml: %w", err)
+	}
+
+	return nil
+}

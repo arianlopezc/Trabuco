@@ -38,6 +38,7 @@ The real power lies in the modular structure. Instead of a monolithic source tre
   - [Worker](#worker)
   - [Events](#events)
   - [EventConsumer](#eventconsumer)
+  - [MCP](#mcp)
 - [Observability](#observability)
   - [Metrics](#metrics)
   - [API Documentation](#api-documentation)
@@ -75,6 +76,7 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - **Docker Compose** — Local development stack included
 - **IntelliJ run configs** — Just open and run
 - **AI-friendly** — Generates context files for Claude, Cursor, GitHub Copilot, Windsurf, and Cline
+- **MCP server** — Optional Model Context Protocol server for AI tool integration
 
 ## Installation
 
@@ -110,6 +112,10 @@ trabuco init --name=myapp --group-id=com.company.myapp \
 # Add event-driven messaging with Kafka
 trabuco init --name=myapp --group-id=com.company.myapp \
   --modules=Model,API,EventConsumer --message-broker=kafka
+
+# Add MCP server for AI tool integration
+trabuco init --name=myapp --group-id=com.company.myapp \
+  --modules=Model,SQLDatastore,Shared,API,MCP --database=postgresql
 ```
 
 ### Run your new project
@@ -306,8 +312,18 @@ myapp/
 │       │   └── listener/            # Event listener implementations
 │       └── resources/
 │           └── application.yml      # Consumer configuration
+├── MCP/                             # MCP server (if selected)
+│   └── src/main/
+│       ├── java/.../mcp/
+│       │   ├── McpServerApplication.java  # MCP server entry point
+│       │   └── tools/               # Build, test, and project tools
+│       └── resources/
+│           └── logback.xml          # MCP logging configuration
 ├── docker-compose.yml               # Local dev stack (database, message broker)
 ├── .run/                            # IntelliJ run configurations
+├── .mcp.json                        # MCP config for Claude Code (if MCP selected)
+├── .cursor/mcp.json                 # MCP config for Cursor (if MCP selected)
+├── .vscode/mcp.json                 # MCP config for VS Code/Copilot (if MCP selected)
 ├── CLAUDE.md                        # AI assistant context
 └── README.md                        # Project documentation
 ```
@@ -504,6 +520,54 @@ public void handleEvent(PlaceholderEvent event, Acknowledgement ack) { ... }
 public void handleEvent(PlaceholderEvent event, BasicAcknowledgeablePubsubMessage msg) { ... }
 ```
 
+### MCP
+
+Model Context Protocol server — provides AI coding assistants with tools for building, testing, and introspecting the project.
+
+| What | Description |
+|------|-------------|
+| **Build tools** | `build`, `package`, `clean` — Maven build operations |
+| **Test tools** | `test`, `test-single` — Run tests or specific test classes |
+| **Project tools** | `list-modules`, `list-entities`, `get-config`, `project-info` — Project introspection |
+
+The MCP server is a standalone Java application that communicates via STDIO with AI coding assistants that support the Model Context Protocol.
+
+**Building the MCP server:**
+
+```bash
+mvn package -pl MCP -am -DskipTests
+```
+
+The executable JAR is created at `MCP/target/MCP-1.0-SNAPSHOT.jar`.
+
+**Auto-configured for multiple agents:**
+
+When you select the MCP module, Trabuco generates configuration files for all major AI coding assistants:
+
+| Agent | Config File | Auto-Detected |
+|-------|-------------|---------------|
+| Claude Code | `.mcp.json` | ✅ Yes — approve on first use |
+| Cursor | `.cursor/mcp.json` | ✅ Yes — approve on first use |
+| VS Code / GitHub Copilot | `.vscode/mcp.json` | ✅ Yes — click "Start" on first use |
+| Windsurf | See `MCP/README.md` | ❌ Manual setup required |
+| Cline | See `MCP/README.md` | ❌ Manual setup required |
+
+For agents with project-local configs (Claude Code, Cursor, VS Code), just open the project and approve the server when prompted. For detailed setup instructions for all agents, see `MCP/README.md`.
+
+**Available MCP tools:**
+
+| Tool | Description |
+|------|-------------|
+| `build` | Compile the project or a specific module |
+| `package` | Package all modules into JAR files |
+| `clean` | Clean all build artifacts |
+| `test` | Run all tests or tests for a specific module |
+| `test-single` | Run a specific test class or method |
+| `list-modules` | List all Maven modules in the project |
+| `list-entities` | List all entity classes in the Model module |
+| `get-config` | Get the application.yml for a module |
+| `project-info` | Get project metadata from .trabuco.json |
+
 ## Observability
 
 ### Metrics
@@ -561,6 +625,7 @@ mvn test
 | `--message-broker` | Message broker: `kafka`, `rabbitmq`, `sqs`, `pubsub` | `kafka` |
 | `--java-version` | Java version: `17`, `21`, or `25` | `21` |
 | `--ai-agents` | AI coding agents (comma-separated): `claude`, `cursor`, `copilot`, `windsurf`, `cline` | — |
+| `--skip-build` | Skip running `mvn clean install` after generation | `false` |
 | `--strict` | Fail if specified Java version is not detected | `false` |
 
 ### Available Modules
@@ -574,12 +639,14 @@ mvn test
 | `API` | REST endpoints | Model |
 | `Worker` | Background jobs (JobRunr) | Model, Jobs (auto) |
 | `EventConsumer` | Event listeners (Kafka/RabbitMQ/SQS/Pub/Sub) | Model, Events (auto) |
+| `MCP` | Model Context Protocol server for AI tools | Model |
 
 **Notes:**
 - SQLDatastore and NoSQLDatastore are mutually exclusive
 - Worker uses your datastore for job persistence (defaults to PostgreSQL if none selected)
 - Jobs module is auto-included when Worker is selected (not shown in CLI)
 - Events module is auto-included when EventConsumer is selected (not shown in CLI)
+- MCP generates configuration files for Claude Code, Cursor, VS Code, Windsurf, and Cline
 
 ### Java Version Detection
 

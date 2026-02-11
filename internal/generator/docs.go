@@ -25,6 +25,13 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
+	// Generate .ai directory with prompts and checkpoint (only if any AI agent is selected)
+	if g.config.HasAnyAIAgent() {
+		if err := g.generateAIDirectory(); err != nil {
+			return err
+		}
+	}
+
 	// Generate docker-compose.yml and .env.example when a runtime module needs a datastore
 	if g.config.NeedsDockerCompose() {
 		if err := g.writeTemplate("docker/docker-compose.yml.tmpl", "docker-compose.yml"); err != nil {
@@ -45,6 +52,72 @@ func (g *Generator) generateDocs() error {
 	// Generate .dockerignore when API or Worker is selected
 	if g.config.HasModule(config.ModuleAPI) || g.config.HasModule(config.ModuleWorker) {
 		if err := g.writeTemplate("docker/dockerignore.tmpl", ".dockerignore"); err != nil {
+			return err
+		}
+	}
+
+	// Generate MCP configuration files when MCP module is selected
+	if g.config.HasModule(config.ModuleMCP) {
+		// Claude Code: .mcp.json (project root)
+		if err := g.writeTemplate("docs/mcp.json.tmpl", ".mcp.json"); err != nil {
+			return err
+		}
+
+		// Cursor: .cursor/mcp.json
+		if err := g.writeTemplate("docs/cursor-mcp.json.tmpl", ".cursor/mcp.json"); err != nil {
+			return err
+		}
+
+		// VS Code / GitHub Copilot: .vscode/mcp.json
+		if err := g.writeTemplate("docs/vscode-mcp.json.tmpl", ".vscode/mcp.json"); err != nil {
+			return err
+		}
+
+		// MCP README with setup instructions for all agents
+		if err := g.writeTemplate("docs/MCP-README.md.tmpl", "MCP/README.md"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// generateAIDirectory generates the .ai directory with prompts and checkpoint
+func (g *Generator) generateAIDirectory() error {
+	// Generate .ai/README.md
+	if err := g.writeTemplate("ai/README.md.tmpl", ".ai/README.md"); err != nil {
+		return err
+	}
+
+	// Generate .ai/checkpoint.json
+	if err := g.writeTemplate("ai/checkpoint.json.tmpl", ".ai/checkpoint.json"); err != nil {
+		return err
+	}
+
+	// Generate .ai/prompts/add-entity.md (always, if Model module exists)
+	if g.config.HasModule(config.ModuleModel) {
+		if err := g.writeTemplate("ai/prompts/add-entity.md.tmpl", ".ai/prompts/add-entity.md"); err != nil {
+			return err
+		}
+	}
+
+	// Generate .ai/prompts/add-endpoint.md (only if API module exists)
+	if g.config.HasModule(config.ModuleAPI) {
+		if err := g.writeTemplate("ai/prompts/add-endpoint.md.tmpl", ".ai/prompts/add-endpoint.md"); err != nil {
+			return err
+		}
+	}
+
+	// Generate .ai/prompts/add-job.md (only if Worker module exists)
+	if g.config.HasModule(config.ModuleWorker) {
+		if err := g.writeTemplate("ai/prompts/add-job.md.tmpl", ".ai/prompts/add-job.md"); err != nil {
+			return err
+		}
+	}
+
+	// Generate .ai/prompts/add-event.md (only if EventConsumer module exists)
+	if g.config.HasModule(config.ModuleEventConsumer) {
+		if err := g.writeTemplate("ai/prompts/add-event.md.tmpl", ".ai/prompts/add-event.md"); err != nil {
 			return err
 		}
 	}

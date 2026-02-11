@@ -2,15 +2,16 @@ package config
 
 // Module name constants - use these instead of string literals
 const (
-	ModuleModel         = "Model"
-	ModuleJobs          = "Jobs"
-	ModuleSQLDatastore  = "SQLDatastore"
+	ModuleModel          = "Model"
+	ModuleJobs           = "Jobs"
+	ModuleSQLDatastore   = "SQLDatastore"
 	ModuleNoSQLDatastore = "NoSQLDatastore"
-	ModuleShared        = "Shared"
-	ModuleAPI           = "API"
-	ModuleWorker        = "Worker"
-	ModuleEvents        = "Events"
-	ModuleEventConsumer = "EventConsumer"
+	ModuleShared         = "Shared"
+	ModuleAPI            = "API"
+	ModuleWorker         = "Worker"
+	ModuleEvents         = "Events"
+	ModuleEventConsumer  = "EventConsumer"
+	ModuleMCP            = "MCP"
 )
 
 // Database type constants
@@ -106,6 +107,13 @@ var ModuleRegistry = []Module{
 		Required:     false,
 		Internal:     false,
 		Dependencies: []string{ModuleModel, ModuleEvents}, // Events is auto-included
+	},
+	{
+		Name:         ModuleMCP,
+		Description:  "MCP server for AI tool integration (build, test, introspection)",
+		Required:     false,
+		Internal:     false,
+		Dependencies: []string{ModuleModel},
 	},
 }
 

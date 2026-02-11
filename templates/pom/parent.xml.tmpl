@@ -28,6 +28,9 @@
 {{- if .HasModule "API"}}
         <springdoc.version>2.7.0</springdoc.version>
 {{- end}}
+{{- if .HasModule "MCP"}}
+        <mcp-sdk.version>0.17.2</mcp-sdk.version>
+{{- end}}
         <jacoco.version>0.8.12</jacoco.version>
     </properties>
 

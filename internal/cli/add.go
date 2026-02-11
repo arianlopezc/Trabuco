@@ -20,6 +20,7 @@ var (
 	addDryRun        bool
 	addNoBackup      bool
 	addSkipDoctor    bool
+	addSkipBuild     bool
 )
 
 var addCmd = &cobra.Command{
@@ -37,6 +38,7 @@ Available modules:
   API             - REST endpoints
   Worker          - Background jobs (JobRunr)
   EventConsumer   - Event listeners (Kafka, RabbitMQ, SQS, Pub/Sub)
+  MCP             - MCP server for AI tool integration
 
 Examples:
   trabuco add SQLDatastore
@@ -54,6 +56,7 @@ func init() {
 	addCmd.Flags().BoolVar(&addDryRun, "dry-run", false, "Show what would change without making changes")
 	addCmd.Flags().BoolVar(&addNoBackup, "no-backup", false, "Skip creating backup (not recommended)")
 	addCmd.Flags().BoolVar(&addSkipDoctor, "skip-doctor", false, "Skip doctor validation (not recommended)")
+	addCmd.Flags().BoolVar(&addSkipBuild, "skip-build", false, "Skip running 'mvn clean install' after adding module")
 }
 
 func runAdd(cmd *cobra.Command, args []string) {
@@ -210,14 +213,47 @@ func runAdd(cmd *cobra.Command, args []string) {
 
 	// Step 10: Success message
 	fmt.Println()
-	green.Println("Module added successfully!")
+	green.Println("✓ Module added successfully!")
 	fmt.Println()
 
-	// Print next steps
-	cyan.Println("Next steps:")
-	fmt.Println("  mvn clean compile")
-	if needsDocker(module, database, nosqlDatabase, messageBroker) {
-		fmt.Println("  docker-compose up -d")
+	// Step 11: Run Maven build unless skipped
+	if addSkipBuild {
+		fmt.Println("Skipping Maven build (--skip-build flag).")
+		fmt.Println()
+		cyan.Println("Next steps:")
+		fmt.Println("  mvn clean install")
+		if needsDocker(module, database, nosqlDatabase, messageBroker) {
+			fmt.Println("  docker-compose up -d")
+		}
+	} else {
+		// Run Maven build
+		if err := runMavenBuild(projectPath); err != nil {
+			yellow.Printf("\nMaven build failed: %v\n", err)
+			fmt.Println("You can try running it manually:")
+			fmt.Println("  mvn clean install")
+			fmt.Println()
+		} else {
+			green.Println("✓ Maven build completed successfully!")
+			fmt.Println()
+		}
+		if needsDocker(module, database, nosqlDatabase, messageBroker) {
+			cyan.Println("Next steps:")
+			fmt.Println("  docker-compose up -d")
+		}
+	}
+
+	// Show MCP server info when MCP module is added
+	if module == config.ModuleMCP {
+		fmt.Println()
+		cyan.Println("MCP Server:")
+		fmt.Println("  JAR: MCP/target/MCP-1.0-SNAPSHOT.jar")
+		fmt.Println()
+		fmt.Println("  Pre-configured for:")
+		fmt.Println("    • Claude Code  → .mcp.json")
+		fmt.Println("    • Cursor       → .cursor/mcp.json")
+		fmt.Println("    • VS Code      → .vscode/mcp.json")
+		fmt.Println()
+		fmt.Println("  See MCP/README.md for setup instructions.")
 	}
 }
 

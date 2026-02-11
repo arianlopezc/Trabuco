@@ -1,0 +1,222 @@
+# Add REST Endpoint
+
+## Overview
+
+Create a new REST API endpoint with proper request/response handling, validation, and error handling.
+
+## Prerequisites
+
+- Entity and service already exist (see `add-entity.md` if needed)
+- Project compiles successfully (`mvn clean compile`)
+
+## Steps
+
+### 1. Create Request DTO (if not existing)
+
+**File**: `Model/src/main/java/{{.PackagePath}}/model/dto/{EntityName}Request.java`
+
+```java
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import org.immutables.value.Value;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = Immutable{EntityName}Request.class)
+@JsonDeserialize(as = Immutable{EntityName}Request.class)
+public interface {EntityName}Request {
+    @NotBlank(message = "Name is required")
+    @Size(max = 255, message = "Name must be at most 255 characters")
+    String name();
+    // Add other fields with validation annotations
+}
+```
+
+### 2. Create Response DTO (if not existing)
+
+**File**: `Model/src/main/java/{{.PackagePath}}/model/dto/{EntityName}Response.java`
+
+```java
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import org.immutables.value.Value;
+import {{.GroupID}}.model.ImmutableStyle;
+import {{.GroupID}}.model.entities.Immutable{EntityName};
+
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = Immutable{EntityName}Response.class)
+@JsonDeserialize(as = Immutable{EntityName}Response.class)
+public interface {EntityName}Response {
+    String id();
+    String name();
+
+    static Immutable{EntityName}Response from(Immutable{EntityName} entity) {
+        return Immutable{EntityName}Response.builder()
+            .id(entity.id())
+            .name(entity.name())
+            .build();
+    }
+}
+```
+
+### 3. Create or Update Controller
+
+**File**: `API/src/main/java/{{.PackagePath}}/api/controller/{EntityName}Controller.java`
+
+```java
+package {{.GroupID}}.api.controller;
+
+import {{.GroupID}}.model.dto.Immutable{EntityName}Request;
+import {{.GroupID}}.model.dto.Immutable{EntityName}Response;
+import {{.GroupID}}.model.entities.Immutable{EntityName};
+import {{.GroupID}}.shared.service.{EntityName}Service;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/{entities}")
+public class {EntityName}Controller {
+
+    private final {EntityName}Service service;
+
+    public {EntityName}Controller({EntityName}Service service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public List<Immutable{EntityName}Response> getAll() {
+        return service.findAll().stream()
+            .map(Immutable{EntityName}Response::from)
+            .toList();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Immutable{EntityName}Response> getById(@PathVariable {{if .HasModule "SQLDatastore"}}Long{{else}}String{{end}} id) {
+        return service.findById(id)
+            .map(entity -> ResponseEntity.ok(Immutable{EntityName}Response.from(entity)))
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public Immutable{EntityName}Response create(@Valid @RequestBody Immutable{EntityName}Request request) {
+        Immutable{EntityName} entity = Immutable{EntityName}.builder()
+            .name(request.name())
+            .build();
+        Immutable{EntityName} saved = service.save(entity);
+        return Immutable{EntityName}Response.from(saved);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Immutable{EntityName}Response> update(
+            @PathVariable {{if .HasModule "SQLDatastore"}}Long{{else}}String{{end}} id,
+            @Valid @RequestBody Immutable{EntityName}Request request) {
+        return service.findById(id)
+            .map(existing -> {
+                Immutable{EntityName} updated = Immutable{EntityName}.builder()
+                    .id(existing.id())
+                    .name(request.name())
+                    .build();
+                Immutable{EntityName} saved = service.save(updated);
+                return ResponseEntity.ok(Immutable{EntityName}Response.from(saved));
+            })
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable {{if .HasModule "SQLDatastore"}}Long{{else}}String{{end}} id) {
+        return service.findById(id)
+            .map(entity -> {
+                service.deleteById(id);
+                return ResponseEntity.noContent().<Void>build();
+            })
+            .orElse(ResponseEntity.notFound().build());
+    }
+}
+```
+
+**Replace placeholders:**
+- `{EntityName}` → Actual entity name (PascalCase)
+- `{entities}` → Plural form, lowercase (e.g., `products`, `orders`)
+
+### 4. Update Service (if delete method needed)
+
+Add to the existing service class:
+
+```java
+public void deleteById({{if .HasModule "SQLDatastore"}}Long{{else}}String{{end}} id) {
+    repository.deleteById(id);
+}
+```
+
+### 5. Test the Endpoint
+
+```bash
+# Compile
+mvn clean compile
+
+# Start API
+cd API && mvn spring-boot:run
+
+# Test endpoints
+curl http://localhost:8080/api/{entities}
+curl -X POST http://localhost:8080/api/{entities} \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Test"}'
+```
+
+### 6. Check OpenAPI Documentation
+
+After starting the API:
+- Open http://localhost:8080/swagger-ui.html
+- Verify the new endpoint appears with correct request/response schemas
+
+## Checklist
+
+- [ ] Request DTO created with validation annotations
+- [ ] Response DTO created with `from()` factory method
+- [ ] Controller created with proper annotations
+- [ ] All methods use `Immutable` types (not interfaces)
+- [ ] Validation enabled with `@Valid`
+- [ ] Proper HTTP status codes (201 for create, 204 for delete)
+- [ ] Code compiles (`mvn clean compile`)
+- [ ] Endpoint works (test with curl or Swagger UI)
+- [ ] Shows in Swagger UI correctly
+
+## Common Mistakes
+
+- **Using interface types**: Use `Immutable{EntityName}Request` not `{EntityName}Request`
+- **Missing `@Valid`**: Required for validation annotations to work
+- **Wrong HTTP methods**: POST for create, PUT for full update, PATCH for partial
+- **Exposing entities directly**: Always use Response DTOs, never return entities
+- **Manual exception handling**: Let `GlobalExceptionHandler` handle common cases
+- **Hardcoded paths**: Use `@PathVariable` and `@RequestParam` appropriately
+
+## Advanced: Pagination
+
+For list endpoints with many records:
+
+```java
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+@GetMapping
+public Page<Immutable{EntityName}Response> getAll(Pageable pageable) {
+    return service.findAll(pageable)
+        .map(Immutable{EntityName}Response::from);
+}
+```
+
+Requires updating repository and service to support `Pageable`.

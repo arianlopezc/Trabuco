@@ -1,0 +1,195 @@
+package {{.GroupID}}.mcp.tools;
+
+import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
+import io.modelcontextprotocol.spec.McpSchema.Tool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * MCP tools for running tests.
+ */
+public class TestTools {
+
+    private static final Logger log = LoggerFactory.getLogger(TestTools.class);
+    private static final String PROJECT_DIR = System.getProperty("user.dir");
+    private static final int TIMEOUT_MINUTES = 15;
+
+    private TestTools() {
+    }
+
+    /**
+     * Register all test tools with the MCP server.
+     */
+    public static void register(McpSyncServer server) {
+        server.addTool(testTool());
+        server.addTool(testSingleTool());
+        log.info("Registered test tools: test, test-single");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static McpServerFeatures.SyncToolSpecification testTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of("module", (Object) Map.of(
+                "type", "string",
+                "description", "Optional module name to test (e.g., 'API', 'Shared'). If not specified, runs all tests."
+            )),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("test", "Test", "Run all tests or tests for a specific module", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                String module = arguments != null ? (String) arguments.get("module") : null;
+                String command = module != null && !module.isEmpty()
+                    ? "mvn test -pl " + module
+                    : "mvn test";
+
+                log.info("Executing: {}", command);
+                return executeCommand(command, "Test");
+            }
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static McpServerFeatures.SyncToolSpecification testSingleTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of(
+                "testClass", (Object) Map.of(
+                    "type", "string",
+                    "description", "Fully qualified test class name or simple class name (e.g., 'PlaceholderServiceTest')"
+                ),
+                "testMethod", (Object) Map.of(
+                    "type", "string",
+                    "description", "Optional specific test method to run"
+                )
+            ),
+            List.of("testClass"),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("test-single", "Test Single", "Run a specific test class or test method", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                String testClass = (String) arguments.get("testClass");
+                String testMethod = arguments != null ? (String) arguments.get("testMethod") : null;
+
+                if (testClass == null || testClass.isEmpty()) {
+                    return new CallToolResult(
+                        List.of(new TextContent("Error: testClass is required")),
+                        true
+                    );
+                }
+
+                String testPattern = testMethod != null && !testMethod.isEmpty()
+                    ? testClass + "#" + testMethod
+                    : testClass;
+
+                String command = "mvn test -Dtest=" + testPattern;
+                log.info("Executing: {}", command);
+                return executeCommand(command, "Test");
+            }
+        );
+    }
+
+    private static CallToolResult executeCommand(String command, String operationName) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder();
+            pb.directory(new File(PROJECT_DIR));
+
+            if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                pb.command("cmd.exe", "/c", command);
+            } else {
+                pb.command("sh", "-c", command);
+            }
+
+            pb.redirectErrorStream(true);
+
+            Process process = pb.start();
+            StringBuilder output = new StringBuilder();
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
+
+            boolean completed = process.waitFor(TIMEOUT_MINUTES, TimeUnit.MINUTES);
+            if (!completed) {
+                process.destroyForcibly();
+                return new CallToolResult(
+                    List.of(new TextContent(operationName + " timed out after " + TIMEOUT_MINUTES + " minutes")),
+                    true
+                );
+            }
+
+            int exitCode = process.exitValue();
+            String result = output.toString();
+
+            // Extract test summary if available
+            String summary = extractTestSummary(result);
+
+            if (exitCode == 0) {
+                return new CallToolResult(
+                    List.of(new TextContent(operationName + " passed.\n\n" + summary + "\n\n" + truncateOutput(result))),
+                    false
+                );
+            } else {
+                return new CallToolResult(
+                    List.of(new TextContent(operationName + " failed with exit code " + exitCode + ".\n\n" + summary + "\n\n" + truncateOutput(result))),
+                    true
+                );
+            }
+
+        } catch (Exception e) {
+            log.error("{} failed", operationName, e);
+            return new CallToolResult(
+                List.of(new TextContent(operationName + " failed: " + e.getMessage())),
+                true
+            );
+        }
+    }
+
+    private static String extractTestSummary(String output) {
+        // Look for Maven Surefire summary lines
+        StringBuilder summary = new StringBuilder();
+        String[] lines = output.split("\n");
+        boolean inSummary = false;
+
+        for (String line : lines) {
+            if (line.contains("Tests run:") || line.contains("Results:")) {
+                inSummary = true;
+            }
+            if (inSummary) {
+                summary.append(line).append("\n");
+                if (line.contains("BUILD SUCCESS") || line.contains("BUILD FAILURE")) {
+                    break;
+                }
+            }
+        }
+
+        return summary.length() > 0 ? "Summary:\n" + summary : "";
+    }
+
+    private static String truncateOutput(String output) {
+        int maxLength = 8000;
+        if (output.length() <= maxLength) {
+            return output;
+        }
+        return "... (truncated)\n" + output.substring(output.length() - maxLength);
+    }
+}

@@ -3,9 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -33,6 +36,7 @@ var (
 	flagAIAgents      string
 	flagIncludeClaude bool // Deprecated: use flagAIAgents instead
 	flagStrict        bool
+	flagSkipBuild     bool
 )
 
 var initCmd = &cobra.Command{
@@ -64,6 +68,7 @@ func init() {
 	initCmd.Flags().StringVar(&flagAIAgents, "ai-agents", "", "Comma-separated AI agents: claude,cursor,copilot,windsurf,cline (non-interactive)")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", false, "Deprecated: use --ai-agents=claude instead")
 	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
+	initCmd.Flags().BoolVar(&flagSkipBuild, "skip-build", false, "Skip running 'mvn clean install' after generation")
 }
 
 func runInit(cmd *cobra.Command, args []string) {
@@ -293,10 +298,106 @@ func runInit(cmd *cobra.Command, args []string) {
 		fmt.Println()
 	}
 
-	fmt.Println("Next steps:")
-	fmt.Printf("  cd %s\n", cfg.ProjectName)
-	fmt.Printf("  mvn clean install\n")
-	if cfg.HasModule(config.ModuleAPI) {
-		fmt.Printf("  cd %s && mvn spring-boot:run\n", config.ModuleAPI)
+	// Run Maven build unless skipped or Java not detected
+	projectDir := filepath.Join(".", cfg.ProjectName)
+	if flagSkipBuild {
+		fmt.Println("Skipping Maven build (--skip-build flag).")
+		fmt.Println()
+		fmt.Println("Next steps:")
+		fmt.Printf("  cd %s\n", cfg.ProjectName)
+		fmt.Printf("  mvn clean install\n")
+	} else if !cfg.JavaVersionDetected {
+		fmt.Println("Skipping Maven build (Java not detected).")
+		fmt.Println()
+		fmt.Println("Next steps:")
+		fmt.Printf("  cd %s\n", cfg.ProjectName)
+		fmt.Printf("  mvn clean install\n")
+	} else {
+		// Run Maven build
+		if err := runMavenBuild(projectDir); err != nil {
+			yellow.Printf("\nMaven build failed: %v\n", err)
+			fmt.Println("You can try running it manually:")
+			fmt.Printf("  cd %s && mvn clean install\n", cfg.ProjectName)
+			fmt.Println()
+		} else {
+			green.Println("✓ Maven build completed successfully!")
+			fmt.Println()
+		}
 	}
+
+	// Show how to run the application
+	if cfg.HasModule(config.ModuleAPI) {
+		fmt.Println("To run the API:")
+		fmt.Printf("  cd %s/%s && mvn spring-boot:run\n", cfg.ProjectName, config.ModuleAPI)
+	}
+	if cfg.HasModule(config.ModuleMCP) {
+		fmt.Println()
+		cyan.Println("MCP Server:")
+		fmt.Printf("  JAR: %s/MCP/target/MCP-1.0-SNAPSHOT.jar\n", cfg.ProjectName)
+		fmt.Println()
+		fmt.Println("  Pre-configured for:")
+		fmt.Println("    • Claude Code  → .mcp.json")
+		fmt.Println("    • Cursor       → .cursor/mcp.json")
+		fmt.Println("    • VS Code      → .vscode/mcp.json")
+		fmt.Println()
+		fmt.Printf("  See %s/MCP/README.md for setup instructions.\n", cfg.ProjectName)
+	}
+}
+
+// runMavenBuild executes 'mvn clean install -DskipTests' in the given directory
+func runMavenBuild(projectDir string) error {
+	cyan := color.New(color.FgCyan)
+
+	cyan.Println("Building project with Maven...")
+	fmt.Println()
+
+	// Create spinner animation
+	done := make(chan bool)
+	go func() {
+		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Print("\r")
+				return
+			default:
+				fmt.Printf("\r  %s Running mvn clean install -DskipTests...", frames[i%len(frames)])
+				i++
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+
+	cmd := exec.Command("mvn", "clean", "install", "-DskipTests", "-q")
+	cmd.Dir = projectDir
+
+	// Capture output for error reporting
+	output, err := cmd.CombinedOutput()
+
+	// Stop spinner
+	done <- true
+	time.Sleep(50 * time.Millisecond) // Allow spinner goroutine to clean up
+
+	if err != nil {
+		fmt.Printf("\r                                                    \r") // Clear line
+		if len(output) > 0 {
+			// Show last 20 lines of output on error
+			lines := strings.Split(string(output), "\n")
+			start := 0
+			if len(lines) > 20 {
+				start = len(lines) - 20
+			}
+			fmt.Println("\nMaven output:")
+			for _, line := range lines[start:] {
+				if line != "" {
+					fmt.Printf("  %s\n", line)
+				}
+			}
+		}
+		return err
+	}
+
+	fmt.Printf("\r                                                    \r") // Clear line
+	return nil
 }

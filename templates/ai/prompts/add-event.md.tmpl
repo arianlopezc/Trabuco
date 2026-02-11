@@ -1,0 +1,438 @@
+# Add Event Type
+
+## Overview
+
+Create a new event type for event-driven processing. Events are defined in the `Model` module, published via the `Events` module, and consumed by the `EventConsumer` module.
+
+## Prerequisites
+
+- EventConsumer module is included in the project
+- Project compiles successfully (`mvn clean compile`)
+- Docker running (for message broker)
+
+## Architecture
+
+```
+Model/                              # Event schemas
+├── model/events/
+│   ├── {Entity}Event.java         # Sealed interface for event family
+│   └── {Entity}{Action}Event.java # Specific event implementation
+
+Events/                             # Event publishing
+├── events/
+│   └── EventPublisher.java        # Publishes events to broker
+
+EventConsumer/                      # Event handling
+├── eventconsumer/listener/
+│   └── {Entity}EventListener.java # Consumes and processes events
+```
+
+## Steps
+
+### 1. Create Event Interface (if new entity)
+
+**File**: `Model/src/main/java/{{.PackagePath}}/model/events/{Entity}Event.java`
+
+```java
+package {{.GroupID}}.model.events;
+
+import java.time.Instant;
+
+/**
+ * Sealed interface for all {Entity}-related events.
+ */
+public sealed interface {Entity}Event
+    permits {Entity}CreatedEvent, {Entity}UpdatedEvent, {Entity}DeletedEvent {
+
+    String eventId();
+    Instant occurredAt();
+    String entityId();
+}
+```
+
+### 2. Create Specific Event
+
+**File**: `Model/src/main/java/{{.PackagePath}}/model/events/{Entity}{Action}Event.java`
+
+```java
+package {{.GroupID}}.model.events;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import org.immutables.value.Value;
+import {{.GroupID}}.model.ImmutableStyle;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = Immutable{Entity}{Action}Event.class)
+@JsonDeserialize(as = Immutable{Entity}{Action}Event.class)
+public interface {Entity}{Action}Event extends {Entity}Event {
+
+    String entityId();
+    String name();  // Add relevant data fields
+
+    static Immutable{Entity}{Action}Event create(String entityId, String name) {
+        return Immutable{Entity}{Action}Event.builder()
+            .eventId(UUID.randomUUID().toString())
+            .occurredAt(Instant.now())
+            .entityId(entityId)
+            .name(name)
+            .build();
+    }
+}
+```
+
+**Note**: Add the new event to the `permits` clause in the sealed interface.
+
+### 3. Update EventPublisher (if adding new topic/queue)
+
+Check if the event needs a new topic/queue. If so, update:
+
+{{- if .UsesKafka}}
+**File**: `Events/src/main/java/{{.PackagePath}}/events/EventPublisher.java`
+
+```java
+public void publish({Entity}{Action}Event event) {
+    String topic = "{entity}-events";  // or use config property
+    kafkaTemplate.send(topic, event.entityId(), event);
+    log.info("Published {} to {}: eventId={}",
+        event.getClass().getSimpleName(), topic, event.eventId());
+}
+```
+
+**File**: `Events/src/main/resources/application.yml` (add topic config)
+
+```yaml
+app:
+  kafka:
+    topics:
+      {entity}-events: ${KAFKA_TOPIC_{ENTITY}_EVENTS:{entity}-events}
+```
+{{- else if .UsesRabbitMQ}}
+**File**: `Events/src/main/java/{{.PackagePath}}/events/EventPublisher.java`
+
+```java
+public void publish({Entity}{Action}Event event) {
+    String exchange = "{entity}.events";
+    String routingKey = "{entity}.{action}";
+    rabbitTemplate.convertAndSend(exchange, routingKey, event);
+    log.info("Published {} to {}/{}: eventId={}",
+        event.getClass().getSimpleName(), exchange, routingKey, event.eventId());
+}
+```
+{{- else if .UsesSQS}}
+**File**: `Events/src/main/java/{{.PackagePath}}/events/EventPublisher.java`
+
+```java
+public void publish({Entity}{Action}Event event) {
+    String queueUrl = sqsQueueUrl;  // from config
+    String messageBody = objectMapper.writeValueAsString(event);
+    sqsClient.sendMessage(SendMessageRequest.builder()
+        .queueUrl(queueUrl)
+        .messageBody(messageBody)
+        .messageGroupId(event.entityId())  // for FIFO queues
+        .build());
+    log.info("Published {} to SQS: eventId={}",
+        event.getClass().getSimpleName(), event.eventId());
+}
+```
+{{- else if .UsesPubSub}}
+**File**: `Events/src/main/java/{{.PackagePath}}/events/EventPublisher.java`
+
+```java
+public void publish({Entity}{Action}Event event) {
+    String topicName = "{entity}-events";
+    PubsubMessage message = PubsubMessage.newBuilder()
+        .setData(ByteString.copyFromUtf8(objectMapper.writeValueAsString(event)))
+        .putAttributes("eventType", event.getClass().getSimpleName())
+        .build();
+    publisher.publish(message);
+    log.info("Published {} to Pub/Sub {}: eventId={}",
+        event.getClass().getSimpleName(), topicName, event.eventId());
+}
+```
+{{- end}}
+
+### 4. Create Event Listener
+
+**File**: `EventConsumer/src/main/java/{{.PackagePath}}/eventconsumer/listener/{Entity}EventListener.java`
+
+{{- if .UsesKafka}}
+```java
+package {{.GroupID}}.eventconsumer.listener;
+
+import {{.GroupID}}.model.events.{Entity}{Action}Event;
+import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.DltStrategy;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.stereotype.Component;
+
+@Component
+public class {Entity}EventListener {
+
+    private static final Logger log = LoggerFactory.getLogger({Entity}EventListener.class);
+
+    @RetryableTopic(
+        attempts = "3",
+        backoff = @Backoff(delay = 1000, multiplier = 2),
+        dltStrategy = DltStrategy.FAIL_ON_ERROR,
+        dltTopicSuffix = "-dlt"
+    )
+    @KafkaListener(
+        topics = "${app.kafka.topics.{entity}-events}",
+        groupId = "${spring.kafka.consumer.group-id}"
+    )
+    public void handle{Action}(Immutable{Entity}{Action}Event event) {
+        log.info("Received {}: eventId={}, entityId={}",
+            event.getClass().getSimpleName(), event.eventId(), event.entityId());
+
+        try {
+            // TODO: Process the event
+            // - Update read models
+            // - Trigger side effects
+            // - Send notifications
+
+            log.info("Processed event: eventId={}", event.eventId());
+        } catch (Exception e) {
+            log.error("Failed to process event: eventId={}", event.eventId(), e);
+            throw e;  // Will trigger retry
+        }
+    }
+}
+```
+{{- else if .UsesRabbitMQ}}
+```java
+package {{.GroupID}}.eventconsumer.listener;
+
+import {{.GroupID}}.model.events.{Entity}{Action}Event;
+import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.stereotype.Component;
+
+@Component
+public class {Entity}EventListener {
+
+    private static final Logger log = LoggerFactory.getLogger({Entity}EventListener.class);
+
+    @RabbitListener(queues = "${app.rabbitmq.queues.{entity}-events}")
+    public void handle{Action}(Immutable{Entity}{Action}Event event) {
+        log.info("Received {}: eventId={}, entityId={}",
+            event.getClass().getSimpleName(), event.eventId(), event.entityId());
+
+        try {
+            // TODO: Process the event
+
+            log.info("Processed event: eventId={}", event.eventId());
+        } catch (Exception e) {
+            log.error("Failed to process event: eventId={}", event.eventId(), e);
+            throw e;  // Will trigger DLQ routing
+        }
+    }
+}
+```
+{{- else if .UsesSQS}}
+```java
+package {{.GroupID}}.eventconsumer.listener;
+
+import {{.GroupID}}.model.events.{Entity}{Action}Event;
+import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
+import io.awspring.cloud.sqs.annotation.SqsListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+@Component
+public class {Entity}EventListener {
+
+    private static final Logger log = LoggerFactory.getLogger({Entity}EventListener.class);
+
+    @SqsListener("${app.sqs.queue.{entity}-events}")
+    public void handle{Action}(Immutable{Entity}{Action}Event event) {
+        log.info("Received {}: eventId={}, entityId={}",
+            event.getClass().getSimpleName(), event.eventId(), event.entityId());
+
+        try {
+            // TODO: Process the event
+
+            log.info("Processed event: eventId={}", event.eventId());
+        } catch (Exception e) {
+            log.error("Failed to process event: eventId={}", event.eventId(), e);
+            throw e;
+        }
+    }
+}
+```
+{{- else if .UsesPubSub}}
+```java
+package {{.GroupID}}.eventconsumer.listener;
+
+import com.google.cloud.spring.pubsub.support.BasicAcknowledgeablePubsubMessage;
+import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.integration.annotation.ServiceActivator;
+import org.springframework.stereotype.Component;
+
+@Component
+public class {Entity}EventListener {
+
+    private static final Logger log = LoggerFactory.getLogger({Entity}EventListener.class);
+    private final ObjectMapper objectMapper;
+
+    public {Entity}EventListener(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
+
+    @ServiceActivator(inputChannel = "{entity}EventsInputChannel")
+    public void handle{Action}(BasicAcknowledgeablePubsubMessage message) {
+        try {
+            String payload = message.getPubsubMessage().getData().toStringUtf8();
+            Immutable{Entity}{Action}Event event = objectMapper.readValue(
+                payload, Immutable{Entity}{Action}Event.class);
+
+            log.info("Received {}: eventId={}, entityId={}",
+                event.getClass().getSimpleName(), event.eventId(), event.entityId());
+
+            // TODO: Process the event
+
+            message.ack();
+            log.info("Processed event: eventId={}", event.eventId());
+        } catch (Exception e) {
+            log.error("Failed to process event", e);
+            message.nack();
+        }
+    }
+}
+```
+{{- end}}
+
+### 5. Update Configuration
+
+Add topic/queue configuration if using new destinations:
+
+**File**: `EventConsumer/src/main/resources/application.yml`
+
+{{- if .UsesKafka}}
+```yaml
+app:
+  kafka:
+    topics:
+      {entity}-events: ${KAFKA_TOPIC_{ENTITY}_EVENTS:{entity}-events}
+```
+{{- else if .UsesRabbitMQ}}
+```yaml
+app:
+  rabbitmq:
+    queues:
+      {entity}-events: ${RABBITMQ_QUEUE_{ENTITY}_EVENTS:{entity}-events}
+```
+{{- else if .UsesSQS}}
+```yaml
+app:
+  sqs:
+    queue:
+      {entity}-events: ${SQS_QUEUE_{ENTITY}_EVENTS:{entity}-events}
+```
+{{- end}}
+
+### 6. Publish Events From Services
+
+```java
+@Service
+public class {Entity}Service {
+
+    private final EventPublisher eventPublisher;
+
+    public {Entity}Service(EventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    public Immutable{Entity} create(Immutable{Entity}Request request) {
+        // Create entity...
+        Immutable{Entity} created = // save entity
+
+        // Publish event
+        eventPublisher.publish(
+            {Entity}CreatedEvent.create(created.id(), created.name())
+        );
+
+        return created;
+    }
+}
+```
+
+### 7. Create Listener Test
+
+**File**: `EventConsumer/src/test/java/{{.PackagePath}}/eventconsumer/listener/{Entity}EventListenerTest.java`
+
+```java
+package {{.GroupID}}.eventconsumer.listener;
+
+import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+@ExtendWith(MockitoExtension.class)
+class {Entity}EventListenerTest {
+
+    @InjectMocks
+    private {Entity}EventListener listener;
+
+    @Test
+    void shouldHandleEventSuccessfully() {
+        // given
+        var event = Immutable{Entity}{Action}Event.builder()
+            .eventId("evt-123")
+            .occurredAt(java.time.Instant.now())
+            .entityId("entity-456")
+            .name("Test")
+            .build();
+
+        // when/then - should not throw
+        assertDoesNotThrow(() -> listener.handle{Action}(event));
+    }
+}
+```
+
+### 8. Compile and Test
+
+```bash
+mvn clean compile
+mvn test
+```
+
+## Checklist
+
+- [ ] Sealed interface created/updated for event family
+- [ ] Specific event class created with factory method
+- [ ] Event added to `permits` clause in sealed interface
+- [ ] EventPublisher updated (if new topic/queue)
+- [ ] Listener created with proper annotations
+- [ ] Configuration updated for new topics/queues
+- [ ] Listener handles errors properly (log + rethrow for retry)
+- [ ] Unit tests for listener
+- [ ] Code compiles (`mvn clean compile`)
+- [ ] Tests pass (`mvn test`)
+
+## Common Mistakes
+
+- **Forgetting permits clause**: New events must be added to sealed interface
+- **Missing factory method**: Use `create()` for consistent event creation
+- **Swallowing exceptions**: Rethrow to trigger retry/DLQ
+- **Processing not idempotent**: Events may be delivered more than once
+- **Missing event metadata**: Always include `eventId` and `occurredAt`
+- **Large event payloads**: Events should be small, fetch details in listener

@@ -208,6 +208,16 @@ func (g *Generator) createDirectories() error {
 		)
 	}
 
+	// MCP module directories
+	if g.config.HasModule(config.ModuleMCP) {
+		mcpBase := filepath.Join(g.outDir, config.ModuleMCP, "src", "main", "java", packagePath, "mcp")
+		dirs = append(dirs,
+			mcpBase,
+			filepath.Join(mcpBase, "tools"),
+			filepath.Join(g.outDir, config.ModuleMCP, "src", "main", "resources"),
+		)
+	}
+
 	// Create all directories
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -239,6 +249,8 @@ func (g *Generator) generateModule(module string) error {
 		return g.generateEventsModule()
 	case config.ModuleEventConsumer:
 		return g.generateEventConsumerModule()
+	case config.ModuleMCP:
+		return g.generateMCPModule()
 	default:
 		return fmt.Errorf("unknown module: %s", module)
 	}

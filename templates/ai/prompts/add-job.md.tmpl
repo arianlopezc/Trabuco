@@ -1,0 +1,264 @@
+# Add Background Job
+
+## Overview
+
+Create a new background job using JobRunr for async processing. Jobs are defined in the `Model` module and handlers in the `Worker` module.
+
+## Prerequisites
+
+- Worker module is included in the project
+- Project compiles successfully (`mvn clean compile`)
+- Docker running (for JobRunr storage)
+
+## Architecture
+
+```
+Model/                          # Job request definitions (data contracts)
+├── model/jobs/
+│   └── {JobName}Request.java  # Immutable job request record
+
+Jobs/                           # Job enqueueing services
+├── jobs/
+│   └── {JobName}Service.java  # Service to enqueue jobs
+
+Worker/                         # Job handlers (execution logic)
+├── worker/handler/
+│   └── {JobName}RequestHandler.java  # Handler implementation
+```
+
+## Steps
+
+### 1. Create Job Request Record
+
+**File**: `Model/src/main/java/{{.PackagePath}}/model/jobs/{JobName}Request.java`
+
+```java
+package {{.GroupID}}.model.jobs;
+
+import org.jobrunr.jobs.lambdas.JobRequest;
+
+/**
+ * Job request for {description of what the job does}.
+ *
+ * @param entityId The ID of the entity to process
+ * @param action The action to perform (e.g., "process", "notify")
+ */
+public record {JobName}Request(
+    String entityId,
+    String action
+) implements JobRequest {
+
+    @Override
+    public Class<?> getJobRequestHandler() {
+        return Class.forName("{{.GroupID}}.worker.handler.{JobName}RequestHandler");
+    }
+}
+```
+
+**Note**: The `getJobRequestHandler()` method must return the fully qualified class name of the handler.
+
+### 2. Create Job Handler
+
+**File**: `Worker/src/main/java/{{.PackagePath}}/worker/handler/{JobName}RequestHandler.java`
+
+```java
+package {{.GroupID}}.worker.handler;
+
+import {{.GroupID}}.model.jobs.{JobName}Request;
+{{- if .HasModule "Shared"}}
+import {{.GroupID}}.shared.service.PlaceholderService;
+{{- end}}
+import org.jobrunr.jobs.annotations.Job;
+import org.jobrunr.jobs.lambdas.JobRequestHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+@Component
+public class {JobName}RequestHandler implements JobRequestHandler<{JobName}Request> {
+
+    private static final Logger log = LoggerFactory.getLogger({JobName}RequestHandler.class);
+
+{{- if .HasModule "Shared"}}
+    private final PlaceholderService placeholderService;
+
+    public {JobName}RequestHandler(PlaceholderService placeholderService) {
+        this.placeholderService = placeholderService;
+    }
+{{- else}}
+
+    public {JobName}RequestHandler() {
+        // Inject dependencies as needed
+    }
+{{- end}}
+
+    @Override
+    @Job(name = "{Job Description}: %0")
+    public void run({JobName}Request request) throws Exception {
+        log.info("Processing job: entityId={}, action={}",
+            request.entityId(), request.action());
+
+        // TODO: Implement job logic here
+        // - Fetch entity from database
+        // - Perform processing
+        // - Update state or send notifications
+
+        log.info("Job completed: entityId={}", request.entityId());
+    }
+}
+```
+
+**Important:**
+- Handler class name MUST be `{RequestName}Handler`
+- Keep handlers **idempotent** — they will retry on failure
+- Log important events for debugging
+
+### 3. Create Job Service (Optional)
+
+If you want a clean API for enqueueing jobs:
+
+**File**: `Jobs/src/main/java/{{.PackagePath}}/jobs/{JobName}Service.java`
+
+```java
+package {{.GroupID}}.jobs;
+
+import {{.GroupID}}.model.jobs.{JobName}Request;
+import org.jobrunr.scheduling.BackgroundJobRequest;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+@Service
+public class {JobName}Service {
+
+    /**
+     * Enqueue a job for immediate processing.
+     */
+    public void enqueue(String entityId, String action) {
+        BackgroundJobRequest.enqueue(new {JobName}Request(entityId, action));
+    }
+
+    /**
+     * Schedule a job for delayed processing.
+     */
+    public void scheduleIn(String entityId, String action, long delayMinutes) {
+        BackgroundJobRequest.schedule(
+            Instant.now().plus(delayMinutes, ChronoUnit.MINUTES),
+            new {JobName}Request(entityId, action)
+        );
+    }
+}
+```
+
+### 4. Enqueue Jobs From Other Modules
+
+From any module that depends on `Jobs`:
+
+```java
+// Direct enqueueing
+BackgroundJobRequest.enqueue(new {JobName}Request("entity-123", "process"));
+
+// Delayed execution
+BackgroundJobRequest.schedule(
+    Instant.now().plus(1, ChronoUnit.HOURS),
+    new {JobName}Request("entity-123", "notify")
+);
+
+// Batch enqueueing
+List<{JobName}Request> requests = entities.stream()
+    .map(e -> new {JobName}Request(e.id(), "process"))
+    .toList();
+BackgroundJobRequest.enqueue(requests.stream());
+```
+
+### 5. Create Handler Test
+
+**File**: `Worker/src/test/java/{{.PackagePath}}/worker/handler/{JobName}RequestHandlerTest.java`
+
+```java
+package {{.GroupID}}.worker.handler;
+
+import {{.GroupID}}.model.jobs.{JobName}Request;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+@ExtendWith(MockitoExtension.class)
+class {JobName}RequestHandlerTest {
+
+    @InjectMocks
+    private {JobName}RequestHandler handler;
+
+    @Test
+    void shouldProcessJobSuccessfully() throws Exception {
+        // given
+        var request = new {JobName}Request("entity-123", "process");
+
+        // when/then - should not throw
+        assertDoesNotThrow(() -> handler.run(request));
+    }
+}
+```
+
+### 6. Compile and Test
+
+```bash
+mvn clean compile
+mvn test
+```
+
+### 7. Verify in JobRunr Dashboard
+
+1. Start Worker: `cd Worker && mvn spring-boot:run`
+2. Open dashboard: http://localhost:8000
+3. Enqueue a test job and verify it appears
+
+## Checklist
+
+- [ ] Job request record created in `Model/model/jobs/`
+- [ ] Request implements `JobRequest` with correct handler reference
+- [ ] Handler created in `Worker/worker/handler/`
+- [ ] Handler name matches `{RequestName}Handler` pattern
+- [ ] Handler annotated with `@Job(name = "...")`
+- [ ] Handler is idempotent (safe to retry)
+- [ ] Job service created (optional, for clean API)
+- [ ] Unit tests for handler
+- [ ] Code compiles (`mvn clean compile`)
+- [ ] Tests pass (`mvn test`)
+
+## Common Mistakes
+
+- **Handler name mismatch**: Must be exactly `{RequestName}Handler`
+- **Non-idempotent handlers**: Jobs retry on failure, logic must handle this
+- **Missing `@Component`**: Handler won't be found by Spring
+- **Blocking operations without timeout**: Add timeouts to external calls
+- **Large payloads in request**: Keep request data minimal, fetch details in handler
+
+## Recurring Jobs
+
+For scheduled/recurring jobs, add to `RecurringJobsConfig`:
+
+```java
+@Configuration
+public class RecurringJobsConfig {
+
+    private final JobScheduler jobScheduler;
+
+    public RecurringJobsConfig(JobScheduler jobScheduler) {
+        this.jobScheduler = jobScheduler;
+    }
+
+    @PostConstruct
+    public void scheduleRecurringJobs() {
+        jobScheduler.scheduleRecurrently(
+            "daily-cleanup",
+            Cron.daily(2),  // 2 AM daily
+            new CleanupJobRequest()
+        );
+    }
+}
+```

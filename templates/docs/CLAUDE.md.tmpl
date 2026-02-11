@@ -2,22 +2,27 @@
 
 Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}{{if .HasModule "EventConsumer"}} and {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}} for event-driven processing{{end}}.
 
+<!-- AI:COMMANDS:START -->
 ## Build & Test Commands
 
-```bash
-mvn clean compile          # Build all modules
-mvn test                   # Run all tests
-mvn clean package          # Package all modules
+| Command | Description |
+|---------|-------------|
+| `mvn clean compile` | Build all modules |
+| `mvn test` | Run all tests |
+| `mvn clean package` | Package all modules |
 {{- if .HasModule "API"}}
-cd API && mvn spring-boot:run   # Run API locally
+| `cd API && mvn spring-boot:run` | Start API server (port 8080) |
 {{- end}}
 {{- if .HasModule "Worker"}}
-cd Worker && mvn spring-boot:run   # Run Worker locally
+| `cd Worker && mvn spring-boot:run` | Start Worker (port 8081) |
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-cd EventConsumer && mvn spring-boot:run   # Run EventConsumer locally
+| `cd EventConsumer && mvn spring-boot:run` | Start EventConsumer (port 8083) |
 {{- end}}
-```
+{{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
+| `docker-compose up -d` | Start infrastructure services |
+{{- end}}
+<!-- AI:COMMANDS:END -->
 {{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
 
 **Docker:**
@@ -33,6 +38,67 @@ docker build -f EventConsumer/Dockerfile -t {{.ProjectName}}-eventconsumer .
 {{- end}}
 ```
 {{- end}}
+
+<!-- AI:PATTERNS:START -->
+## Code Patterns
+
+| Pattern | Description |
+|---------|-------------|
+| Entities | Use `ImmutableX.builder()...build()` pattern with `@Value.Immutable` |
+| DTOs | Use `@Value.Immutable` with `@JsonSerialize/@JsonDeserialize` |
+{{- if .HasModule "Shared"}}
+| Services | Inject repositories, add `@CircuitBreaker(name = "default")` on external calls |
+{{- end}}
+{{- if .HasModule "API"}}
+| Controllers | Use `@RestController`, return `ImmutableXResponse` types |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| SQL Records | Use Java records at repository boundary, convert to Immutables immediately |
+| Migrations | Use `V{number}__{description}.sql`, never modify existing migrations |
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+| NoSQL Documents | Use Java records at repository boundary, convert to Immutables immediately |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Job Handlers | Annotate with `@Job(name = "Description: %0")`, keep idempotent |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| Event Listeners | Use sealed interfaces for event contracts, handle DLT for failures |
+{{- end}}
+<!-- AI:PATTERNS:END -->
+
+<!-- AI:FILES:START -->
+## File Locations
+
+| Purpose | Location |
+|---------|----------|
+{{- if .HasModule "Model"}}
+| Entities | `Model/src/main/java/.../model/entities/` |
+| DTOs | `Model/src/main/java/.../model/dto/` |
+| Events (schemas) | `Model/src/main/java/.../model/events/` |
+| Jobs (schemas) | `Model/src/main/java/.../model/jobs/` |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| SQL Repositories | `SQLDatastore/src/main/java/.../sqldatastore/repository/` |
+| SQL Migrations | `SQLDatastore/src/main/resources/db/migration/` |
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+| NoSQL Repositories | `NoSQLDatastore/src/main/java/.../nosqldatastore/repository/` |
+{{- end}}
+{{- if .HasModule "Shared"}}
+| Services | `Shared/src/main/java/.../shared/service/` |
+{{- end}}
+{{- if .HasModule "API"}}
+| Controllers | `API/src/main/java/.../api/controller/` |
+| API Config | `API/src/main/java/.../api/config/` |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Job Handlers | `Worker/src/main/java/.../worker/handler/` |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| Event Listeners | `EventConsumer/src/main/java/.../eventconsumer/listener/` |
+{{- end}}
+<!-- AI:FILES:END -->
 
 ## Immutables
 
@@ -222,6 +288,33 @@ eventPublisher.publish(PlaceholderCreatedEvent.create("123", "name"));
 
 Repository tests use Testcontainers — Docker must be running.
 {{- end}}
+
+## Task Guides
+
+For complex tasks, read the corresponding guide in `.ai/prompts/`:
+
+| Task | Guide | When to Use |
+|------|-------|-------------|
+| Add new entity | `.ai/prompts/add-entity.md` | Creating a new domain object |
+{{- if .HasModule "API"}}
+| Add REST endpoint | `.ai/prompts/add-endpoint.md` | Exposing new API functionality |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Add background job | `.ai/prompts/add-job.md` | Async processing tasks |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| Add event type | `.ai/prompts/add-event.md` | Event-driven features |
+{{- end}}
+
+<!-- AI:CHECKPOINT:START -->
+## Session Status
+
+**Branch**: (not tracked yet)
+**Working on**: (no active task)
+**Tests**: (not run yet)
+
+_Update `.ai/checkpoint.json` to track progress across sessions._
+<!-- AI:CHECKPOINT:END -->
 
 ## Git
 

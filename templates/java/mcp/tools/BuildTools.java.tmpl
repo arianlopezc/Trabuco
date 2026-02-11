@@ -1,0 +1,172 @@
+package {{.GroupID}}.mcp.tools;
+
+import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
+import io.modelcontextprotocol.spec.McpSchema.Tool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * MCP tools for building and packaging the project.
+ */
+public class BuildTools {
+
+    private static final Logger log = LoggerFactory.getLogger(BuildTools.class);
+    private static final String PROJECT_DIR = System.getProperty("user.dir");
+    private static final int TIMEOUT_MINUTES = 10;
+
+    private BuildTools() {
+    }
+
+    /**
+     * Register all build tools with the MCP server.
+     */
+    public static void register(McpSyncServer server) {
+        server.addTool(compileTool());
+        server.addTool(packageTool());
+        server.addTool(cleanTool());
+        log.info("Registered build tools: build, package, clean");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static McpServerFeatures.SyncToolSpecification compileTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of("module", (Object) Map.of(
+                "type", "string",
+                "description", "Optional module name to compile (e.g., 'API', 'Model'). If not specified, compiles all modules."
+            )),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("build", "Build", "Compile the project or a specific module using Maven", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                String module = arguments != null ? (String) arguments.get("module") : null;
+                String command = module != null && !module.isEmpty()
+                    ? "mvn compile -pl " + module + " -am"
+                    : "mvn compile";
+
+                log.info("Executing: {}", command);
+                return executeCommand(command, "Build");
+            }
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static McpServerFeatures.SyncToolSpecification packageTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of("skipTests", (Object) Map.of(
+                "type", "boolean",
+                "description", "Skip running tests during packaging. Default: false"
+            )),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("package", "Package", "Package all modules into JAR files", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                boolean skipTests = arguments != null && Boolean.TRUE.equals(arguments.get("skipTests"));
+                String command = skipTests ? "mvn package -DskipTests" : "mvn package";
+
+                log.info("Executing: {}", command);
+                return executeCommand(command, "Package");
+            }
+        );
+    }
+
+    private static McpServerFeatures.SyncToolSpecification cleanTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of(),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("clean", "Clean", "Clean all build artifacts (target directories)", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                log.info("Executing: mvn clean");
+                return executeCommand("mvn clean", "Clean");
+            }
+        );
+    }
+
+    private static CallToolResult executeCommand(String command, String operationName) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder();
+            pb.directory(new File(PROJECT_DIR));
+
+            // Handle different OS
+            if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                pb.command("cmd.exe", "/c", command);
+            } else {
+                pb.command("sh", "-c", command);
+            }
+
+            pb.redirectErrorStream(true);
+
+            Process process = pb.start();
+            StringBuilder output = new StringBuilder();
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
+
+            boolean completed = process.waitFor(TIMEOUT_MINUTES, TimeUnit.MINUTES);
+            if (!completed) {
+                process.destroyForcibly();
+                return new CallToolResult(
+                    List.of(new TextContent(operationName + " timed out after " + TIMEOUT_MINUTES + " minutes")),
+                    true
+                );
+            }
+
+            int exitCode = process.exitValue();
+            String result = output.toString();
+
+            if (exitCode == 0) {
+                return new CallToolResult(
+                    List.of(new TextContent(operationName + " completed successfully.\n\n" + truncateOutput(result))),
+                    false
+                );
+            } else {
+                return new CallToolResult(
+                    List.of(new TextContent(operationName + " failed with exit code " + exitCode + ".\n\n" + truncateOutput(result))),
+                    true
+                );
+            }
+
+        } catch (Exception e) {
+            log.error("{} failed", operationName, e);
+            return new CallToolResult(
+                List.of(new TextContent(operationName + " failed: " + e.getMessage())),
+                true
+            );
+        }
+    }
+
+    private static String truncateOutput(String output) {
+        int maxLength = 10000;
+        if (output.length() <= maxLength) {
+            return output;
+        }
+        return "... (truncated)\n" + output.substring(output.length() - maxLength);
+    }
+}
