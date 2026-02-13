@@ -32,4 +32,6 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(addCmd)
+	rootCmd.AddCommand(migrateCmd)
+	rootCmd.AddCommand(authCmd)
 }

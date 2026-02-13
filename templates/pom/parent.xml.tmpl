@@ -19,7 +19,7 @@
         <maven.compiler.target>{{.JavaVersion}}</maven.compiler.target>
         <spring-boot.version>3.4.2</spring-boot.version>
         <testcontainers.version>2.0.3</testcontainers.version>
-{{- if .HasModule "Jobs"}}
+{{- if or (.HasModule "Jobs") (.HasModule "Worker")}}
         <jobrunr.version>8.4.0</jobrunr.version>
 {{- end}}
 {{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}

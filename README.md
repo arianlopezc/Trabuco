@@ -9,11 +9,13 @@
   </pre>
 </p>
 
-<h3 align="center">Generate production-ready Java projects in seconds.</h3>
+<h3 align="center">Generate production-ready Java projects in seconds — or migrate existing ones with AI.</h3>
 
 Starting a new Java project shouldn't feel like a chore. Yet every time you begin, it's the same story — setting up Maven modules, configuring database connections, writing migration scripts, wiring up test infrastructure, and copying boilerplate from that one project that "mostly works." Hours pass before you write a single line of actual business logic. Trabuco exists because your time is better spent building features, not fighting configuration files.
 
 Trabuco is a command-line tool that generates complete, well-structured Java projects with a single command. Run `trabuco init`, answer a few questions (or pass flags for automation), and you get a fully functional multi-module Maven project ready for development. No templates to download, no manual setup, no guessing how things should connect. The CLI handles the tedious work so you can focus on what matters — your application's unique value.
+
+But Trabuco isn't just for greenfield projects. The `trabuco migrate` command uses AI (Claude) to analyze existing Spring Boot applications and intelligently transform them into Trabuco's clean multi-module architecture. It understands your entities, services, controllers, and repositories — then reorganizes them into the right modules, converts JPA to Spring Data JDBC, replaces Quartz with JobRunr, and generates all the configuration you need. Migration happens in stages with checkpoints, so you can resume if interrupted and roll back if needed.
 
 The generated projects come batteries-included with production-proven technologies: Spring Boot for the application framework, Spring Data JDBC for straightforward database access, Flyway for version-controlled migrations, Testcontainers for realistic integration tests, and Resilience4j for fault tolerance. Everything is pre-configured and working together out of the box. Need PostgreSQL instead of MySQL? Just pick it during setup. Want the latest Java 25 instead of 21? One flag changes everything. The architecture is designed to be solid by default yet flexible when you need it.
 
@@ -24,6 +26,12 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Migrating Legacy Projects](#migrating-legacy-projects)
+  - [How It Works](#how-it-works)
+  - [Authentication](#authentication)
+  - [Migration Options](#migration-options)
+  - [Checkpoints and Recovery](#checkpoints-and-recovery)
+  - [What Gets Migrated](#what-gets-migrated)
 - [Managing Existing Projects](#managing-existing-projects)
   - [Project Health Check](#project-health-check)
   - [Adding Modules](#adding-modules)
@@ -57,6 +65,7 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 
 ## Features
 
+- **AI-powered migration** *(experimental)* — Transform existing Spring Boot projects into Trabuco's architecture with `trabuco migrate`
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
 - **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
 - **Project health checks** — Validate project structure and consistency with `trabuco doctor`
@@ -131,6 +140,157 @@ Your API is now running at `http://localhost:8080`. Try the health endpoint:
 ```bash
 curl http://localhost:8080/health
 ```
+
+## Migrating Legacy Projects
+
+> **⚠️ Experimental Feature**
+>
+> The `trabuco migrate` command is under active development. While functional, results should be reviewed and may require manual adjustments. We recommend running with `--dry-run` first and testing thoroughly before relying on migrated code in production.
+>
+> Set `TRABUCO_ACKNOWLEDGE_EXPERIMENTAL=true` to suppress the experimental warning in CI/CD pipelines.
+
+The `trabuco migrate` command uses AI to analyze existing Spring Boot projects and transform them into Trabuco's multi-module architecture. It's designed for projects that have grown organically and need restructuring — or for teams adopting Trabuco's patterns for existing codebases.
+
+```bash
+# Basic migration
+trabuco migrate /path/to/legacy-app
+
+# Specify output directory
+trabuco migrate /path/to/legacy-app -o ./migrated-app
+
+# Dry run — analyze without generating files
+trabuco migrate --dry-run /path/to/legacy-app
+```
+
+### How It Works
+
+Migration happens in 10 stages, each with checkpoints for recovery:
+
+| Stage | Description |
+|-------|-------------|
+| 1. Discovery | Scans your project structure, parses `pom.xml`, categorizes Java classes |
+| 2. Dependency Analysis | Identifies compatible, replaceable, and unsupported dependencies |
+| 3. Entity Extraction | Converts JPA entities to Spring Data JDBC format with Flyway migrations |
+| 4. Repository Migration | Transforms repositories to Spring Data JDBC/MongoDB patterns |
+| 5. Service Extraction | Moves services to Shared module with constructor injection |
+| 6. Controller Migration | Restructures REST controllers for the API module |
+| 7. Jobs Migration | Converts `@Scheduled` and Quartz jobs to JobRunr format |
+| 8. Events Migration | Transforms event listeners to Kafka/RabbitMQ patterns |
+| 9. Configuration | Generates `docker-compose.yml`, `.env.example`, AI agent files |
+| 10. Final Assembly | Creates parent POM, README, and project metadata |
+
+Before making changes, the AI shows you what it found and estimates the cost. In interactive mode (default), you confirm each major decision.
+
+### Authentication
+
+Trabuco uses Claude (Anthropic's AI) for intelligent code transformation. You need an API key:
+
+**Option 1: Anthropic (recommended)**
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+trabuco migrate /path/to/legacy-app
+```
+
+**Option 2: OpenRouter (alternative)**
+
+[OpenRouter](https://openrouter.ai) provides access to Claude models without an Anthropic account:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+trabuco migrate --provider=openrouter /path/to/legacy-app
+```
+
+You can also pass the key directly:
+```bash
+trabuco migrate --api-key=sk-ant-... /path/to/legacy-app
+```
+
+### Migration Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output directory | `./<project-name>-trabuco` |
+| `--dry-run` | Analyze only, don't generate files | `false` |
+| `--interactive` | Confirm each major decision | `true` |
+| `--resume` | Resume from last checkpoint | `false` |
+| `--rollback` | Rollback migration completely | `false` |
+| `--rollback-to` | Rollback to specific stage | — |
+| `--provider` | AI provider: `anthropic`, `openrouter` | `anthropic` |
+| `--model` | Model to use | `claude-sonnet-4-5` |
+| `--include-tests` | Migrate test files | `false` |
+| `--skip-build` | Skip Maven build after migration | `false` |
+| `-v, --verbose` | Verbose output | `false` |
+| `--debug` | Save all AI interactions | `false` |
+
+### Checkpoints and Recovery
+
+Migration creates checkpoints in `.trabuco-migrate/` within your source project. If something goes wrong:
+
+```bash
+# Resume from where you left off
+trabuco migrate --resume /path/to/legacy-app
+
+# Rollback to a specific stage
+trabuco migrate --rollback-to=entities /path/to/legacy-app
+
+# Rollback completely (removes output directory)
+trabuco migrate --rollback /path/to/legacy-app
+```
+
+Checkpoints track:
+- Completed stages and their outputs
+- AI decisions made (for transparency)
+- Token usage and estimated cost
+- Errors encountered
+
+### What Gets Migrated
+
+**Automatically converted:**
+
+| From | To |
+|------|----|
+| `@Entity` (JPA) | `@Table` (Spring Data JDBC) |
+| `@OneToMany`, `@ManyToOne` | Explicit foreign key fields |
+| Lombok `@Data`, `@Getter`, `@Setter` | Explicit getters/setters |
+| `JpaRepository` | `CrudRepository` (JDBC) |
+| `@Scheduled` methods | JobRunr `JobRequest` + `JobRequestHandler` |
+| Quartz jobs | JobRunr jobs |
+| `@KafkaListener`, `@RabbitListener` | Trabuco EventConsumer patterns |
+
+**Dependency replacements:**
+
+| Legacy | Trabuco Alternative |
+|--------|---------------------|
+| Hibernate / JPA | Spring Data JDBC |
+| Quartz Scheduler | JobRunr |
+| Lombok | Explicit code or Immutables |
+| Spring Data JPA | Spring Data JDBC |
+| javax.* | jakarta.* (Spring Boot 3.x) |
+
+**Requires manual attention:**
+- Complex JPA relationships (inheritance, embedded collections)
+- Native SQL queries with JPA-specific syntax
+- Custom Hibernate types
+- AspectJ weaving
+
+The AI flags these during migration and explains what needs manual review.
+
+### Cost Transparency
+
+Before migration begins, Trabuco estimates the cost based on:
+- Number of files to process
+- Estimated input/output tokens
+- Current model pricing
+
+Example output:
+```
+Estimated Migration Cost:
+  Files to process: 47
+  Est. tokens:      ~70,500
+  Est. cost:        $0.35 - $0.65
+```
+
+Actual cost is tracked during migration and saved in the checkpoint.
 
 ## Managing Existing Projects
 
