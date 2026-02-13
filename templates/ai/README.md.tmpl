@@ -9,6 +9,16 @@ This directory contains resources for AI coding assistants working on this proje
 | `checkpoint.json` | Machine-readable project state for session continuity |
 | `prompts/` | Task-specific guides for common development patterns |
 
+## IMPORTANT: Code Quality
+
+**Before writing ANY Java code, read:** `prompts/JAVA_CODE_QUALITY.md`
+
+This project enforces strict code quality standards. AI assistants MUST:
+1. Read the code quality specification before generating code
+2. Self-review generated code against the specification
+3. Refactor any violations immediately
+4. Verify the code compiles and tests pass
+
 ## Usage
 
 ### Checkpoint
@@ -23,6 +33,13 @@ AI assistants should:
 1. Read the checkpoint at session start to understand context
 2. Update the checkpoint when work is completed
 3. Record blockers and decisions for future reference
+
+### Code Quality & Review
+
+| Guide | When to Use |
+|-------|-------------|
+| `prompts/JAVA_CODE_QUALITY.md` | **Before/after writing ANY Java code** |
+| `prompts/code-review.md` | When reviewing code (yours or others) |
 
 ### Task Prompts
 

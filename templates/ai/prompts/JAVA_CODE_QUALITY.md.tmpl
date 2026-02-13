@@ -1,0 +1,297 @@
+# Java Code Quality Specification
+
+This is the authoritative code quality standard for this project. Read this **before writing any Java code** and self-review against it after.
+
+---
+
+## 1. Method Quality
+
+| Rule | Limit |
+|------|-------|
+| Max lines per method | 30 (non-blank) |
+| Max nesting depth | 2 levels |
+| Max parameters | 5 |
+| Single responsibility | One purpose per method |
+
+**Fix:** Extract private helper methods. Use early returns to flatten nesting.
+
+```java
+// GOOD: Short, focused method
+public Order processOrder(OrderRequest request) {
+    validateRequest(request);
+    var items = resolveItems(request.itemIds());
+    var pricing = calculatePricing(items, request.discountCode());
+    var order = createOrder(request, items, pricing);
+    notifyCustomer(order);
+    return order;
+}
+
+// BAD: 50+ lines doing validation, pricing, creation, notification inline
+```
+
+---
+
+## 2. Modern Java Idioms
+
+### Streams over Loops
+
+Use streams for filter/map/collect operations. Use loops only for side-effects or early termination with complex state.
+
+```java
+// GOOD
+List<String> activeNames = users.stream()
+    .filter(User::isActive)
+    .map(User::getName)
+    .toList();
+
+// BAD
+List<String> activeNames = new ArrayList<>();
+for (User user : users) {
+    if (user.isActive()) {
+        activeNames.add(user.getName());
+    }
+}
+```
+
+### Optional
+
+Use `Optional` as **return types only**. Never use as fields or parameters.
+
+```java
+// GOOD
+return optional.map(this::process).orElse(defaultValue);
+return optional.orElseThrow(() -> new NotFoundException("User not found"));
+
+// BAD
+if (optional.isPresent()) {
+    return process(optional.get());
+}
+```
+
+### Records
+
+Use records for simple immutable data carriers (DTOs, value objects).
+
+```java
+// GOOD
+public record CreateUserRequest(
+    @NotBlank String name,
+    @Email String email
+) {}
+
+// Copy mutable fields in custom constructors
+public record OrderSummary(String id, List<String> items) {
+    public OrderSummary {
+        items = List.copyOf(items);
+    }
+}
+```
+
+### Pattern Matching
+
+Use `instanceof` pattern matching and switch expressions.
+
+```java
+// GOOD
+if (shape instanceof Circle c) {
+    return Math.PI * c.radius() * c.radius();
+}
+
+return switch (status) {
+    case ACTIVE -> processActive(order);
+    case PENDING -> processPending(order);
+    case CANCELLED -> processCancelled(order);
+};
+
+// BAD
+if (shape instanceof Circle) {
+    Circle c = (Circle) shape;
+}
+```
+
+### Text Blocks
+
+Use text blocks for multi-line strings.
+
+```java
+// GOOD
+String query = """
+    SELECT u.id, u.name
+    FROM users u
+    WHERE u.active = true
+    """;
+
+// BAD
+String query = "SELECT u.id, u.name\n" +
+    "FROM users u\n" +
+    "WHERE u.active = true";
+```
+
+---
+
+## 3. Collections
+
+| Use | Avoid |
+|-----|-------|
+| `List.of(a, b, c)` | `Arrays.asList(a, b, c)` |
+| `.toList()` | `.collect(Collectors.toList())` |
+| `Map.of(k, v)` | `new HashMap<>()` + puts |
+| `Set.of(a, b)` | `new HashSet<>(Arrays.asList(...))` |
+
+Use unmodifiable collections by default. Use mutable only when mutation is needed.
+
+---
+
+## 4. Null Handling
+
+| Context | Approach |
+|---------|----------|
+| Constructor args | `Objects.requireNonNull(param, "param must not be null")` |
+| DTO validation | Bean Validation annotations (`@NotNull`, `@NotBlank`) |
+| Return values | Return `Optional<T>` instead of nullable `T` |
+| Internal code | Trust framework guarantees, avoid defensive null checks |
+
+```java
+// GOOD: Constructor validation
+public UserService(UserRepository userRepository, EventPublisher eventPublisher) {
+    this.userRepository = Objects.requireNonNull(userRepository);
+    this.eventPublisher = Objects.requireNonNull(eventPublisher);
+}
+
+// GOOD: DTO validation
+public record CreateUserRequest(
+    @NotNull @NotBlank String name,
+    @NotNull @Email String email
+) {}
+```
+
+---
+
+## 5. Spring Patterns
+
+### Dependency Injection
+
+Constructor injection only. All dependencies are `private final`.
+
+```java
+// GOOD
+@Service
+@RequiredArgsConstructor
+public class UserService {
+    private final UserRepository userRepository;
+    private final EventPublisher eventPublisher;
+}
+
+// BAD
+@Autowired
+private UserRepository userRepository;
+```
+
+### Transactions
+
+`@Transactional` on public service methods only. Never on private methods or controllers.
+
+```java
+@Transactional
+public User createUser(CreateUserRequest request) {
+    // ...
+}
+```
+
+### Circuit Breaker
+
+Use `@CircuitBreaker` on methods calling external services.
+
+```java
+@CircuitBreaker(name = "default", fallbackMethod = "fallback")
+public ExternalData fetchExternal(String id) {
+    return externalClient.get(id);
+}
+```
+
+### Validation
+
+Use Bean Validation on DTOs, `@Valid` in controllers.
+
+```java
+@PostMapping
+public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
+    // request is already validated
+}
+```
+
+---
+
+## 6. Naming Conventions
+
+| Element | Convention | Examples |
+|---------|-----------|----------|
+| Methods | Verb + noun, descriptive | `findActiveUsersByDepartment`, `calculateTotal` |
+| Booleans | `is`/`has`/`can` prefix | `isActive`, `hasPermission`, `canEdit` |
+| Collections | Plural nouns | `users`, `orderItems`, `activeAccounts` |
+| Variables | Descriptive, no abbreviations | `customerId`, `orderTotal` |
+| Constants | `UPPER_SNAKE_CASE` | `MAX_RETRY_COUNT`, `DEFAULT_TIMEOUT` |
+
+**Every name should be self-documenting. If you need a comment to explain what a variable holds, rename it.**
+
+---
+
+## 7. Error Handling
+
+```java
+// GOOD: Specific exception with context
+throw new OrderNotFoundException("Order not found: " + orderId);
+
+// GOOD: Wrap with context when rethrowing
+catch (JsonProcessingException e) {
+    throw new EventSerializationException("Failed to serialize event: " + event.type(), e);
+}
+
+// BAD: Generic catch
+catch (Exception e) { log.error("Error", e); }
+
+// BAD: Swallowed exception
+catch (IOException e) { }
+```
+
+---
+
+## 8. Testing
+
+- Test public behavior, not implementation details
+- One assertion concept per test method
+- Use descriptive test names: `shouldReturnNotFoundWhenUserDoesNotExist`
+- Use Testcontainers for integration tests with real databases
+
+```java
+@Test
+void shouldReturnActiveUsersOnly() {
+    // given
+    userRepository.save(createUser("active", true));
+    userRepository.save(createUser("inactive", false));
+
+    // when
+    var result = userService.findActiveUsers();
+
+    // then
+    assertThat(result).hasSize(1);
+    assertThat(result.getFirst().name()).isEqualTo("active");
+}
+```
+
+---
+
+## Quick Reference Checklist
+
+Before submitting any Java code, verify:
+
+- [ ] No method exceeds 30 lines
+- [ ] Streams used for filter/map/collect (no manual loops)
+- [ ] `Optional` used correctly (return types, `map`/`orElse`)
+- [ ] Records used for simple data carriers
+- [ ] Pattern matching used (`instanceof Type t`, switch expressions)
+- [ ] Modern collections (`List.of()`, `.toList()`)
+- [ ] Null handling via `Objects.requireNonNull` and Bean Validation
+- [ ] Constructor injection only, all fields `private final`
+- [ ] Code compiles: `mvn clean compile`
+- [ ] Tests pass: `mvn test`

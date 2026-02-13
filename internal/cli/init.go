@@ -16,6 +16,7 @@ import (
 	"github.com/arianlopezc/Trabuco/internal/generator"
 	"github.com/arianlopezc/Trabuco/internal/java"
 	"github.com/arianlopezc/Trabuco/internal/prompts"
+	"github.com/arianlopezc/Trabuco/internal/utils"
 )
 
 // Validation patterns for non-interactive mode
@@ -80,6 +81,22 @@ func runInit(cmd *cobra.Command, args []string) {
 	cyan.Println("║   Trabuco - Java Project Generator     ║")
 	cyan.Println("╚════════════════════════════════════════╝")
 	fmt.Println()
+
+	// Validate Docker is running (required for Testcontainers and local development)
+	dockerStatus := utils.CheckDocker()
+	if !dockerStatus.Running {
+		color.Red("Error: Docker is required but not available.\n")
+		if !dockerStatus.Installed {
+			color.Red("       Docker is not installed. Please install Docker Desktop.\n")
+		} else {
+			color.Red("       %s\n", dockerStatus.Error)
+		}
+		color.Yellow("\nDocker is required for:\n")
+		color.Yellow("  - Running integration tests (Testcontainers)\n")
+		color.Yellow("  - Local development with docker-compose\n")
+		fmt.Println()
+		return
+	}
 
 	var cfg *config.ProjectConfig
 	var err error

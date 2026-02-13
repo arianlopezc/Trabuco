@@ -2,6 +2,34 @@
 
 Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}{{if .HasModule "EventConsumer"}} and {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}} for event-driven processing{{end}}.
 
+<!-- AI:QUALITY:START -->
+## Code Quality (IMPORTANT)
+
+**Before writing any Java code, read:** `.ai/prompts/JAVA_CODE_QUALITY.md`
+
+This project enforces strict code quality standards. You MUST:
+
+1. **Read the specification** before generating code
+2. **Self-review** generated code against the specification
+3. **Refactor** any violations immediately
+4. **Verify** the code compiles and tests pass
+
+### Quick Quality Checks
+
+| Check | Requirement |
+|-------|-------------|
+| Method length | Max 30 lines, extract helpers |
+| Loops vs Streams | Prefer streams for filter/map/collect |
+| Optional | Return types only, use `map`/`orElse`, never `isPresent()+get()` |
+| Records | Use for simple data, copy mutable fields |
+| Pattern matching | Use `instanceof Type t`, switch expressions |
+| Collections | Use `List.of()`, `.toList()`, no `Arrays.asList()` |
+| Null handling | `Objects.requireNonNull` in constructors, Bean Validation on DTOs |
+| Injection | Constructor injection only, all fields `private final` |
+
+**Full specification:** `.ai/prompts/JAVA_CODE_QUALITY.md`
+<!-- AI:QUALITY:END -->
+
 <!-- AI:COMMANDS:START -->
 ## Build & Test Commands
 
@@ -295,6 +323,7 @@ For complex tasks, read the corresponding guide in `.ai/prompts/`:
 
 | Task | Guide | When to Use |
 |------|-------|-------------|
+| **Code quality** | `.ai/prompts/JAVA_CODE_QUALITY.md` | Before/after writing ANY Java code |
 | Add new entity | `.ai/prompts/add-entity.md` | Creating a new domain object |
 {{- if .HasModule "API"}}
 | Add REST endpoint | `.ai/prompts/add-endpoint.md` | Exposing new API functionality |

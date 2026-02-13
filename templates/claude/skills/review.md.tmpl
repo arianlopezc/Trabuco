@@ -1,0 +1,122 @@
+---
+name: review
+description: Review code changes for quality, security, and best practices
+triggers:
+  - review
+  - code review
+  - review changes
+---
+
+# Code Review
+
+Perform a comprehensive code review following project standards.
+
+## Process
+
+1. **Get changes to review:**
+   ```bash
+   # For staged changes
+   git diff --cached
+
+   # For branch changes vs main
+   git diff main..HEAD
+
+   # For specific files
+   git diff <file>
+   ```
+
+2. **Review against quality standards:**
+   - Read `.ai/prompts/JAVA_CODE_QUALITY.md`
+   - Check each category below
+
+3. **Report findings with severity**
+
+## Review Categories
+
+### A. Code Quality
+
+| Check | Look For |
+|-------|----------|
+| Method length | > 30 lines needs extraction |
+| Complexity | Nested depth > 2, cyclomatic > 10 |
+| Parameters | > 5 parameters needs object |
+| Naming | Clear, descriptive, follows conventions |
+
+### B. Modern Java
+
+| Pattern | Correct | Incorrect |
+|---------|---------|-----------|
+| Collections | `List.of()`, `.toList()` | `Arrays.asList()`, `new ArrayList<>()` loop |
+| Streams | `.stream().filter().map()` | `for` loop with `if` and `add` |
+| Optional | `.map().orElse()` | `.isPresent()` + `.get()` |
+| Records | Used for simple data | Verbose class with boilerplate |
+| Pattern match | `instanceof Type t` | `instanceof` + cast |
+
+### C. Architecture
+
+| Rule | Check |
+|------|-------|
+| Module boundaries | No API importing from Worker/EventConsumer |
+| Persistence | Records/Documents not exposed outside service |
+| Injection | Constructor injection, `private final` fields |
+| Transactions | `@Transactional` on public methods only |
+
+### D. Security
+
+| Check | Look For |
+|-------|----------|
+| Injection | Parameterized queries, no string concat in SQL |
+| Secrets | No hardcoded passwords, API keys, tokens |
+| Validation | Input validation on DTOs, sanitization |
+| Auth | Proper authorization checks |
+
+### E. Testing
+
+| Check | Requirement |
+|-------|-------------|
+| Coverage | New code has tests |
+| Edge cases | Null handling, boundaries tested |
+| Naming | Test names describe behavior |
+
+## Output Format
+
+```markdown
+## Code Review Summary
+
+### Overview
+[1-2 sentences on overall quality]
+
+### Issues Found
+
+#### Critical (Must Fix)
+- **File:Line** - [Issue description]
+  - **Problem**: [What's wrong]
+  - **Fix**: [How to fix]
+
+#### Warnings (Should Fix)
+- **File:Line** - [Issue description]
+
+#### Suggestions (Nice to Have)
+- **File:Line** - [Suggestion]
+
+### Positive Highlights
+- [Good patterns observed]
+
+### Verdict
+- [ ] Approved
+- [ ] Approved with suggestions
+- [ ] Changes requested
+```
+
+## Quick Commands
+
+```bash
+# Run tests before approving
+mvn test
+
+# Check for compilation issues
+mvn clean compile
+
+# View coverage
+open API/target/site/jacoco/index.html
+```

@@ -79,6 +79,20 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
+	// Generate Claude Code specific files when Claude is selected
+	if g.config.HasAIAgent("claude") {
+		if err := g.generateClaudeCodeFiles(); err != nil {
+			return err
+		}
+	}
+
+	// Generate Cursor specific files when Cursor is selected
+	if g.config.HasAIAgent("cursor") {
+		if err := g.generateCursorFiles(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -91,6 +105,16 @@ func (g *Generator) generateAIDirectory() error {
 
 	// Generate .ai/checkpoint.json
 	if err := g.writeTemplate("ai/checkpoint.json.tmpl", ".ai/checkpoint.json"); err != nil {
+		return err
+	}
+
+	// Generate code quality specification (always - this is the core quality guide)
+	if err := g.writeTemplate("ai/prompts/JAVA_CODE_QUALITY.md.tmpl", ".ai/prompts/JAVA_CODE_QUALITY.md"); err != nil {
+		return err
+	}
+
+	// Generate code review guide (always - for proactive self-review)
+	if err := g.writeTemplate("ai/prompts/code-review.md.tmpl", ".ai/prompts/code-review.md"); err != nil {
 		return err
 	}
 
@@ -120,6 +144,39 @@ func (g *Generator) generateAIDirectory() error {
 		if err := g.writeTemplate("ai/prompts/add-event.md.tmpl", ".ai/prompts/add-event.md"); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// generateClaudeCodeFiles generates Claude Code specific configuration files
+func (g *Generator) generateClaudeCodeFiles() error {
+	// Generate .claude/settings.json with hooks and permissions
+	if err := g.writeTemplate("claude/settings.json.tmpl", ".claude/settings.json"); err != nil {
+		return err
+	}
+
+	// Generate .claude/skills/ directory with skill templates
+	if err := g.writeTemplate("claude/skills/commit.md.tmpl", ".claude/skills/commit.md"); err != nil {
+		return err
+	}
+
+	if err := g.writeTemplate("claude/skills/pr.md.tmpl", ".claude/skills/pr.md"); err != nil {
+		return err
+	}
+
+	if err := g.writeTemplate("claude/skills/review.md.tmpl", ".claude/skills/review.md"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// generateCursorFiles generates Cursor specific configuration files
+func (g *Generator) generateCursorFiles() error {
+	// Generate .cursor/rules/java.mdc with Java coding rules
+	if err := g.writeTemplate("cursor/rules/java.mdc.tmpl", ".cursor/rules/java.mdc"); err != nil {
+		return err
 	}
 
 	return nil

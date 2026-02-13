@@ -1,0 +1,142 @@
+---
+description: Java coding standards for {{.ProjectName}}
+globs: ["**/*.java"]
+alwaysApply: true
+---
+
+# Java Coding Rules for {{.ProjectName}}
+
+## Project Structure
+
+This is a multi-module Maven project:
+{{- if .HasModule "Model"}}
+- **Model**: Entities, DTOs, Enums (uses Immutables)
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+- **SQLDatastore**: Spring Data JDBC repositories, Flyway migrations
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+- **NoSQLDatastore**: {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else}}Redis{{end}} repositories
+{{- end}}
+{{- if .HasModule "Shared"}}
+- **Shared**: Business services with @CircuitBreaker
+{{- end}}
+{{- if .HasModule "API"}}
+- **API**: REST controllers with OpenAPI docs
+{{- end}}
+{{- if .HasModule "Worker"}}
+- **Worker**: JobRunr background job handlers
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+- **EventConsumer**: {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}SQS{{else}}Pub/Sub{{end}} event listeners
+{{- end}}
+
+## Immutables Pattern (CRITICAL)
+
+Always use `ImmutableX` concrete types and builders:
+
+```java
+// CORRECT
+public ImmutableUser createUser(ImmutableCreateUserRequest request) {
+    return ImmutableUser.builder()
+        .name(request.name())
+        .email(request.email())
+        .build();
+}
+
+// WRONG - Never do this
+public User createUser(CreateUserRequest request) {
+    return new User(request.name(), request.email());
+}
+```
+
+## Modern Java (17+)
+
+### Streams over loops
+```java
+// Use
+List<String> names = users.stream()
+    .filter(User::isActive)
+    .map(User::getName)
+    .toList();
+
+// Avoid
+List<String> names = new ArrayList<>();
+for (User u : users) {
+    if (u.isActive()) names.add(u.getName());
+}
+```
+
+### Pattern matching
+```java
+// Use
+if (obj instanceof String s) {
+    process(s.toUpperCase());
+}
+
+// Avoid
+if (obj instanceof String) {
+    String s = (String) obj;
+    process(s.toUpperCase());
+}
+```
+
+### Optional
+```java
+// Use
+return findUser(id).map(User::getName).orElse("Unknown");
+
+// Avoid
+Optional<User> opt = findUser(id);
+if (opt.isPresent()) return opt.get().getName();
+return "Unknown";
+```
+
+### Collections
+```java
+// Use
+List<String> items = List.of("a", "b", "c");
+
+// Avoid
+List<String> items = Arrays.asList("a", "b", "c");
+```
+
+## Method Guidelines
+
+- Maximum 30 lines per method
+- Maximum 5 parameters (use objects for more)
+- Maximum 2 levels of nesting
+- Use early returns to reduce complexity
+
+## Dependency Injection
+
+```java
+// Use constructor injection
+@Service
+@RequiredArgsConstructor
+public class UserService {
+    private final UserRepository userRepository;
+    private final EmailService emailService;
+}
+
+// Never use field injection
+@Autowired
+private UserRepository userRepository; // WRONG
+```
+
+## Module Dependencies
+
+- Model → (none)
+- SQLDatastore/NoSQLDatastore → Model
+- Shared → Model, Datastores
+- API → Model, Shared
+- Worker → Model, Shared
+- EventConsumer → Model, Shared
+
+Never import from API in Worker/EventConsumer or vice versa.
+
+## Testing
+
+- Use `@SpringBootTest` with Testcontainers for integration tests
+- Follow Arrange-Act-Assert pattern
+- Name tests: `should_ExpectedBehavior_When_Condition`

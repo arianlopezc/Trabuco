@@ -10,6 +10,7 @@ import (
 	"github.com/arianlopezc/Trabuco/internal/auth"
 	"github.com/arianlopezc/Trabuco/internal/migrate"
 	"github.com/arianlopezc/Trabuco/internal/prompts"
+	"github.com/arianlopezc/Trabuco/internal/utils"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -122,6 +123,22 @@ func runMigrate(cmd *cobra.Command, args []string) {
 		fmt.Println()
 		yellow.Println("   Set TRABUCO_ACKNOWLEDGE_EXPERIMENTAL=true to suppress this warning.")
 		fmt.Println()
+	}
+
+	// Validate Docker is running (required for generated project)
+	dockerStatus := utils.CheckDocker()
+	if !dockerStatus.Running {
+		red.Fprintf(os.Stderr, "Error: Docker is required but not available.\n")
+		if !dockerStatus.Installed {
+			red.Fprintf(os.Stderr, "       Docker is not installed. Please install Docker Desktop.\n")
+		} else {
+			red.Fprintf(os.Stderr, "       %s\n", dockerStatus.Error)
+		}
+		yellow.Fprintf(os.Stderr, "\nDocker is required for:\n")
+		yellow.Fprintf(os.Stderr, "  - Running integration tests (Testcontainers)\n")
+		yellow.Fprintf(os.Stderr, "  - Local development with docker-compose\n")
+		fmt.Fprintln(os.Stderr)
+		os.Exit(1)
 	}
 
 	var absSourcePath string

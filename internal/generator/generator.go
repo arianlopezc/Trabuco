@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -85,6 +86,13 @@ func (g *Generator) Generate() error {
 		return fmt.Errorf("failed to generate metadata: %w", err)
 	}
 	green.Println("  ✓ Created .trabuco.json")
+
+	// Initialize git repository
+	if err := g.initGit(); err != nil {
+		yellow.Printf("  ⚠ Could not initialize git repository: %v\n", err)
+	} else {
+		green.Println("  ✓ Initialized git repository")
+	}
 
 	return nil
 }
@@ -341,4 +349,14 @@ func (g *Generator) testJavaPath(module, subpackage string) string {
 // resourcePath returns the resources path for a module
 func (g *Generator) resourcePath(module, subpath string) string {
 	return filepath.Join(module, "src", "main", "resources", subpath)
+}
+
+// initGit initializes a git repository in the generated project directory
+func (g *Generator) initGit() error {
+	cmd := exec.Command("git", "init")
+	cmd.Dir = g.outDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return nil
 }

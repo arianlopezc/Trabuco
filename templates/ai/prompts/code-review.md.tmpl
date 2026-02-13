@@ -1,0 +1,237 @@
+# Code Review Guide
+
+Use this guide to review Java code before submitting. This applies to:
+- Code you just generated
+- Existing code you're modifying
+- Code review requests
+
+---
+
+## Review Process
+
+### Step 1: Read the Code Quality Specification
+
+First, read `.ai/prompts/JAVA_CODE_QUALITY.md` to refresh the standards.
+
+### Step 2: Run Automated Checks
+
+```bash
+# Compile to catch syntax errors
+mvn clean compile
+
+# Run tests to verify behavior
+mvn test
+
+# Check for common issues (if Checkstyle/PMD configured)
+mvn verify -DskipTests
+```
+
+### Step 3: Manual Review Checklist
+
+Go through each category below. For every violation found, **fix it immediately** before proceeding.
+
+---
+
+## Review Categories
+
+### A. Method Quality
+
+| Check | How to Verify | Fix |
+|-------|---------------|-----|
+| Length > 30 lines | Count non-blank lines | Extract to private helper methods |
+| Nested depth > 2 | Look for nested if/for/while | Use early returns, extract methods |
+| Parameters > 5 | Count method parameters | Create parameter object or builder |
+| Single responsibility | Can you describe in one sentence? | Split into multiple methods |
+
+**Example fix - extracting helpers:**
+```java
+// BEFORE: Long method
+public Order processOrder(OrderRequest request) {
+    // 50 lines of code doing validation, pricing, creation, notification
+}
+
+// AFTER: Short method with helpers
+public Order processOrder(OrderRequest request) {
+    validateRequest(request);
+    var items = resolveItems(request.itemIds());
+    var pricing = calculatePricing(items, request.discountCode());
+    var order = createOrder(request, items, pricing);
+    notifyCustomer(order);
+    return order;
+}
+```
+
+### B. Modern Java Idioms
+
+| Pattern | Wrong | Correct |
+|---------|-------|---------|
+| Streams | `for` loop with `if` and `add` | `.stream().filter().map().toList()` |
+| Optional | `opt.isPresent() ? opt.get() : default` | `opt.orElse(default)` |
+| instanceof | `if (x instanceof Y) { Y y = (Y) x; }` | `if (x instanceof Y y) { }` |
+| Null check | `if (x != null && x.getValue() != null)` | `Optional.ofNullable(x).map(X::getValue)` |
+| Collections | `new ArrayList<>()` + loop to populate | `List.of()` or `.toList()` |
+| Text | `"line1\n" + "line2\n"` | `"""` text block `"""` |
+
+**Find and replace these patterns aggressively.**
+
+### C. Naming Review
+
+| Element | Good | Bad |
+|---------|------|-----|
+| Method | `findActiveUsersByDepartment` | `getUsrs`, `process`, `doIt` |
+| Boolean | `isActive`, `hasPermission`, `canEdit` | `active`, `flag`, `check` |
+| Collection | `users`, `orderItems` | `list`, `data`, `items` |
+| Variable | `customerId`, `orderTotal` | `id`, `x`, `temp` |
+
+**Every name should be self-documenting.**
+
+### D. Architecture Compliance
+
+Check module boundaries:
+
+```
+Model           → (no dependencies)
+SQLDatastore    → Model
+NoSQLDatastore  → Model
+Shared          → Model, SQLDatastore, NoSQLDatastore
+API             → Model, Shared
+Worker          → Model, Shared, Jobs
+EventConsumer   → Model, Shared, Events
+```
+
+**Violations to look for:**
+- [ ] API importing from Worker or EventConsumer
+- [ ] Shared importing from API
+- [ ] Services defined outside of Shared module
+- [ ] Repository records exposed beyond service layer
+
+### E. Spring Patterns
+
+| Check | Correct | Wrong |
+|-------|---------|-------|
+| Injection | `@RequiredArgsConstructor` + `private final` fields | `@Autowired` on fields |
+| Transactions | `@Transactional` on public service methods | `@Transactional` on private methods |
+| Circuit breaker | `@CircuitBreaker(name = "default")` on external calls | No resilience on external calls |
+| Validation | Bean Validation on DTOs (`@NotNull`, `@Valid`) | Manual null checks in controller |
+
+### F. Error Handling
+
+| Check | Correct | Wrong |
+|-------|---------|-------|
+| Exceptions | Specific exception with context | `catch (Exception e)` |
+| Null safety | `Objects.requireNonNull` in constructors | Scattered null checks |
+| Empty blocks | Log or handle meaningfully | `catch (E e) { }` |
+| Rethrow | Wrap with context | Swallow or log-and-continue |
+
+---
+
+## Review Output Format
+
+After reviewing, document findings:
+
+```markdown
+## Code Review Summary
+
+### Files Reviewed
+- `UserService.java`
+- `UserController.java`
+
+### Issues Found and Fixed
+1. **UserService.processUser** - Extracted 3 helper methods (was 45 lines)
+2. **UserController.getUser** - Changed to use pattern matching
+3. **UserRepository.findActive** - Converted to stream API
+
+### Remaining Concerns
+- None (all issues fixed)
+
+### Tests
+- All tests pass: `mvn test` ✓
+```
+
+---
+
+## Common Refactoring Patterns
+
+### Extract Method
+```java
+// Before
+if (user.getAge() >= 18 && user.isVerified() && !user.isBanned()) {
+
+// After
+if (isEligible(user)) {
+
+private boolean isEligible(User user) {
+    return user.getAge() >= 18 && user.isVerified() && !user.isBanned();
+}
+```
+
+### Replace Loop with Stream
+```java
+// Before
+List<String> names = new ArrayList<>();
+for (User user : users) {
+    if (user.isActive()) {
+        names.add(user.getName());
+    }
+}
+
+// After
+List<String> names = users.stream()
+    .filter(User::isActive)
+    .map(User::getName)
+    .toList();
+```
+
+### Replace Optional Pattern
+```java
+// Before
+if (optional.isPresent()) {
+    return process(optional.get());
+} else {
+    return defaultValue;
+}
+
+// After
+return optional.map(this::process).orElse(defaultValue);
+```
+
+### Flatten Nested Conditionals
+```java
+// Before
+if (user != null) {
+    if (user.isActive()) {
+        if (user.hasPermission(resource)) {
+            return true;
+        }
+    }
+}
+return false;
+
+// After
+if (user == null) return false;
+if (!user.isActive()) return false;
+return user.hasPermission(resource);
+```
+
+---
+
+## Final Verification
+
+Before considering the review complete:
+
+```bash
+# 1. Compile
+mvn clean compile
+
+# 2. Run tests
+mvn test
+
+# 3. Check test coverage (if configured)
+open <module>/target/site/jacoco/index.html
+```
+
+All checks must pass before code is submitted.
+
+---
+
+_Reference: `.ai/prompts/JAVA_CODE_QUALITY.md` for complete specification._

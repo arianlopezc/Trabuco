@@ -39,7 +39,9 @@ public class ProjectTools {
         server.addTool(listEntitiesTool());
         server.addTool(getConfigTool());
         server.addTool(projectInfoTool());
-        log.info("Registered project tools: list-modules, list-entities, get-config, project-info");
+        server.addTool(getArchitectureTool());
+        server.addTool(getApiEndpointsTool());
+        log.info("Registered project tools: list-modules, list-entities, get-config, project-info, get-architecture, get-api-endpoints");
     }
 
     private static McpServerFeatures.SyncToolSpecification listModulesTool() {
@@ -250,6 +252,244 @@ public class ProjectTools {
                     log.error("Failed to read project info", e);
                     return new CallToolResult(
                         List.of(new TextContent("Error reading project info: " + e.getMessage())),
+                        true
+                    );
+                }
+            }
+        );
+    }
+
+    private static McpServerFeatures.SyncToolSpecification getArchitectureTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of(),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("get-architecture", "Get Architecture", "Get module dependencies and project architecture overview", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                try {
+                    Map<String, Object> architecture = new LinkedHashMap<>();
+                    Path projectPath = Paths.get(PROJECT_DIR);
+
+                    // Define standard Trabuco module dependencies
+                    Map<String, List<String>> moduleDependencies = new LinkedHashMap<>();
+                    moduleDependencies.put("Model", List.of());
+                    moduleDependencies.put("SQLDatastore", List.of("Model"));
+                    moduleDependencies.put("NoSQLDatastore", List.of("Model"));
+                    moduleDependencies.put("Shared", List.of("Model", "SQLDatastore", "NoSQLDatastore"));
+                    moduleDependencies.put("Jobs", List.of("Model"));
+                    moduleDependencies.put("Events", List.of("Model"));
+                    moduleDependencies.put("API", List.of("Model", "Shared", "Events"));
+                    moduleDependencies.put("Worker", List.of("Model", "Shared", "Jobs"));
+                    moduleDependencies.put("EventConsumer", List.of("Model", "Shared", "Events"));
+                    moduleDependencies.put("MCP", List.of());
+
+                    // Find existing modules
+                    List<String> existingModules = new ArrayList<>();
+                    Map<String, List<String>> actualDependencies = new LinkedHashMap<>();
+
+                    Path pomPath = projectPath.resolve("pom.xml");
+                    if (Files.exists(pomPath)) {
+                        String pomContent = Files.readString(pomPath);
+                        int modulesStart = pomContent.indexOf("<modules>");
+                        int modulesEnd = pomContent.indexOf("</modules>");
+
+                        if (modulesStart > 0 && modulesEnd > modulesStart) {
+                            String modulesSection = pomContent.substring(modulesStart, modulesEnd);
+                            for (String line : modulesSection.split("\n")) {
+                                if (line.contains("<module>") && line.contains("</module>")) {
+                                    String moduleName = line.replace("<module>", "").replace("</module>", "").trim();
+                                    existingModules.add(moduleName);
+
+                                    // Get dependencies for this module
+                                    List<String> deps = moduleDependencies.getOrDefault(moduleName, List.of());
+                                    List<String> actualDeps = deps.stream()
+                                        .filter(existingModules::contains)
+                                        .toList();
+                                    if (!actualDeps.isEmpty()) {
+                                        actualDependencies.put(moduleName, actualDeps);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    architecture.put("modules", existingModules);
+                    architecture.put("dependencies", actualDependencies);
+
+                    // Add layer information
+                    Map<String, List<String>> layers = new LinkedHashMap<>();
+                    layers.put("domain", existingModules.stream().filter(m -> m.equals("Model")).toList());
+                    layers.put("persistence", existingModules.stream().filter(m -> m.contains("Datastore")).toList());
+                    layers.put("business", existingModules.stream().filter(m -> m.equals("Shared") || m.equals("Jobs") || m.equals("Events")).toList());
+                    layers.put("presentation", existingModules.stream().filter(m -> m.equals("API") || m.equals("Worker") || m.equals("EventConsumer")).toList());
+                    layers.put("infrastructure", existingModules.stream().filter(m -> m.equals("MCP")).toList());
+                    architecture.put("layers", layers);
+
+                    // Generate ASCII diagram
+                    StringBuilder diagram = new StringBuilder();
+                    diagram.append("```\n");
+                    diagram.append("┌─────────────────────────────────────────────────────────┐\n");
+                    diagram.append("│                    PRESENTATION LAYER                    │\n");
+                    diagram.append("│  ┌─────────┐    ┌─────────┐    ┌───────────────┐        │\n");
+                    if (existingModules.contains("API") || existingModules.contains("Worker") || existingModules.contains("EventConsumer")) {
+                        diagram.append("│  │   API   │    │  Worker │    │ EventConsumer │        │\n");
+                    }
+                    diagram.append("│  └────┬────┘    └────┬────┘    └───────┬───────┘        │\n");
+                    diagram.append("│       │              │                  │                │\n");
+                    diagram.append("│       └──────────────┼──────────────────┘                │\n");
+                    diagram.append("│                      ▼                                   │\n");
+                    diagram.append("│  ┌─────────────────────────────────────────────────┐    │\n");
+                    diagram.append("│  │                 BUSINESS LAYER                   │    │\n");
+                    diagram.append("│  │  ┌────────┐    ┌──────┐    ┌────────┐           │    │\n");
+                    diagram.append("│  │  │ Shared │    │ Jobs │    │ Events │           │    │\n");
+                    diagram.append("│  │  └───┬────┘    └──────┘    └────────┘           │    │\n");
+                    diagram.append("│  └──────┼───────────────────────────────────────────┘    │\n");
+                    diagram.append("│         ▼                                                │\n");
+                    diagram.append("│  ┌─────────────────────────────────────────────────┐    │\n");
+                    diagram.append("│  │               PERSISTENCE LAYER                  │    │\n");
+                    diagram.append("│  │  ┌─────────────┐    ┌───────────────┐           │    │\n");
+                    diagram.append("│  │  │ SQLDatastore│    │ NoSQLDatastore│           │    │\n");
+                    diagram.append("│  │  └──────┬──────┘    └───────┬───────┘           │    │\n");
+                    diagram.append("│  └─────────┼───────────────────┼────────────────────┘    │\n");
+                    diagram.append("│            └─────────┬─────────┘                         │\n");
+                    diagram.append("│                      ▼                                   │\n");
+                    diagram.append("│  ┌─────────────────────────────────────────────────┐    │\n");
+                    diagram.append("│  │                  DOMAIN LAYER                    │    │\n");
+                    diagram.append("│  │  ┌───────────────────────────────────────────┐  │    │\n");
+                    diagram.append("│  │  │                   Model                    │  │    │\n");
+                    diagram.append("│  │  │  (Entities, DTOs, Enums, Value Objects)   │  │    │\n");
+                    diagram.append("│  │  └───────────────────────────────────────────┘  │    │\n");
+                    diagram.append("│  └─────────────────────────────────────────────────┘    │\n");
+                    diagram.append("└─────────────────────────────────────────────────────────┘\n");
+                    diagram.append("```\n");
+                    architecture.put("diagram", diagram.toString());
+
+                    String result = MAPPER.writeValueAsString(architecture);
+                    return new CallToolResult(
+                        List.of(new TextContent("Project Architecture:\n\n" + result + "\n\n" + diagram)),
+                        false
+                    );
+
+                } catch (Exception e) {
+                    log.error("Failed to get architecture", e);
+                    return new CallToolResult(
+                        List.of(new TextContent("Error getting architecture: " + e.getMessage())),
+                        true
+                    );
+                }
+            }
+        );
+    }
+
+    private static McpServerFeatures.SyncToolSpecification getApiEndpointsTool() {
+        JsonSchema inputSchema = new JsonSchema(
+            "object",
+            Map.of(),
+            List.of(),
+            null, null, null
+        );
+
+        return new McpServerFeatures.SyncToolSpecification(
+            new Tool("get-api-endpoints", "Get API Endpoints", "List all REST endpoints from the API module controllers", inputSchema, null, null, null),
+            (exchange, arguments) -> {
+                try {
+                    List<Map<String, Object>> endpoints = new ArrayList<>();
+                    Path apiPath = Paths.get(PROJECT_DIR, "API", "src", "main", "java");
+
+                    if (!Files.isDirectory(apiPath)) {
+                        return new CallToolResult(
+                            List.of(new TextContent("API module not found or has no source files.")),
+                            true
+                        );
+                    }
+
+                    // Find all controller files
+                    try (Stream<Path> paths = Files.walk(apiPath)) {
+                        List<Path> controllers = paths
+                            .filter(Files::isRegularFile)
+                            .filter(p -> p.toString().endsWith("Controller.java"))
+                            .toList();
+
+                        for (Path controller : controllers) {
+                            String content = Files.readString(controller);
+                            String controllerName = controller.getFileName().toString().replace(".java", "");
+
+                            // Extract base path from @RequestMapping on class
+                            String basePath = "";
+                            int classMapping = content.indexOf("@RequestMapping");
+                            if (classMapping > 0) {
+                                int start = content.indexOf("\"", classMapping);
+                                int end = content.indexOf("\"", start + 1);
+                                if (start > 0 && end > start) {
+                                    basePath = content.substring(start + 1, end);
+                                }
+                            }
+
+                            // Find all endpoint annotations
+                            String[] httpMethods = {"GetMapping", "PostMapping", "PutMapping", "DeleteMapping", "PatchMapping"};
+                            for (String method : httpMethods) {
+                                int index = 0;
+                                while ((index = content.indexOf("@" + method, index)) != -1) {
+                                    Map<String, Object> endpoint = new LinkedHashMap<>();
+                                    endpoint.put("controller", controllerName);
+                                    endpoint.put("method", method.replace("Mapping", "").toUpperCase());
+
+                                    // Extract path
+                                    String path = basePath;
+                                    int pathStart = content.indexOf("(", index);
+                                    int pathEnd = content.indexOf(")", pathStart);
+                                    if (pathStart > 0 && pathEnd > pathStart) {
+                                        String annotation = content.substring(pathStart + 1, pathEnd);
+                                        if (annotation.contains("\"")) {
+                                            int quoteStart = annotation.indexOf("\"");
+                                            int quoteEnd = annotation.indexOf("\"", quoteStart + 1);
+                                            if (quoteEnd > quoteStart) {
+                                                String subPath = annotation.substring(quoteStart + 1, quoteEnd);
+                                                path = basePath + subPath;
+                                            }
+                                        }
+                                    }
+                                    endpoint.put("path", path.isEmpty() ? basePath : path);
+
+                                    // Find the method name (next method declaration after annotation)
+                                    int methodNameStart = content.indexOf("public ", index);
+                                    if (methodNameStart > index && methodNameStart < index + 200) {
+                                        int returnTypeEnd = content.indexOf(" ", methodNameStart + 7);
+                                        int methodNameEnd = content.indexOf("(", returnTypeEnd);
+                                        if (methodNameEnd > returnTypeEnd) {
+                                            String methodName = content.substring(returnTypeEnd + 1, methodNameEnd).trim();
+                                            endpoint.put("methodName", methodName);
+                                        }
+                                    }
+
+                                    endpoints.add(endpoint);
+                                    index = pathEnd > 0 ? pathEnd : index + 1;
+                                }
+                            }
+                        }
+                    }
+
+                    if (endpoints.isEmpty()) {
+                        return new CallToolResult(
+                            List.of(new TextContent("No REST endpoints found in API module.")),
+                            false
+                        );
+                    }
+
+                    String result = MAPPER.writeValueAsString(endpoints);
+                    return new CallToolResult(
+                        List.of(new TextContent("API Endpoints:\n\n" + result)),
+                        false
+                    );
+
+                } catch (Exception e) {
+                    log.error("Failed to get API endpoints", e);
+                    return new CallToolResult(
+                        List.of(new TextContent("Error getting API endpoints: " + e.getMessage())),
                         true
                     );
                 }

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Modifying Java file - remember to follow JAVA_CODE_QUALITY.md'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -q '\\.java$'; then mvn compile -q -f $(pwd)/pom.xml 2>/dev/null || true; fi"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": ".*test.*fail.*|.*error.*|.*exception.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '⚠️ Test failure or error detected - check output carefully'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(mvn *)",
+      "Bash(git *)",
+      "Bash(docker *)",
+      "Bash(cd *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(sudo *)",
+      "Bash(* > /etc/*)",
+      "Bash(curl * | sh)",
+      "Bash(wget * | sh)"
+    ]
+  },
+  "model": "claude-sonnet-4-20250514",
+  "customInstructions": "Always read .ai/prompts/JAVA_CODE_QUALITY.md before writing Java code. Self-review all generated code against the quality checklist."
+}
