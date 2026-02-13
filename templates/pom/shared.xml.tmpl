@@ -50,14 +50,6 @@
             <version>${project.version}</version>
         </dependency>
 {{end}}
-{{if .HasModule "Events"}}
-        <!-- Events module dependency (for publishing events - includes broker dependencies) -->
-        <dependency>
-            <groupId>{{.GroupID}}</groupId>
-            <artifactId>Events</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-{{end}}
         <!-- Spring Boot Starter -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

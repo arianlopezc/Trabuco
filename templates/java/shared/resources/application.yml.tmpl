@@ -27,35 +27,3 @@ resilience4j:
     instances:
       default:
         base-config: default
-{{- if .HasModule "Events"}}
-{{- if .UsesKafka}}
-
-# Kafka Configuration (for event publishing)
-spring:
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-
-app:
-  kafka:
-    topics:
-      placeholder-events: ${KAFKA_TOPIC_PLACEHOLDER:placeholder-events}
-{{- else if .UsesRabbitMQ}}
-
-# RabbitMQ Configuration (for event publishing)
-spring:
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
-    virtual-host: ${RABBITMQ_VHOST:/}
-
-app:
-  rabbitmq:
-    exchanges:
-      placeholder: ${RABBITMQ_EXCHANGE_PLACEHOLDER:placeholder-exchange}
-{{- end}}
-{{- end}}
