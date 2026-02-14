@@ -249,8 +249,8 @@ func GetFilesToBackup(module string) []string {
 		"CLAUDE.md",
 		".cursorrules",
 		".github/copilot-instructions.md",
-		".windsurfrules",
-		".clinerules",
+		".windsurf/rules/project.md",
+		".clinerules/project.md",
 	}
 
 	// Docker-related files

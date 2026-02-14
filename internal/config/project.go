@@ -249,8 +249,8 @@ func GetAvailableAIAgents() []AIAgentInfo {
 		{ID: "claude", Name: "Claude Code", FilePath: "CLAUDE.md", Description: "Anthropic's Claude Code CLI"},
 		{ID: "cursor", Name: "Cursor", FilePath: ".cursorrules", Description: "AI-first code editor"},
 		{ID: "copilot", Name: "GitHub Copilot", FilePath: ".github/copilot-instructions.md", Description: "GitHub's AI pair programmer"},
-		{ID: "windsurf", Name: "Windsurf", FilePath: ".windsurfrules", Description: "Codeium's agentic IDE"},
-		{ID: "cline", Name: "Cline", FilePath: ".clinerules", Description: "VS Code autonomous agent"},
+		{ID: "windsurf", Name: "Windsurf", FilePath: ".windsurf/rules/project.md", Description: "Codeium's agentic IDE"},
+		{ID: "cline", Name: "Cline", FilePath: ".clinerules/project.md", Description: "VS Code autonomous agent"},
 	}
 }
 

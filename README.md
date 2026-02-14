@@ -837,8 +837,8 @@ Trabuco can generate context files for popular AI coding assistants. These files
 | Claude Code | `CLAUDE.md` | Anthropic's CLI for Claude |
 | Cursor | `.cursorrules` | AI-first code editor |
 | GitHub Copilot | `.github/copilot-instructions.md` | GitHub's AI pair programmer |
-| Windsurf | `.windsurfrules` | Codeium's agentic IDE |
-| Cline | `.clinerules` | VS Code autonomous agent |
+| Windsurf | `.windsurf/rules/project.md` | Codeium's agentic IDE |
+| Cline | `.clinerules/project.md` | VS Code autonomous agent |
 
 In interactive mode, you'll be prompted to select which agents you want context files for. In non-interactive mode:
 

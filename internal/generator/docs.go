@@ -157,15 +157,16 @@ func (g *Generator) generateClaudeCodeFiles() error {
 	}
 
 	// Generate .claude/skills/ directory with skill templates
-	if err := g.writeTemplate("claude/skills/commit.md.tmpl", ".claude/skills/commit.md"); err != nil {
+	// Each skill must be in its own directory as SKILL.md
+	if err := g.writeTemplate("claude/skills/commit.md.tmpl", ".claude/skills/commit/SKILL.md"); err != nil {
 		return err
 	}
 
-	if err := g.writeTemplate("claude/skills/pr.md.tmpl", ".claude/skills/pr.md"); err != nil {
+	if err := g.writeTemplate("claude/skills/pr.md.tmpl", ".claude/skills/pr/SKILL.md"); err != nil {
 		return err
 	}
 
-	if err := g.writeTemplate("claude/skills/review.md.tmpl", ".claude/skills/review.md"); err != nil {
+	if err := g.writeTemplate("claude/skills/review.md.tmpl", ".claude/skills/review/SKILL.md"); err != nil {
 		return err
 	}
 

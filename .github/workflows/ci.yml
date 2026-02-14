@@ -473,7 +473,7 @@ jobs:
 
           # Check agent instruction files
           echo "Checking AI agent instruction files..."
-          for file in "CLAUDE.md" ".cursorrules" ".github/copilot-instructions.md" ".windsurfrules" ".clinerules"; do
+          for file in "CLAUDE.md" ".cursorrules" ".github/copilot-instructions.md" ".windsurf/rules/project.md" ".clinerules/project.md"; do
             if [ -f "$file" ]; then
               echo "  ✓ $file exists ($(wc -l < "$file") lines)"
             else
@@ -521,15 +521,15 @@ jobs:
           # All agent files should have identical content (same template)
           CLAUDE_HASH=$(md5sum CLAUDE.md | cut -d' ' -f1)
           CURSOR_HASH=$(md5sum .cursorrules | cut -d' ' -f1)
-          WINDSURF_HASH=$(md5sum .windsurfrules | cut -d' ' -f1)
-          CLINE_HASH=$(md5sum .clinerules | cut -d' ' -f1)
+          WINDSURF_HASH=$(md5sum .windsurf/rules/project.md | cut -d' ' -f1)
+          CLINE_HASH=$(md5sum .clinerules/project.md | cut -d' ' -f1)
           COPILOT_HASH=$(md5sum .github/copilot-instructions.md | cut -d' ' -f1)
 
           echo "Content hashes:"
           echo "  CLAUDE.md:                    $CLAUDE_HASH"
           echo "  .cursorrules:                 $CURSOR_HASH"
-          echo "  .windsurfrules:               $WINDSURF_HASH"
-          echo "  .clinerules:                  $CLINE_HASH"
+          echo "  .windsurf/rules/project.md:   $WINDSURF_HASH"
+          echo "  .clinerules/project.md:       $CLINE_HASH"
           echo "  .github/copilot-instructions: $COPILOT_HASH"
 
           if [ "$CLAUDE_HASH" != "$CURSOR_HASH" ] || \
