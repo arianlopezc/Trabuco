@@ -34,4 +34,5 @@ func init() {
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(authCmd)
+	rootCmd.AddCommand(mcpCmd)
 }

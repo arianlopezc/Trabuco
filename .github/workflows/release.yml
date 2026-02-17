@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -61,11 +62,62 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Get version
+        id: version
+        run: |
+          echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/
           merge-multiple: true
+
+      - name: Create MCPB bundles
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          create_mcpb() {
+            local os=$1 arch=$2 mcpb_platform=$3 src_binary=$4
+            local bundle_dir="mcpb-${os}-${arch}"
+            local mcpb_file="dist/trabuco-${os}-${arch}.mcpb"
+            local binary_name="trabuco"
+            [ "$os" = "windows" ] && binary_name="trabuco.exe"
+            mkdir -p "$bundle_dir"
+            cp "dist/${src_binary}" "${bundle_dir}/${binary_name}"
+            [ "$os" != "windows" ] && chmod +x "${bundle_dir}/${binary_name}"
+            python3 -c "
+          import json, sys
+          manifest = {
+              'manifest_version': '0.3',
+              'name': 'trabuco',
+              'version': sys.argv[1],
+              'description': 'Java project generator CLI with MCP server for AI coding agents',
+              'author': {'name': 'arianlopezc'},
+              'server': {
+                  'type': 'binary',
+                  'entry_point': sys.argv[2],
+                  'mcp_config': {
+                      'command': sys.argv[2],
+                      'args': ['mcp'],
+                      'env': {}
+                  }
+              },
+              'compatibility': {
+                  'platforms': [sys.argv[3]]
+              }
+          }
+          with open(sys.argv[4], 'w') as f:
+              json.dump(manifest, f, indent=2)
+          " "$VERSION" "$binary_name" "$mcpb_platform" "${bundle_dir}/manifest.json"
+            (cd "$bundle_dir" && zip -r "../${mcpb_file}" .)
+            rm -rf "$bundle_dir"
+          }
+          create_mcpb darwin amd64 darwin "trabuco-darwin-amd64"
+          create_mcpb darwin arm64 darwin "trabuco-darwin-arm64"
+          create_mcpb linux amd64 linux "trabuco-linux-amd64"
+          create_mcpb linux arm64 linux "trabuco-linux-arm64"
+          create_mcpb windows amd64 win32 "trabuco-windows-amd64.exe"
 
       - name: List files
         run: ls -la dist/
@@ -79,3 +131,106 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-mcp:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download MCPB bundles from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.TAG }}"
+          mkdir -p dist
+          for platform in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64; do
+            gh release download "$TAG" -p "trabuco-${platform}.mcpb" -D dist/
+          done
+
+      - name: Generate server.json
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TAG="${{ steps.version.outputs.TAG }}"
+          REPO="arianlopezc/Trabuco"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          SHA_DARWIN_AMD64=$(sha256sum dist/trabuco-darwin-amd64.mcpb | cut -d' ' -f1)
+          SHA_DARWIN_ARM64=$(sha256sum dist/trabuco-darwin-arm64.mcpb | cut -d' ' -f1)
+          SHA_LINUX_AMD64=$(sha256sum dist/trabuco-linux-amd64.mcpb | cut -d' ' -f1)
+          SHA_LINUX_ARM64=$(sha256sum dist/trabuco-linux-arm64.mcpb | cut -d' ' -f1)
+          SHA_WINDOWS_AMD64=$(sha256sum dist/trabuco-windows-amd64.mcpb | cut -d' ' -f1)
+          python3 -c "
+          import json, sys
+          server = {
+              '\$schema': 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
+              'name': 'io.github.arianlopezc/trabuco',
+              'description': 'Generate and manage production-ready Java multi-module Maven projects via AI coding agents',
+              'title': 'Trabuco',
+              'version': sys.argv[1],
+              'websiteUrl': 'https://github.com/arianlopezc/Trabuco',
+              'repository': {
+                  'url': 'https://github.com/arianlopezc/Trabuco',
+                  'source': 'github'
+              },
+              'packages': [
+                  {
+                      'registryType': 'mcpb',
+                      'identifier': f'{sys.argv[2]}/trabuco-darwin-arm64.mcpb',
+                      'fileSha256': sys.argv[3],
+                      'transport': {'type': 'stdio'}
+                  },
+                  {
+                      'registryType': 'mcpb',
+                      'identifier': f'{sys.argv[2]}/trabuco-darwin-amd64.mcpb',
+                      'fileSha256': sys.argv[4],
+                      'transport': {'type': 'stdio'}
+                  },
+                  {
+                      'registryType': 'mcpb',
+                      'identifier': f'{sys.argv[2]}/trabuco-linux-amd64.mcpb',
+                      'fileSha256': sys.argv[5],
+                      'transport': {'type': 'stdio'}
+                  },
+                  {
+                      'registryType': 'mcpb',
+                      'identifier': f'{sys.argv[2]}/trabuco-linux-arm64.mcpb',
+                      'fileSha256': sys.argv[6],
+                      'transport': {'type': 'stdio'}
+                  },
+                  {
+                      'registryType': 'mcpb',
+                      'identifier': f'{sys.argv[2]}/trabuco-windows-amd64.mcpb',
+                      'fileSha256': sys.argv[7],
+                      'transport': {'type': 'stdio'}
+                  }
+              ]
+          }
+          with open('server.json', 'w') as f:
+              json.dump(server, f, indent=2)
+              f.write('\n')
+          " "$VERSION" "$BASE_URL" "$SHA_DARWIN_ARM64" "$SHA_DARWIN_AMD64" "$SHA_LINUX_AMD64" "$SHA_LINUX_ARM64" "$SHA_WINDOWS_AMD64"
+
+      - name: Show server.json
+        run: cat server.json
+
+      - name: Install mcp-publisher
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish

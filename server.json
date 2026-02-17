@@ -1,0 +1,13 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.arianlopezc/trabuco",
+  "description": "Generate and manage production-ready Java multi-module Maven projects via AI coding agents",
+  "title": "Trabuco",
+  "version": "0.0.0",
+  "websiteUrl": "https://github.com/arianlopezc/Trabuco",
+  "repository": {
+    "url": "https://github.com/arianlopezc/Trabuco",
+    "source": "github"
+  },
+  "packages": []
+}

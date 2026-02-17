@@ -35,6 +35,9 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - [Managing Existing Projects](#managing-existing-projects)
   - [Project Health Check](#project-health-check)
   - [Adding Modules](#adding-modules)
+- [CLI MCP Server](#cli-mcp-server)
+  - [Configuration](#configuration)
+  - [Available Tools](#available-tools)
 - [Generated Project Structure](#generated-project-structure)
 - [Modules](#modules)
   - [Model](#model)
@@ -85,7 +88,8 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - **Docker Compose** — Local development stack included
 - **IntelliJ run configs** — Just open and run
 - **AI-friendly** — Generates context files for Claude, Cursor, GitHub Copilot, Windsurf, and Cline
-- **MCP server** — Optional Model Context Protocol server for AI tool integration
+- **MCP server** — Optional Model Context Protocol server for AI tool integration in generated projects
+- **CLI MCP server** — `trabuco mcp` exposes all CLI functionality as structured tools for AI coding agents
 
 ## Installation
 
@@ -415,6 +419,98 @@ By default, `add` creates a backup in `.trabuco-backup/` before modifying files.
 | NoSQLDatastore | SQLDatastore | — |
 | Worker | — | Jobs, Model |
 | EventConsumer | — | Events, Model |
+
+## CLI MCP Server
+
+Trabuco includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server that exposes all CLI functionality as structured tools. Instead of running shell commands and parsing terminal output, AI coding agents get proper JSON schemas for inputs and structured JSON results — no string parsing, no color codes, no guessing.
+
+```bash
+trabuco mcp
+```
+
+This starts the MCP server over stdio. You don't run this command directly — your AI agent launches it automatically based on its configuration.
+
+### Configuration
+
+Add Trabuco as an MCP server in your AI agent's configuration file. The setup is the same regardless of how you installed the CLI:
+
+**Claude Code**
+
+```bash
+claude mcp add --transport stdio trabuco -- trabuco mcp
+```
+
+Or add to `.mcp.json` in your project root (shared with your team):
+
+```json
+{
+  "mcpServers": {
+    "trabuco": {
+      "command": "trabuco",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Cursor** — add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "trabuco": {
+      "command": "trabuco",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**VS Code / GitHub Copilot** — add to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "trabuco": {
+      "command": "trabuco",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Windsurf** — add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "trabuco": {
+      "command": "trabuco",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Available Tools
+
+Once configured, your AI agent can use these tools:
+
+| Tool | Description |
+|------|-------------|
+| `init_project` | Generate a new Java project with specified modules, database, and options |
+| `add_module` | Add a module to an existing Trabuco project (with dry-run support) |
+| `run_doctor` | Run health checks on a project and optionally auto-fix issues |
+| `get_project_info` | Read project metadata from `.trabuco.json` or inferred from POM |
+| `list_modules` | List all available modules with descriptions and dependency info |
+| `check_docker` | Check if Docker is installed and running |
+| `get_version` | Get the Trabuco CLI version |
+| `scan_project` | Analyze a legacy Java project's structure and dependencies (no AI required) |
+| `migrate_project` | Full AI-powered migration of a legacy project (long-running) |
+| `auth_status` | Check which AI providers have credentials configured |
+| `list_providers` | List supported AI providers with pricing and model info |
+
+**What this looks like in practice:** Ask your AI agent "create a new Java project called order-service with PostgreSQL and Kafka" and it calls `init_project` with the right parameters, gets back structured JSON with the project path, resolved modules, and any warnings — no terminal output to parse.
 
 ## Generated Project Structure
 
