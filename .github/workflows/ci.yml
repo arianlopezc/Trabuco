@@ -370,7 +370,8 @@ jobs:
           echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' > /tmp/mcp-init.json
 
           # Run MCP server with input, capture stdout
-          cat /tmp/mcp-init.json | timeout 10 java -jar MCP/target/MCP-1.0-SNAPSHOT.jar > /tmp/mcp-stdout.txt 2>/dev/null || true
+          # Keep stdin open for 3s so the server can flush its response before transport closes
+          (cat /tmp/mcp-init.json; sleep 3) | timeout 10 java -jar MCP/target/MCP-1.0-SNAPSHOT.jar > /tmp/mcp-stdout.txt 2>/dev/null || true
 
           # Check log file for the response (more reliable)
           cat mcp-server.log 2>/dev/null | tee /tmp/mcp-log.txt || true
@@ -404,8 +405,9 @@ jobs:
         working-directory: test-mcp/mcp-project
         run: |
           # Run MCP server briefly and check tool notifications
-          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | \
-            timeout 5 java -jar MCP/target/MCP-1.0-SNAPSHOT.jar > /tmp/mcp-tools-stdout.txt 2>/dev/null || true
+          # Keep stdin open for 3s so the server can flush its response before transport closes
+          (echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'; sleep 3) | \
+            timeout 10 java -jar MCP/target/MCP-1.0-SNAPSHOT.jar > /tmp/mcp-tools-stdout.txt 2>/dev/null || true
 
           echo "=== MCP Tool Notifications ==="
           cat /tmp/mcp-tools-stdout.txt
