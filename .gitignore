@@ -24,6 +24,10 @@ go.work
 .DS_Store
 Thumbs.db
 
+# npm wrapper
+npm/bin/
+npm/node_modules/
+
 # Test output
 coverage.out
 coverage.html

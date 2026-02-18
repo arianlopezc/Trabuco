@@ -1,0 +1,46 @@
+{
+  "name": "trabuco-mcp",
+  "version": "0.0.0",
+  "description": "Generate production-ready Java projects via AI coding agents — MCP server for Trabuco CLI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arianlopezc/Trabuco.git",
+    "directory": "npm"
+  },
+  "homepage": "https://github.com/arianlopezc/Trabuco#cli-mcp-server",
+  "bugs": "https://github.com/arianlopezc/Trabuco/issues",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "java",
+    "maven",
+    "spring-boot",
+    "code-generation",
+    "ai",
+    "trabuco"
+  ],
+  "bin": {
+    "trabuco-mcp": "./run.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "install.js",
+    "run.js",
+    "README.md"
+  ],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=16"
+  }
+}

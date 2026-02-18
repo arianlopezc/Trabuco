@@ -93,7 +93,17 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 
 ## Installation
 
-### From GitHub (recommended)
+### npx (recommended for MCP use)
+
+No installation needed — just reference `trabuco-mcp` in your AI agent config and npx handles everything:
+
+```bash
+claude mcp add trabuco -- npx -y trabuco-mcp
+```
+
+See [CLI MCP Server > Configuration](#configuration) for all agent configs.
+
+### From GitHub
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/arianlopezc/Trabuco/main/scripts/install.sh | bash
@@ -432,12 +442,12 @@ This starts the MCP server over stdio. You don't run this command directly — y
 
 ### Configuration
 
-Add Trabuco as an MCP server in your AI agent's configuration file. The setup is the same regardless of how you installed the CLI:
+Add Trabuco as an MCP server in your AI agent's configuration file. The recommended approach uses `npx` so there's nothing to install first:
 
 **Claude Code**
 
 ```bash
-claude mcp add --transport stdio trabuco -- trabuco mcp
+claude mcp add trabuco -- npx -y trabuco-mcp
 ```
 
 Or add to `.mcp.json` in your project root (shared with your team):
@@ -446,8 +456,8 @@ Or add to `.mcp.json` in your project root (shared with your team):
 {
   "mcpServers": {
     "trabuco": {
-      "command": "trabuco",
-      "args": ["mcp"]
+      "command": "npx",
+      "args": ["-y", "trabuco-mcp"]
     }
   }
 }
@@ -459,8 +469,8 @@ Or add to `.mcp.json` in your project root (shared with your team):
 {
   "mcpServers": {
     "trabuco": {
-      "command": "trabuco",
-      "args": ["mcp"]
+      "command": "npx",
+      "args": ["-y", "trabuco-mcp"]
     }
   }
 }
@@ -472,8 +482,8 @@ Or add to `.mcp.json` in your project root (shared with your team):
 {
   "servers": {
     "trabuco": {
-      "command": "trabuco",
-      "args": ["mcp"]
+      "command": "npx",
+      "args": ["-y", "trabuco-mcp"]
     }
   }
 }
@@ -485,12 +495,27 @@ Or add to `.mcp.json` in your project root (shared with your team):
 {
   "mcpServers": {
     "trabuco": {
-      "command": "trabuco",
-      "args": ["mcp"]
+      "command": "npx",
+      "args": ["-y", "trabuco-mcp"]
     }
   }
 }
 ```
+
+<details>
+<summary>Using the CLI binary directly (if already installed)</summary>
+
+If you installed the Trabuco CLI via `curl | bash` or `go install`, you can reference the binary directly:
+
+**Claude Code**
+
+```bash
+claude mcp add --transport stdio trabuco -- trabuco mcp
+```
+
+**All agents** — use `"command": "trabuco"` with `"args": ["mcp"]` in the config files shown above.
+
+</details>
 
 ### Available Tools
 
