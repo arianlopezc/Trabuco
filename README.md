@@ -103,6 +103,14 @@ claude mcp add trabuco -- npx -y trabuco-mcp
 
 See [CLI MCP Server > Configuration](#configuration) for all agent configs.
 
+### npm
+
+```bash
+npm install -g trabuco-mcp
+```
+
+Installs the MCP server wrapper globally. It downloads the correct Trabuco CLI binary for your platform on install.
+
 ### From GitHub
 
 ```bash
