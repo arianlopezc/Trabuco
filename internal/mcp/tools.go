@@ -28,6 +28,7 @@ var (
 func registerAllTools(s *server.MCPServer, version string) {
 	registerInitProject(s, version)
 	registerAddModule(s, version)
+	registerSuggestArchitecture(s)
 	registerRunDoctor(s, version)
 	registerGetProjectInfo(s)
 	registerListModules(s)
@@ -43,7 +44,21 @@ func registerAllTools(s *server.MCPServer, version string) {
 
 func registerInitProject(s *server.MCPServer, version string) {
 	tool := mcp.NewTool("init_project",
-		mcp.WithDescription("Generate a new production-ready Java multi-module Maven project"),
+		mcp.WithDescription(
+			"Generate a new production-ready Java multi-module Maven project with Spring Boot. "+
+				"WHEN TO USE: User wants to start a new Java backend project, REST API, event processor, or background job system. "+
+				"Trabuco generates a complete project skeleton with working code, tests, Docker configs, CI pipelines, and AI context files. "+
+				"GENERATES: Multi-module Maven project with Spring Boot 3.4, Spring Data JDBC (not JPA), Immutables for DTOs/entities, "+
+				"Testcontainers for integration tests, Spotless for code formatting, JaCoCo for coverage, and Docker Compose for local development. "+
+				"DOES NOT GENERATE: Authentication/authorization, frontend/UI code, GraphQL endpoints, Kubernetes manifests, "+
+				"Terraform/cloud deployment configs, custom business logic, or production database schemas. "+
+				"The project includes placeholder entities that should be replaced with real domain objects. "+
+				"ARCHITECTURE: Enforces clean multi-module separation — Model (data), Datastore (persistence), Shared (business logic), "+
+				"API (REST), Worker (background jobs), EventConsumer (message processing). Modules have strict dependency boundaries "+
+				"enforced by Maven Enforcer and ArchUnit tests. "+
+				"Call list_modules first to see available modules with descriptions, or call suggest_architecture with a natural language "+
+				"description to get a recommended module combination.",
+		),
 		mcp.WithString("name",
 			mcp.Description("Project name (lowercase, hyphens allowed, e.g. 'my-platform')"),
 			mcp.Required(),
@@ -196,6 +211,49 @@ func registerInitProject(s *server.MCPServer, version string) {
 			}
 		}
 
+		// Build conditional next_steps
+		nextSteps := []string{
+			"Replace placeholder entities in Model/ with your domain objects",
+		}
+		if hasModule(resolvedModules, config.ModuleSQLDatastore) {
+			nextSteps = append(nextSteps, "Update Flyway migration in SQLDatastore/src/main/resources/db/migration/ with your schema")
+		}
+		if hasModule(resolvedModules, config.ModuleShared) {
+			nextSteps = append(nextSteps, "Implement business logic in Shared/src/main/java/.../shared/service/")
+		}
+		nextSteps = append(nextSteps,
+			"Read .ai/prompts/add-entity.md for step-by-step entity creation guide",
+			"Run 'mvn test' to verify everything compiles and tests pass",
+			"Run 'mvn spotless:apply' after making changes to auto-format code",
+		)
+
+		// Build conditional key_files
+		keyFiles := map[string]string{
+			"quality_spec": ".ai/prompts/JAVA_CODE_QUALITY.md",
+			"add_entity":   ".ai/prompts/add-entity.md",
+			"agent_guide":  "AGENTS.md",
+			"project_meta": ".trabuco.json",
+			"extension_guide": ".ai/prompts/extending-the-project.md",
+		}
+		if hasModule(resolvedModules, config.ModuleAPI) {
+			keyFiles["add_endpoint"] = ".ai/prompts/add-endpoint.md"
+		}
+		if hasModule(resolvedModules, config.ModuleWorker) {
+			keyFiles["add_job"] = ".ai/prompts/add-job.md"
+		}
+		if hasModule(resolvedModules, config.ModuleEventConsumer) {
+			keyFiles["add_event"] = ".ai/prompts/add-event.md"
+		}
+
+		// Build boundaries
+		boundaries := []string{
+			"No authentication/authorization — add Spring Security manually",
+			"No frontend/UI — backend only",
+			"No production database schema — only placeholder migrations",
+			"No Kubernetes/deployment manifests — Docker Compose for local dev only",
+			"Placeholder entities should be replaced with real domain objects",
+		}
+
 		return toolJSON(map[string]any{
 			"status":       "success",
 			"path":         absPath,
@@ -204,13 +262,21 @@ func registerInitProject(s *server.MCPServer, version string) {
 			"java_version": javaVersion,
 			"build":        buildStatus,
 			"warnings":     warnings,
+			"next_steps":   nextSteps,
+			"key_files":    keyFiles,
+			"boundaries":   boundaries,
 		})
 	})
 }
 
 func registerAddModule(s *server.MCPServer, version string) {
 	tool := mcp.NewTool("add_module",
-		mcp.WithDescription("Add a module to an existing Trabuco project"),
+		mcp.WithDescription(
+			"Add a module to an existing Trabuco project. Automatically resolves dependencies, "+
+				"updates parent POM, regenerates Docker Compose and CI workflow, and creates backup before changes. "+
+				"Use get_project_info first to see which modules are already installed. "+
+				"Use dry_run=true to preview changes without applying them.",
+		),
 		mcp.WithString("path",
 			mcp.Description("Path to the Trabuco project root"),
 			mcp.Required(),
@@ -295,9 +361,228 @@ func registerAddModule(s *server.MCPServer, version string) {
 	})
 }
 
+func registerSuggestArchitecture(s *server.MCPServer) {
+	tool := mcp.NewTool("suggest_architecture",
+		mcp.WithDescription(
+			"Analyze project requirements and provide Trabuco module information to help you choose the right "+
+				"configuration. Returns the full module catalog with use cases and boundaries, disambiguation "+
+				"warnings for ambiguous terms, unsupported requirement detection, and constraint rules. "+
+				"YOU (the agent) decide which modules to select based on the catalog and the user's requirements. "+
+				"Then call init_project with your chosen modules. "+
+				"Use this BEFORE init_project when the user describes what they need.",
+		),
+		mcp.WithString("requirements",
+			mcp.Description("Natural language description of the project requirements"),
+			mcp.Required(),
+		),
+	)
+
+	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		requirements := req.GetString("requirements", "")
+		if requirements == "" {
+			return toolError("requirements parameter is required"), nil
+		}
+		result := buildAdvisory(requirements)
+		return toolJSON(result)
+	})
+}
+
+// architectureAdvisory provides the full module catalog, warnings, and constraints
+// so the calling agent can make its own module selection decision.
+type architectureAdvisory struct {
+	Modules         []advisoryModule `json:"modules"`
+	DatabaseOptions []dbOption       `json:"database_options"`
+	BrokerOptions   []brokerOption   `json:"broker_options"`
+	Warnings        []string         `json:"warnings"`
+	NotCovered      []string         `json:"not_covered"`
+	Constraints     []string         `json:"constraints"`
+}
+
+type advisoryModule struct {
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	UseCase        string   `json:"use_case"`
+	DoesNotInclude string   `json:"does_not_include"`
+	Required       bool     `json:"required"`
+	Internal       bool     `json:"internal"`
+	Dependencies   []string `json:"dependencies"`
+	ConflictsWith  []string `json:"conflicts_with"`
+}
+
+type dbOption struct {
+	Value       string `json:"value"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Module      string `json:"module"`
+}
+
+type brokerOption struct {
+	Value       string `json:"value"`
+	Description string `json:"description"`
+}
+
+func buildAdvisory(requirements string) *architectureAdvisory {
+	lower := strings.ToLower(requirements)
+
+	// Build module catalog from registry (exclude internal modules)
+	var modules []advisoryModule
+	for _, m := range config.ModuleRegistry {
+		if m.Internal {
+			continue
+		}
+		modules = append(modules, advisoryModule{
+			Name:           m.Name,
+			Description:    m.Description,
+			UseCase:        m.UseCase,
+			DoesNotInclude: m.DoesNotInclude,
+			Required:       m.Required,
+			Dependencies:   m.Dependencies,
+			ConflictsWith:  m.ConflictsWith,
+		})
+	}
+
+	// Database options
+	dbOptions := []dbOption{
+		{Value: config.DatabasePostgreSQL, Type: "sql", Description: "PostgreSQL — recommended default for SQL. Spring Data JDBC + Flyway migrations", Module: config.ModuleSQLDatastore},
+		{Value: config.DatabaseMySQL, Type: "sql", Description: "MySQL — Spring Data JDBC + Flyway migrations", Module: config.ModuleSQLDatastore},
+		{Value: config.DatabaseMongoDB, Type: "nosql", Description: "MongoDB — flexible document storage with Spring Data MongoDB", Module: config.ModuleNoSQLDatastore},
+		{Value: config.DatabaseRedis, Type: "nosql", Description: "Redis — key-value storage and caching with Spring Data Redis", Module: config.ModuleNoSQLDatastore},
+	}
+
+	// Broker options
+	brokerOpts := []brokerOption{
+		{Value: config.BrokerKafka, Description: "Apache Kafka — high-throughput distributed event streaming"},
+		{Value: config.BrokerRabbitMQ, Description: "RabbitMQ — flexible message routing with AMQP"},
+		{Value: config.BrokerSQS, Description: "AWS SQS — managed message queue (AWS-native)"},
+		{Value: config.BrokerPubSub, Description: "Google Pub/Sub — managed message queue (GCP-native)"},
+	}
+
+	// Disambiguation warnings (ensure non-nil for JSON serialization)
+	warnings := detectDisambiguations(lower)
+	if warnings == nil {
+		warnings = []string{}
+	}
+
+	// Unsupported requirements (ensure non-nil for JSON serialization)
+	notCovered := detectUnsupported(lower)
+	if notCovered == nil {
+		notCovered = []string{}
+	}
+
+	// Hard constraints
+	constraints := []string{
+		"SQLDatastore and NoSQLDatastore are mutually exclusive — choose one or the other",
+		"Model is always required and automatically included",
+		"EventConsumer requires a message_broker parameter (kafka, rabbitmq, sqs, or pubsub)",
+		"SQLDatastore requires a database parameter (postgresql or mysql)",
+		"NoSQLDatastore requires a nosql_database parameter (mongodb or redis)",
+		"Worker uses the SQL database for job storage — if you pick Worker, you typically also need SQLDatastore",
+		"Jobs and Events are internal modules — they are auto-included when Worker or EventConsumer is selected",
+	}
+
+	return &architectureAdvisory{
+		Modules:         modules,
+		DatabaseOptions: dbOptions,
+		BrokerOptions:   brokerOpts,
+		Warnings:        warnings,
+		NotCovered:      notCovered,
+		Constraints:     constraints,
+	}
+}
+
+// detectDisambiguations returns warnings for terms that have Trabuco-specific meanings
+// that may differ from what the user intended. These help the agent avoid misinterpreting
+// requirements, without making module selection decisions.
+func detectDisambiguations(lower string) []string {
+	brokerKeywords := []string{"kafka", "rabbitmq", "sqs", "pubsub", "pub/sub", "event-driven", "message broker", "message queue"}
+
+	var warnings []string
+
+	if containsAny(lower, "event") && !containsAny(lower, brokerKeywords...) {
+		warnings = append(warnings, "Ambiguous term 'event': In Trabuco, EventConsumer is specifically for message broker consumers (Kafka, RabbitMQ, SQS, Pub/Sub). If the user means HTTP event payloads (e.g., webhooks), they need API, not EventConsumer.")
+	}
+
+	if containsAny(lower, "listener") && !containsAny(lower, brokerKeywords...) {
+		warnings = append(warnings, "Ambiguous term 'listener': In Trabuco, 'listener' means a message queue consumer (EventConsumer module). If the user means an HTTP endpoint that receives callbacks/webhooks, they need API, not EventConsumer.")
+	}
+
+	if containsAny(lower, "queue") && !containsAny(lower, brokerKeywords...) {
+		warnings = append(warnings, "Ambiguous term 'queue': Worker provides a durable job queue for background processing (fire-and-forget, scheduled). EventConsumer provides message queue consumption from an external broker. Choose based on whether the queue is internal (Worker) or external (EventConsumer).")
+	}
+
+	if containsAny(lower, "async", "asynchronous") {
+		warnings = append(warnings, "Ambiguous term 'async': Worker provides durable background jobs (fire-and-forget, scheduled, delayed). EventConsumer provides message stream processing from an external broker. If neither fits, async behavior may be application-level code in Shared.")
+	}
+
+	if containsAny(lower, "cache", "caching") {
+		warnings = append(warnings, "Ambiguous term 'cache': NoSQLDatastore with Redis provides a persistent data store that can be used for caching. For application-level in-memory caching (e.g., Caffeine, Spring Cache), that is not generated by Trabuco — see the extending guide after generation.")
+	}
+
+	return warnings
+}
+
+func detectUnsupported(lower string) []string {
+	unsupported := []struct {
+		keywords []string
+		message  string
+	}{
+		{[]string{"auth", "login", "oauth", "jwt", "session", "permission", "rbac", "role"},
+			"Authentication/authorization: Add Spring Security manually after generation"},
+		{[]string{"frontend", "react", "angular", "vue", "ui", "html", "css", "template"},
+			"Frontend/UI: Trabuco generates backend only. Use a separate frontend framework"},
+		{[]string{"graphql"},
+			"GraphQL: Trabuco generates REST APIs only. Add graphql-java manually if needed"},
+		{[]string{"kubernetes", "k8s", "helm", "docker deploy", "container orchestration"},
+			"Kubernetes/deployment: Trabuco generates Docker Compose for local dev only. Add K8s manifests manually"},
+		{[]string{"terraform", "cloudformation", "infrastructure as code"},
+			"Infrastructure as code: Not generated. Add Terraform/CloudFormation manually"},
+		{[]string{"websocket", "socket", "real-time", "sse", "server-sent"},
+			"WebSockets/SSE: Not included. Add Spring WebSocket manually if needed"},
+		{[]string{"grpc", "protobuf"},
+			"gRPC: Not supported. Trabuco generates REST APIs only"},
+		{[]string{"multi-tenant", "tenant", "saas"},
+			"Multi-tenancy: Not built-in. Implement tenant isolation manually"},
+		{[]string{"rate limit", "throttl"},
+			"Rate limiting: Not included. Add Spring Cloud Gateway or Bucket4j manually"},
+	}
+
+	var result []string
+	for _, u := range unsupported {
+		if containsAny(lower, u.keywords...) {
+			result = append(result, u.message)
+		}
+	}
+	return result
+}
+
+func containsAny(s string, substrs ...string) bool {
+	for _, sub := range substrs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func deduplicateStrings(input []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, s := range input {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
 func registerRunDoctor(s *server.MCPServer, version string) {
 	tool := mcp.NewTool("run_doctor",
-		mcp.WithDescription("Run health checks on a Trabuco project to detect issues"),
+		mcp.WithDescription(
+			"Run health checks on a Trabuco project to detect structural issues, metadata inconsistencies, "+
+				"and configuration problems. Use fix=true to auto-fix common issues like missing metadata or "+
+				"out-of-sync module lists. Run this before add_module to validate project health.",
+		),
 		mcp.WithString("path",
 			mcp.Description("Path to the Trabuco project root"),
 			mcp.Required(),
@@ -409,26 +694,38 @@ func registerGetProjectInfo(s *server.MCPServer) {
 
 func registerListModules(s *server.MCPServer) {
 	tool := mcp.NewTool("list_modules",
-		mcp.WithDescription("List all available Trabuco modules with descriptions and dependency info"),
+		mcp.WithDescription(
+			"List all available Trabuco modules with descriptions, use cases, and dependency info. "+
+				"Use this to understand what each module provides before calling init_project or add_module. "+
+				"Returns business-level descriptions that explain WHEN to choose each module.",
+		),
 	)
 
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		type moduleInfo struct {
-			Name         string   `json:"name"`
-			Description  string   `json:"description"`
-			Required     bool     `json:"required"`
-			Internal     bool     `json:"internal"`
-			Dependencies []string `json:"dependencies"`
+			Name           string   `json:"name"`
+			Description    string   `json:"description"`
+			UseCase        string   `json:"use_case"`
+			WhenToUse      string   `json:"when_to_use"`
+			DoesNotInclude string   `json:"does_not_include"`
+			Required       bool     `json:"required"`
+			Internal       bool     `json:"internal"`
+			Dependencies   []string `json:"dependencies"`
+			ConflictsWith  []string `json:"conflicts_with"`
 		}
 
 		modules := make([]moduleInfo, len(config.ModuleRegistry))
 		for i, m := range config.ModuleRegistry {
 			modules[i] = moduleInfo{
-				Name:         m.Name,
-				Description:  m.Description,
-				Required:     m.Required,
-				Internal:     m.Internal,
-				Dependencies: m.Dependencies,
+				Name:           m.Name,
+				Description:    m.Description,
+				UseCase:        m.UseCase,
+				WhenToUse:      m.WhenToUse,
+				DoesNotInclude: m.DoesNotInclude,
+				Required:       m.Required,
+				Internal:       m.Internal,
+				Dependencies:   m.Dependencies,
+				ConflictsWith:  m.ConflictsWith,
 			}
 		}
 
@@ -722,6 +1019,16 @@ func createProvider(providerName, apiKey, model string) (ai.Provider, error) {
 	default:
 		return ai.NewAnthropicProvider(cfg)
 	}
+}
+
+// hasModule checks if a module name is in the list.
+func hasModule(modules []string, name string) bool {
+	for _, m := range modules {
+		if m == name {
+			return true
+		}
+	}
+	return false
 }
 
 // changeDir changes the working directory.

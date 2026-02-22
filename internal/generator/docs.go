@@ -186,6 +186,11 @@ func (g *Generator) generateAIDirectory() error {
 		}
 	}
 
+	// Generate .ai/prompts/extending-the-project.md (always — guides adding auth, caching, etc.)
+	if err := g.writeTemplate("ai/prompts/extending-the-project.md.tmpl", ".ai/prompts/extending-the-project.md"); err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -85,6 +85,55 @@ Never import from API in Worker/EventConsumer or vice versa.
 ## Quality Specification
 
 For the full coding standards, read: `.ai/prompts/JAVA_CODE_QUALITY.md`
+
+## Why This Architecture
+
+| Decision | Why |
+|----------|-----|
+| Spring Data JDBC over JPA | No lazy loading surprises, no proxy magic, no @Transactional gotchas. What you write is what runs. |
+| Immutables over Lombok/records | Type-safe builders, true immutability, generated equals/hashCode. Records are used only at persistence boundaries. |
+| Multi-module over monolith | Enforces dependency boundaries at compile time. API can't import Worker code. Clear ownership. |
+| Constructor injection only | Testable without Spring context. All dependencies explicit. No hidden @Autowired magic. |
+{{- if .HasModule "Worker"}}
+| JobRunr over Quartz | Modern API, dashboard included, supports fire-and-forget/delayed/recurring/batch without XML config. |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| Sealed interfaces for events | Type-safe contracts. Compiler enforces exhaustive handling. New event types require explicit handler decisions. |
+{{- end}}
+
+## Using Placeholder Code as Patterns
+
+The generated code includes working `Placeholder*` classes as reference implementations. When creating new entities, endpoints, jobs, or events, follow these patterns:
+
+| Task | Look at | Then read |
+|------|---------|-----------|
+| Add entity | `Placeholder.java`, `PlaceholderRecord.java` | `.ai/prompts/add-entity.md` |
+{{- if .HasModule "API"}}
+| Add endpoint | `PlaceholderController.java`, `PlaceholderService.java` | `.ai/prompts/add-endpoint.md` |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Add job | `ProcessPlaceholderJobRequest.java`, handler | `.ai/prompts/add-job.md` |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| Add event | `PlaceholderEvent.java`, listener | `.ai/prompts/add-event.md` |
+{{- end}}
+
+**Do not delete placeholder classes until you have at least one real implementation** — they serve as compilation-verified examples.
+
+## What This Project Does NOT Include
+
+This project was scaffolded by Trabuco. It includes production-ready infrastructure but NOT:
+
+- **Authentication/Authorization** — Add Spring Security (OAuth2, JWT, or session-based)
+- **Custom business logic** — Implement in `Shared/src/main/java/.../shared/service/`
+- **Production database schema** — Only placeholder migration exists; add your tables
+- **Pagination/filtering** — Add to repository queries and controller parameters
+- **API versioning** — Add URL or header-based versioning as needed
+- **Rate limiting** — Add Spring Cloud Gateway or Bucket4j
+- **Caching** — Add `@Cacheable` with Redis or in-memory cache
+- **Kubernetes/deployment** — Docker Compose for local dev only
+
+For guidance on adding these capabilities, see `.ai/prompts/extending-the-project.md`.
 {{- if .HasModule "MCP"}}
 
 ## Review Tools (MCP)

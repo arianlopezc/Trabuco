@@ -32,11 +32,15 @@ const (
 
 // Module represents a project module with its metadata
 type Module struct {
-	Name         string   // Module name (e.g., "Model")
-	Description  string   // Short description for CLI display
-	Required     bool     // If true, cannot be deselected
-	Internal     bool     // If true, not shown in CLI prompts (auto-included when needed)
-	Dependencies []string // Names of modules this depends on (only Model is a real dependency)
+	Name           string   // Module name (e.g., "Model")
+	Description    string   // Short description for CLI display
+	UseCase        string   // Business-level: when would you pick this module
+	WhenToUse      string   // Natural language triggers (e.g., "user says 'I need a database'")
+	DoesNotInclude string   // Explicit boundaries for this module
+	Required       bool     // If true, cannot be deselected
+	Internal       bool     // If true, not shown in CLI prompts (auto-included when needed)
+	Dependencies   []string // Names of modules this depends on (only Model is a real dependency)
+	ConflictsWith  []string // Explicit mutual exclusions
 }
 
 // ModuleRegistry contains all available modules
@@ -46,74 +50,114 @@ type Module struct {
 // actual integrations.
 var ModuleRegistry = []Module{
 	{
-		Name:         ModuleModel,
-		Description:  "DTOs, Entities, Enums, Exceptions",
-		Required:     true,
-		Internal:     false,
-		Dependencies: []string{},
+		Name:           ModuleModel,
+		Description:    "DTOs, Entities, Enums, Exceptions",
+		UseCase:        "Core data structures shared across all modules. Always included — contains domain entities, DTOs, enums, and exception types using Immutables.",
+		WhenToUse:      "Always included automatically. Contains the data model that all other modules depend on.",
+		DoesNotInclude: "Does not include persistence logic, API endpoints, or business rules — only data definitions",
+		Required:       true,
+		Internal:       false,
+		Dependencies:   []string{},
+		ConflictsWith:  []string{},
 	},
 	{
-		Name:         ModuleJobs,
-		Description:  "Job request contracts for background processing",
-		Required:     false,
-		Internal:     true, // Auto-included when Worker is selected
-		Dependencies: []string{ModuleModel},
+		Name:           ModuleJobs,
+		Description:    "Job request contracts for background processing",
+		UseCase:        "Defines job request data contracts for background processing. Auto-included when Worker is selected.",
+		WhenToUse:      "Automatically included when Worker module is selected. Not selected directly.",
+		DoesNotInclude: "Does not include job execution logic — only request contracts",
+		Required:       false,
+		Internal:       true,
+		Dependencies:   []string{ModuleModel},
+		ConflictsWith:  []string{},
 	},
 	{
-		Name:         ModuleSQLDatastore,
-		Description:  "SQL repositories, Flyway migrations (PostgreSQL, MySQL) - exclusive with NoSQLDatastore",
-		Required:     false,
-		Internal:     false,
-		Dependencies: []string{ModuleModel},
+		Name:           ModuleSQLDatastore,
+		Description:    "SQL repositories, Flyway migrations (PostgreSQL, MySQL)",
+		UseCase:        "Adds relational database persistence with Spring Data JDBC. Choose when storing structured data with relationships (users, orders, products).",
+		WhenToUse:      "User mentions: database, PostgreSQL, MySQL, SQL, relational, tables, migrations, persistence, CRUD",
+		DoesNotInclude: "Does not include JPA/Hibernate, database schema design, seed data, or connection pooling tuning",
+		Required:       false,
+		Internal:       false,
+		Dependencies:   []string{ModuleModel},
+		ConflictsWith:  []string{ModuleNoSQLDatastore},
 	},
 	{
-		Name:         ModuleNoSQLDatastore,
-		Description:  "NoSQL repositories (MongoDB, Redis) - exclusive with SQLDatastore",
-		Required:     false,
-		Internal:     false,
-		Dependencies: []string{ModuleModel},
+		Name:           ModuleNoSQLDatastore,
+		Description:    "NoSQL repositories (MongoDB, Redis)",
+		UseCase:        "Adds NoSQL database persistence. Choose MongoDB for flexible document storage or Redis for key-value/caching.",
+		WhenToUse:      "User mentions: MongoDB, Redis, NoSQL, document store, cache, key-value",
+		DoesNotInclude: "Does not include data modeling, indexing strategies, or cache eviction policies",
+		Required:       false,
+		Internal:       false,
+		Dependencies:   []string{ModuleModel},
+		ConflictsWith:  []string{ModuleSQLDatastore},
 	},
 	{
-		Name:         ModuleShared,
-		Description:  "Services, Circuit breaker, Utilities",
-		Required:     false,
-		Internal:     false,
-		Dependencies: []string{ModuleModel},
+		Name:           ModuleShared,
+		Description:    "Services, Circuit breaker, Utilities",
+		UseCase:        "Business logic layer with circuit breaker support (Resilience4j). Houses service classes that orchestrate between datastores and external systems.",
+		WhenToUse:      "User mentions: service layer, business logic, circuit breaker, shared utilities, resilience",
+		DoesNotInclude: "Does not include custom business logic implementation — provides the structure and patterns only",
+		Required:       false,
+		Internal:       false,
+		Dependencies:   []string{ModuleModel},
+		ConflictsWith:  []string{},
 	},
 	{
-		Name:         ModuleAPI,
-		Description:  "REST endpoints, Validation",
-		Required:     false,
-		Internal:     false,
-		Dependencies: []string{ModuleModel},
+		Name:           ModuleAPI,
+		Description:    "REST endpoints, Validation",
+		UseCase:        "Adds a Spring Boot REST API with OpenAPI documentation, CORS, correlation IDs, and health endpoints. Choose when building HTTP services.",
+		WhenToUse:      "User mentions: REST, API, endpoints, HTTP, web service, backend, server, controller, Swagger",
+		DoesNotInclude: "Does not include authentication, authorization, rate limiting, API versioning, pagination helpers, or GraphQL",
+		Required:       false,
+		Internal:       false,
+		Dependencies:   []string{ModuleModel},
+		ConflictsWith:  []string{},
 	},
 	{
-		Name:         ModuleWorker,
-		Description:  "Background jobs (fire-and-forget, scheduled, delayed, batch)",
-		Required:     false,
-		Internal:     false,
-		Dependencies: []string{ModuleModel, ModuleJobs}, // Jobs is auto-included; uses datastore for JobRunr persistence (defaults to PostgreSQL if none)
+		Name:           ModuleWorker,
+		Description:    "Background jobs (fire-and-forget, scheduled, delayed, batch)",
+		UseCase:        "Adds JobRunr background job processing with a dashboard. Choose when you need async tasks, scheduled jobs, or batch processing.",
+		WhenToUse:      "User mentions: background jobs, worker, async tasks, scheduled, cron, batch, queue processing, fire-and-forget, delayed",
+		DoesNotInclude: "Does not include job orchestration/workflow engines, saga pattern, or job monitoring beyond JobRunr dashboard",
+		Required:       false,
+		Internal:       false,
+		Dependencies:   []string{ModuleModel, ModuleJobs},
+		ConflictsWith:  []string{},
 	},
 	{
-		Name:         ModuleEvents,
-		Description:  "Event contracts for event-driven processing",
-		Required:     false,
-		Internal:     true, // Auto-included when EventConsumer is selected
-		Dependencies: []string{ModuleModel},
+		Name:           ModuleEvents,
+		Description:    "Event contracts for event-driven processing",
+		UseCase:        "Defines event contracts using sealed interfaces and provides EventPublisher. Auto-included when EventConsumer is selected.",
+		WhenToUse:      "Automatically included when EventConsumer module is selected. Not selected directly.",
+		DoesNotInclude: "Does not include event processing logic — only contracts and publisher",
+		Required:       false,
+		Internal:       true,
+		Dependencies:   []string{ModuleModel},
+		ConflictsWith:  []string{},
 	},
 	{
-		Name:         ModuleEventConsumer,
-		Description:  "Event listeners (Kafka, RabbitMQ)",
-		Required:     false,
-		Internal:     false,
-		Dependencies: []string{ModuleModel, ModuleEvents}, // Events is auto-included
+		Name:           ModuleEventConsumer,
+		Description:    "Event listeners (Kafka, RabbitMQ, SQS, Pub/Sub)",
+		UseCase:        "Adds event-driven message processing. Choose when building async workflows, event sourcing, or decoupled microservices.",
+		WhenToUse:      "User mentions: events, messages, queue, async processing, Kafka, RabbitMQ, SQS, Pub/Sub, event-driven, CQRS, streaming",
+		DoesNotInclude: "Does not include event sourcing framework, saga orchestration, or schema registry",
+		Required:       false,
+		Internal:       false,
+		Dependencies:   []string{ModuleModel, ModuleEvents},
+		ConflictsWith:  []string{},
 	},
 	{
-		Name:         ModuleMCP,
-		Description:  "MCP server for AI tool integration (build, test, introspection)",
-		Required:     false,
-		Internal:     false,
-		Dependencies: []string{ModuleModel},
+		Name:           ModuleMCP,
+		Description:    "MCP server for AI tool integration (build, test, introspection)",
+		UseCase:        "Adds an MCP (Model Context Protocol) server that exposes project build, test, and code review tools to AI coding assistants.",
+		WhenToUse:      "User mentions: MCP, AI tools, AI integration, coding assistant tooling",
+		DoesNotInclude: "Does not include custom MCP tools — provides build, test, format, and review tools only",
+		Required:       false,
+		Internal:       false,
+		Dependencies:   []string{ModuleModel},
+		ConflictsWith:  []string{},
 	},
 }
 

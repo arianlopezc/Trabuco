@@ -21,7 +21,32 @@ func Start(version string) error {
 		"trabuco",
 		version,
 		server.WithToolCapabilities(false),
-		server.WithInstructions("Trabuco is a CLI tool that generates production-ready Java multi-module Maven projects. Use these tools to create projects, add modules, run health checks, inspect metadata, and manage AI-powered migrations."),
+		server.WithInstructions(`Trabuco generates production-ready Java multi-module Maven projects with Spring Boot.
+
+WORKFLOW:
+1. Call suggest_architecture with the user's requirements
+2. Read the module catalog — match user needs to module use cases and boundaries
+3. Check warnings for ambiguous terms and not_covered for unsupported requirements
+4. YOU decide which modules, database, and message broker to use based on the catalog
+5. Call init_project with your chosen configuration
+6. The response includes next_steps and key_files to guide post-generation work
+7. Read AGENTS.md in the generated project for coding patterns and conventions
+8. Use add_module to incrementally add capabilities as needs evolve
+
+WHAT TRABUCO GENERATES:
+- Multi-module Maven project (Model, Datastore, Shared, API, Worker, EventConsumer)
+- Spring Boot 3.4 with Spring Data JDBC (not JPA), Immutables, Testcontainers
+- Docker Compose, CI workflow, AI context files, code quality enforcement
+- Working placeholder code that serves as patterns for real implementation
+
+WHAT TRABUCO DOES NOT GENERATE:
+- Authentication/authorization (add Spring Security)
+- Frontend/UI (backend only)
+- GraphQL, gRPC, WebSockets (REST only)
+- Kubernetes manifests, Terraform, cloud deployment
+- Custom business logic or production database schemas
+
+When the user's requirements include items Trabuco doesn't cover, inform them clearly and suggest what to add manually after generation.`),
 	)
 
 	registerAllTools(s, version)

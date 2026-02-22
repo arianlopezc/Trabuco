@@ -1,0 +1,146 @@
+# Extending Your Trabuco Project
+
+This guide covers common features that Trabuco does not generate but that you can add to the generated project structure.
+
+## Authentication with Spring Security
+{{- if .HasModule "API"}}
+
+1. Add dependency to `API/pom.xml`:
+   ```xml
+   <dependency>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-starter-security</artifactId>
+   </dependency>
+   <dependency>
+       <groupId>org.springframework.security</groupId>
+       <artifactId>spring-security-test</artifactId>
+       <scope>test</scope>
+   </dependency>
+   ```
+2. Create `API/src/main/java/{{.PackagePath}}/api/config/SecurityConfig.java`:
+   - Define a `SecurityFilterChain` bean
+   - Configure `HttpSecurity` with your auth rules
+3. For JWT: Add `spring-boot-starter-oauth2-resource-server`
+4. For OAuth2: Add `spring-boot-starter-oauth2-client`
+5. Update integration tests to include `@WithMockUser` or configure test security
+{{- else}}
+
+1. Add `spring-boot-starter-security` to the module that handles HTTP requests
+2. Create a `SecurityConfig.java` with `SecurityFilterChain` bean
+3. For JWT: Add `spring-boot-starter-oauth2-resource-server`
+4. For OAuth2: Add `spring-boot-starter-oauth2-client`
+{{- end}}
+
+## Pagination
+{{- if and (.HasModule "API") (.HasModule "SQLDatastore")}}
+
+1. Add pagination parameters to repository methods in `SQLDatastore`:
+   ```java
+   List<PlaceholderRecord> findAll(int offset, int limit);
+   long count();
+   ```
+2. Add `page` and `size` query parameters to controller endpoints in `API`:
+   ```java
+   @GetMapping
+   public PageResponse<ImmutablePlaceholder> list(
+       @RequestParam(defaultValue = "0") int page,
+       @RequestParam(defaultValue = "20") int size) { ... }
+   ```
+3. Create a `PageResponse<T>` DTO in `Model` with `content`, `page`, `size`, `totalElements`, `totalPages`
+{{- else}}
+
+1. Add pagination parameters to repository query methods (`offset`, `limit`)
+2. Add `page` and `size` query parameters to controller endpoints
+3. Create a `PageResponse<T>` DTO with `content`, `page`, `size`, `totalElements`, `totalPages`
+{{- end}}
+
+## Caching with Redis
+{{- if .HasModule "Shared"}}
+
+1. Add `spring-boot-starter-data-redis` and `spring-boot-starter-cache` to `Shared/pom.xml`
+2. Add `@EnableCaching` to a config class in Shared
+3. Use `@Cacheable("cacheName")` on service methods that read frequently
+4. Use `@CacheEvict("cacheName")` on methods that modify cached data
+5. Configure cache TTL in `application.yml`:
+   ```yaml
+   spring:
+     cache:
+       type: redis
+       redis:
+         time-to-live: 600000  # 10 minutes
+   ```
+{{- else}}
+
+1. Add `spring-boot-starter-data-redis` and `spring-boot-starter-cache` to the appropriate module
+2. Add `@EnableCaching` to a config class
+3. Use `@Cacheable` / `@CacheEvict` on service methods
+{{- end}}
+
+## API Versioning
+
+Two approaches:
+
+### URL-based (simpler)
+```java
+@RestController
+@RequestMapping("/api/v1/resources")
+public class ResourceV1Controller { ... }
+
+@RestController
+@RequestMapping("/api/v2/resources")
+public class ResourceV2Controller { ... }
+```
+
+### Header-based (cleaner URLs)
+1. Create a custom `@ApiVersion` annotation
+2. Extend `RequestMappingHandlerMapping` to read the annotation
+3. Clients send `Accept: application/vnd.api.v1+json`
+
+## Rate Limiting
+
+### With Bucket4j (per-application)
+1. Add `bucket4j-core` dependency
+2. Create a `RateLimitFilter` that checks request rates per IP or API key
+3. Return `429 Too Many Requests` when limit exceeded
+
+### With Spring Cloud Gateway (gateway-level)
+1. Use as a separate gateway service in front of the API
+2. Configure `RequestRateLimiter` filter with Redis backing store
+
+## WebSocket Support
+{{- if .HasModule "API"}}
+
+1. Add to `API/pom.xml`:
+   ```xml
+   <dependency>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-starter-websocket</artifactId>
+   </dependency>
+   ```
+2. Create `API/src/main/java/{{.PackagePath}}/api/config/WebSocketConfig.java`:
+   - Implement `WebSocketConfigurer` and register handlers
+   - Or use STOMP with `WebSocketMessageBrokerConfigurer`
+3. Create handler classes for WebSocket message processing
+{{- else}}
+
+1. Add `spring-boot-starter-websocket` to the module handling connections
+2. Implement `WebSocketConfigurer` and register handlers
+3. Or use STOMP with `WebSocketMessageBrokerConfigurer`
+{{- end}}
+
+## Scheduled Tasks (without Worker module)
+
+If you don't have the Worker module but need simple scheduling:
+
+1. Add `@EnableScheduling` to a config class
+2. Use `@Scheduled(cron = "0 0 * * * *")` on methods
+3. Note: This runs in-process — use Worker module with JobRunr for durable, distributed jobs
+
+## OpenTelemetry Tracing
+
+1. Add `opentelemetry-spring-boot-starter` dependency
+2. Configure exporter in `application.yml` (Jaeger, Zipkin, OTLP)
+3. Traces are auto-collected for Spring Web, JDBC, and messaging
+{{- if .HasModule "API"}}
+4. Correlation IDs from `CorrelationIdFilter` integrate with trace context automatically
+{{- end}}
