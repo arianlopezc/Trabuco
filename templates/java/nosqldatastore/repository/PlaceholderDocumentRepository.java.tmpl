@@ -6,22 +6,21 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 {{- else if eq .NoSQLDatabase "redis"}}
 import org.springframework.data.repository.CrudRepository;
 {{- end}}
-import org.springframework.stereotype.Repository;
-
 import java.util.Optional;
+import org.springframework.stereotype.Repository;
 
 /**
  * Repository for PlaceholderDocument entities.
  *
 {{- if eq .NoSQLDatabase "mongodb"}}
- * Uses Spring Data MongoDB for document storage.
+ * <p>Uses Spring Data MongoDB for document storage.
  * MongoDB stores documents as BSON (binary JSON).
 {{- else if eq .NoSQLDatabase "redis"}}
  * Uses Spring Data Redis for key-value storage.
  * Redis stores data with @RedisHash annotation.
 {{- end}}
  *
- * Replace this with your actual repositories.
+ * <p>Replace this with your actual repositories.
  */
 @Repository
 {{- if eq .NoSQLDatabase "mongodb"}}
@@ -30,8 +29,6 @@ public interface PlaceholderDocumentRepository extends MongoRepository<Placehold
 public interface PlaceholderDocumentRepository extends CrudRepository<PlaceholderDocument, String> {
 {{- end}}
 
-    /**
-     * Find a document by name.
-     */
-    Optional<PlaceholderDocument> findByName(String name);
+  /** Find a document by name. */
+  Optional<PlaceholderDocument> findByName(String name);
 }

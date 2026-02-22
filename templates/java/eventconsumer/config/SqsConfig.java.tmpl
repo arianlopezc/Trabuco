@@ -24,50 +24,50 @@ import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 @Configuration
 public class SqsConfig {
 
-    /**
-     * ObjectMapper configured for SQS message serialization/deserialization.
-     *
-     * <p>Includes JavaTimeModule for proper handling of Instant,
-     * LocalDateTime, and other Java 8 date/time types.</p>
-     */
-    @Bean
-    @Primary
-    public ObjectMapper objectMapper() {
-        return new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-    }
+  /**
+   * ObjectMapper configured for SQS message serialization/deserialization.
+   *
+   * <p>Includes JavaTimeModule for proper handling of Instant,
+   * LocalDateTime, and other Java 8 date/time types.</p>
+   */
+  @Bean
+  @Primary
+  public ObjectMapper objectMapper() {
+    return new ObjectMapper()
+      .registerModule(new JavaTimeModule())
+      .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+  }
 
-    /**
-     * Configures the SQS message converter with our ObjectMapper.
-     *
-     * <p>Uses the ObjectMapper with JavaTimeModule for proper handling
-     * of Java 8 date/time types in message deserialization.</p>
-     */
-    @Bean
-    public SqsMessagingMessageConverter sqsMessagingMessageConverter(ObjectMapper objectMapper) {
-        SqsMessagingMessageConverter converter = new SqsMessagingMessageConverter();
-        converter.setObjectMapper(objectMapper);
-        return converter;
-    }
+  /**
+   * Configures the SQS message converter with our ObjectMapper.
+   *
+   * <p>Uses the ObjectMapper with JavaTimeModule for proper handling
+   * of Java 8 date/time types in message deserialization.</p>
+   */
+  @Bean
+  public SqsMessagingMessageConverter sqsMessagingMessageConverter(ObjectMapper objectMapper) {
+    SqsMessagingMessageConverter converter = new SqsMessagingMessageConverter();
+    converter.setObjectMapper(objectMapper);
+    return converter;
+  }
 
-    /**
-     * Configures the SQS listener container factory with manual acknowledgment
-     * and custom message converter using our ObjectMapper.
-     *
-     * <p>Manual acknowledgment provides explicit control over when messages
-     * are deleted from the queue, enabling reliable at-least-once processing.</p>
-     */
-    @Bean
-    public SqsMessageListenerContainerFactory<Object> defaultSqsListenerContainerFactory(
-            SqsAsyncClient sqsAsyncClient,
-            SqsMessagingMessageConverter sqsMessagingMessageConverter) {
+  /**
+   * Configures the SQS listener container factory with manual acknowledgment
+   * and custom message converter using our ObjectMapper.
+   *
+   * <p>Manual acknowledgment provides explicit control over when messages
+   * are deleted from the queue, enabling reliable at-least-once processing.</p>
+   */
+  @Bean
+  public SqsMessageListenerContainerFactory<Object> defaultSqsListenerContainerFactory(
+      SqsAsyncClient sqsAsyncClient,
+      SqsMessagingMessageConverter sqsMessagingMessageConverter) {
 
-        return SqsMessageListenerContainerFactory.builder()
-            .sqsAsyncClient(sqsAsyncClient)
-            .configure(options -> options
-                .acknowledgementMode(AcknowledgementMode.MANUAL)
-                .messageConverter(sqsMessagingMessageConverter))
-            .build();
-    }
+    return SqsMessageListenerContainerFactory.builder()
+      .sqsAsyncClient(sqsAsyncClient)
+      .configure(options -> options
+        .acknowledgementMode(AcknowledgementMode.MANUAL)
+        .messageConverter(sqsMessagingMessageConverter))
+      .build();
+  }
 }

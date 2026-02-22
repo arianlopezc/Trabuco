@@ -1,57 +1,56 @@
 package {{.GroupID}}.jobs;
 
 import {{.GroupID}}.model.jobs.ProcessPlaceholderJobRequest;
-import org.jobrunr.scheduling.BackgroundJobRequest;
-import org.springframework.stereotype.Service;
-
 import java.time.Instant;
 import java.util.List;
+import org.jobrunr.scheduling.BackgroundJobRequest;
+import org.springframework.stereotype.Service;
 
 /**
  * Service for enqueueing placeholder-related background jobs.
  *
- * This service provides a clean API for scheduling jobs without exposing
+ * <p>This service provides a clean API for scheduling jobs without exposing
  * JobRunr internals to calling code. Use this service from controllers
  * or other services to trigger background processing.
  *
- * Job types:
+ * <p>Job types:
  * - Fire-and-forget: immediate background execution
  * - Scheduled: delayed execution at a specific time
  * - Batch: process multiple items in parallel
  *
- * Replace this with your actual job scheduling service.
+ * <p>Replace this with your actual job scheduling service.
  */
 @Service
 public class PlaceholderJobService {
 
-    /**
-     * Enqueue a placeholder processing job for immediate background execution.
-     *
-     * @param message The message to process
-     */
-    public void processAsync(String message) {
-        BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest(message));
-    }
+  /**
+   * Enqueue a placeholder processing job for immediate background execution.
+   *
+   * @param message The message to process
+   */
+  public void processAsync(String message) {
+    BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest(message));
+  }
 
-    /**
-     * Schedule a placeholder processing job for delayed execution.
-     *
-     * @param message The message to process
-     * @param runAt   When to execute the job
-     */
-    public void processAt(String message, Instant runAt) {
-        BackgroundJobRequest.schedule(runAt, new ProcessPlaceholderJobRequest(message));
-    }
+  /**
+   * Schedule a placeholder processing job for delayed execution.
+   *
+   * @param message The message to process
+   * @param runAt   When to execute the job
+   */
+  public void processAt(String message, Instant runAt) {
+    BackgroundJobRequest.schedule(runAt, new ProcessPlaceholderJobRequest(message));
+  }
 
-    /**
-     * Enqueue multiple placeholder processing jobs for parallel background execution.
-     *
-     * @param messages The messages to process
-     */
-    public void processBatch(List<String> messages) {
-        BackgroundJobRequest.enqueue(
-            messages.stream()
-                .map(ProcessPlaceholderJobRequest::new)
-        );
-    }
+  /**
+   * Enqueue multiple placeholder processing jobs for parallel background execution.
+   *
+   * @param messages The messages to process
+   */
+  public void processBatch(List<String> messages) {
+    BackgroundJobRequest.enqueue(
+      messages.stream()
+        .map(ProcessPlaceholderJobRequest::new)
+    );
+  }
 }

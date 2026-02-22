@@ -7,28 +7,28 @@ import org.springframework.context.annotation.ComponentScan;
 /**
  * Worker application for background job processing.
  *
- * This application uses JobRunr for:
+ * <p>This application uses JobRunr for:
  * - Fire-and-forget jobs: jobScheduler.enqueue(() -> service.doWork())
  * - Delayed jobs: jobScheduler.schedule(Instant.now().plusHours(1), () -> service.doWork())
  * - Recurring jobs: jobScheduler.scheduleRecurrently("job-id", Cron.daily(), () -> service.doWork())
  * - Batch jobs: jobScheduler.enqueue(items.stream(), item -> service.process(item))
  *
- * Health checks available at:
+ * <p>Health checks available at:
  * - http://localhost:8081/actuator/health
  *
- * JobRunr dashboard available at:
+ * <p>JobRunr dashboard available at:
  * - http://localhost:8000
  */
 @SpringBootApplication
 @ComponentScan(basePackages = {
-    "{{.GroupID}}.worker"{{if .HasModule "Shared"}},
-    "{{.GroupID}}.shared"{{end}}{{if .HasModule "SQLDatastore"}},
-    "{{.GroupID}}.sqldatastore"{{end}}{{if .HasModule "NoSQLDatastore"}},
-    "{{.GroupID}}.nosqldatastore"{{end}}
+  "{{.GroupID}}.worker"{{if .HasModule "Shared"}},
+  "{{.GroupID}}.shared"{{end}}{{if .HasModule "SQLDatastore"}},
+  "{{.GroupID}}.sqldatastore"{{end}}{{if .HasModule "NoSQLDatastore"}},
+  "{{.GroupID}}.nosqldatastore"{{end}}
 })
 public class {{.ProjectNamePascal}}WorkerApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run({{.ProjectNamePascal}}WorkerApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run({{.ProjectNamePascal}}WorkerApplication.class, args);
+  }
 }

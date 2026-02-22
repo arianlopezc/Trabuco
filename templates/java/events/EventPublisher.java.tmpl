@@ -27,7 +27,7 @@ import com.google.cloud.spring.pubsub.core.PubSubTemplate;
  * @Autowired
  * private EventPublisher eventPublisher;
  *
- * public void doSomething() {
+ * <p>public void doSomething() {
  *     // Business logic...
  *     eventPublisher.publish(PlaceholderCreatedEvent.create(id, name));
  * }
@@ -37,98 +37,98 @@ import com.google.cloud.spring.pubsub.core.PubSubTemplate;
 @Service
 public class EventPublisher {
 
-    private static final Logger logger = LoggerFactory.getLogger(EventPublisher.class);
+  private static final Logger logger = LoggerFactory.getLogger(EventPublisher.class);
 {{if .UsesKafka}}
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+  private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    @Value("${app.kafka.topics.placeholder-events:placeholder-events}")
-    private String placeholderTopic;
+  @Value("${app.kafka.topics.placeholder-events:placeholder-events}")
+  private String placeholderTopic;
 
-    public EventPublisher(KafkaTemplate<String, Object> kafkaTemplate) {
-        this.kafkaTemplate = kafkaTemplate;
-    }
+  public EventPublisher(KafkaTemplate<String, Object> kafkaTemplate) {
+    this.kafkaTemplate = kafkaTemplate;
+  }
 
-    /**
-     * Publishes a PlaceholderEvent to Kafka.
-     *
-     * <p>The event ID is used as the message key to ensure
-     * events for the same entity go to the same partition.</p>
-     *
-     * @param event The event to publish
-     */
-    public void publish(PlaceholderEvent event) {
-        logger.info("Publishing event to Kafka: topic={}, eventId={}, type={}",
-            placeholderTopic, event.eventId(), event.getClass().getSimpleName());
-        kafkaTemplate.send(placeholderTopic, event.eventId(), event);
-    }
+  /**
+   * Publishes a PlaceholderEvent to Kafka.
+   *
+   * <p>The event ID is used as the message key to ensure
+   * events for the same entity go to the same partition.</p>
+   *
+   * @param event The event to publish
+   */
+  public void publish(PlaceholderEvent event) {
+    logger.info("Publishing event to Kafka: topic={}, eventId={}, type={}",
+      placeholderTopic, event.eventId(), event.getClass().getSimpleName());
+    kafkaTemplate.send(placeholderTopic, event.eventId(), event);
+  }
 {{else if .UsesRabbitMQ}}
-    private final RabbitTemplate rabbitTemplate;
+  private final RabbitTemplate rabbitTemplate;
 
-    @Value("${app.rabbitmq.exchanges.placeholder:placeholder-exchange}")
-    private String placeholderExchange;
+  @Value("${app.rabbitmq.exchanges.placeholder:placeholder-exchange}")
+  private String placeholderExchange;
 
-    public EventPublisher(RabbitTemplate rabbitTemplate) {
-        this.rabbitTemplate = rabbitTemplate;
-    }
+  public EventPublisher(RabbitTemplate rabbitTemplate) {
+    this.rabbitTemplate = rabbitTemplate;
+  }
 
-    /**
-     * Publishes a PlaceholderEvent to RabbitMQ.
-     *
-     * <p>Events are published to the configured exchange with
-     * an empty routing key (fanout behavior).</p>
-     *
-     * @param event The event to publish
-     */
-    public void publish(PlaceholderEvent event) {
-        logger.info("Publishing event to RabbitMQ: exchange={}, eventId={}, type={}",
-            placeholderExchange, event.eventId(), event.getClass().getSimpleName());
-        rabbitTemplate.convertAndSend(placeholderExchange, "", event);
-    }
+  /**
+   * Publishes a PlaceholderEvent to RabbitMQ.
+   *
+   * <p>Events are published to the configured exchange with
+   * an empty routing key (fanout behavior).</p>
+   *
+   * @param event The event to publish
+   */
+  public void publish(PlaceholderEvent event) {
+    logger.info("Publishing event to RabbitMQ: exchange={}, eventId={}, type={}",
+      placeholderExchange, event.eventId(), event.getClass().getSimpleName());
+    rabbitTemplate.convertAndSend(placeholderExchange, "", event);
+  }
 {{else if .UsesSQS}}
-    private final SqsTemplate sqsTemplate;
+  private final SqsTemplate sqsTemplate;
 
-    @Value("${app.sqs.queue.placeholder-events:placeholder-events}")
-    private String placeholderQueue;
+  @Value("${app.sqs.queue.placeholder-events:placeholder-events}")
+  private String placeholderQueue;
 
-    public EventPublisher(SqsTemplate sqsTemplate) {
-        this.sqsTemplate = sqsTemplate;
-    }
+  public EventPublisher(SqsTemplate sqsTemplate) {
+    this.sqsTemplate = sqsTemplate;
+  }
 
-    /**
-     * Publishes a PlaceholderEvent to AWS SQS.
-     *
-     * <p>Events are sent to the configured queue.
-     * SQS provides automatic message durability and delivery guarantees.</p>
-     *
-     * @param event The event to publish
-     */
-    public void publish(PlaceholderEvent event) {
-        logger.info("Publishing event to SQS: queue={}, eventId={}, type={}",
-            placeholderQueue, event.eventId(), event.getClass().getSimpleName());
-        sqsTemplate.send(placeholderQueue, event);
-    }
+  /**
+   * Publishes a PlaceholderEvent to AWS SQS.
+   *
+   * <p>Events are sent to the configured queue.
+   * SQS provides automatic message durability and delivery guarantees.</p>
+   *
+   * @param event The event to publish
+   */
+  public void publish(PlaceholderEvent event) {
+    logger.info("Publishing event to SQS: queue={}, eventId={}, type={}",
+      placeholderQueue, event.eventId(), event.getClass().getSimpleName());
+    sqsTemplate.send(placeholderQueue, event);
+  }
 {{else if .UsesPubSub}}
-    private final PubSubTemplate pubSubTemplate;
+  private final PubSubTemplate pubSubTemplate;
 
-    @Value("${app.pubsub.topic.placeholder-events:placeholder-events}")
-    private String placeholderTopic;
+  @Value("${app.pubsub.topic.placeholder-events:placeholder-events}")
+  private String placeholderTopic;
 
-    public EventPublisher(PubSubTemplate pubSubTemplate) {
-        this.pubSubTemplate = pubSubTemplate;
-    }
+  public EventPublisher(PubSubTemplate pubSubTemplate) {
+    this.pubSubTemplate = pubSubTemplate;
+  }
 
-    /**
-     * Publishes a PlaceholderEvent to GCP Pub/Sub.
-     *
-     * <p>Events are published to the configured topic.
-     * Pub/Sub provides at-least-once delivery semantics.</p>
-     *
-     * @param event The event to publish
-     */
-    public void publish(PlaceholderEvent event) {
-        logger.info("Publishing event to Pub/Sub: topic={}, eventId={}, type={}",
-            placeholderTopic, event.eventId(), event.getClass().getSimpleName());
-        pubSubTemplate.publish(placeholderTopic, event);
-    }
+  /**
+   * Publishes a PlaceholderEvent to GCP Pub/Sub.
+   *
+   * <p>Events are published to the configured topic.
+   * Pub/Sub provides at-least-once delivery semantics.</p>
+   *
+   * @param event The event to publish
+   */
+  public void publish(PlaceholderEvent event) {
+    logger.info("Publishing event to Pub/Sub: topic={}, eventId={}, type={}",
+      placeholderTopic, event.eventId(), event.getClass().getSimpleName());
+    pubSubTemplate.publish(placeholderTopic, event);
+  }
 {{end}}
 }

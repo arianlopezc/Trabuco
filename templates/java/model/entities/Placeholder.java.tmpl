@@ -4,14 +4,13 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import {{.GroupID}}.model.ImmutableStyle;
 import jakarta.annotation.Nullable;
-import org.immutables.value.Value;
-
 import java.time.Instant;
+import org.immutables.value.Value;
 
 /**
  * Placeholder entity for SERVICE LAYER business logic.
  *
- * Always use ImmutablePlaceholder.builder() to create instances.
+ * <p>Always use ImmutablePlaceholder.builder() to create instances.
 {{- if .HasModule "SQLDatastore"}}
  * PlaceholderRecord is used for SQL database persistence.
 {{- end}}
@@ -19,12 +18,12 @@ import java.time.Instant;
  * PlaceholderDocument is used for NoSQL database persistence.
 {{- end}}
  *
- * Key Design Principles:
+ * <p>Key Design Principles:
  * - Always use ImmutablePlaceholder, never the Placeholder interface directly
  * - Use builder pattern for all object creation
  * - Immutable for thread safety and functional programming
  *
- * Replace this with your actual domain entities.
+ * <p>Replace this with your actual domain entities.
  */
 @Value.Immutable
 @ImmutableStyle
@@ -33,49 +32,35 @@ import java.time.Instant;
 public interface Placeholder {
 
 {{- if .HasModule "SQLDatastore"}}
-    /**
-     * SQL unique identifier (auto-generated Long).
-     */
-    @Nullable
-    Long id();
+  /** SQL unique identifier (auto-generated Long). */
+  @Nullable
+  Long id();
 {{- end}}
 
 {{- if .HasModule "NoSQLDatastore"}}
-    /**
-     * NoSQL document identifier (String).
-     */
-    @Nullable
-    String documentId();
+  /** NoSQL document identifier (String). */
+  @Nullable
+  String documentId();
 {{- end}}
 
 {{- if not .HasAnyDatastore}}
-    /**
-     * Unique identifier (placeholder - add a datastore module).
-     */
-    @Nullable
-    Long id();
+  /** Unique identifier (placeholder - add a datastore module). */
+  @Nullable
+  Long id();
 {{- end}}
 
-    /**
-     * Name of the placeholder.
-     */
-    String name();
+  /** Name of the placeholder. */
+  String name();
 
-    /**
-     * Optional description.
-     */
-    @Nullable
-    String description();
+  /** Optional description. */
+  @Nullable
+  String description();
 
-    /**
-     * Timestamp when record was created.
-     */
-    @Nullable
-    Instant createdAt();
+  /** Timestamp when record was created. */
+  @Nullable
+  Instant createdAt();
 
-    /**
-     * Timestamp when record was last updated.
-     */
-    @Nullable
-    Instant updatedAt();
+  /** Timestamp when record was last updated. */
+  @Nullable
+  Instant updatedAt();
 }

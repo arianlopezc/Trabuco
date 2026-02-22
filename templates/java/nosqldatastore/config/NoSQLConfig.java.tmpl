@@ -7,14 +7,14 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 /**
  * MongoDB configuration.
  *
- * Enables MongoDB repositories and configures the MongoDB connection.
+ * <p>Enables MongoDB repositories and configures the MongoDB connection.
  * Connection settings are in application.yml.
  */
 @Configuration
 @EnableMongoRepositories(basePackages = "{{.GroupID}}.nosqldatastore.repository")
 public class NoSQLConfig {
-    // MongoDB auto-configuration handles most settings via application.yml
-    // Add custom beans here if needed (e.g., custom converters, auditing)
+  // MongoDB auto-configuration handles most settings via application.yml
+  // Add custom beans here if needed (e.g., custom converters, auditing)
 }
 {{- else if eq .NoSQLDatabase "redis"}}
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,31 +31,31 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 /**
  * Redis configuration.
  *
- * Enables Redis repositories and configures the Redis connection.
+ * <p>Enables Redis repositories and configures the Redis connection.
  * Uses Lettuce as the default client (thread-safe, async-capable).
  */
 @Configuration
 @EnableRedisRepositories(basePackages = "{{.GroupID}}.nosqldatastore.repository")
 public class NoSQLConfig {
 
-    @Bean
-    public ObjectMapper redisObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        return mapper;
-    }
+  @Bean
+  public ObjectMapper redisObjectMapper() {
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.registerModule(new JavaTimeModule());
+    mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    return mapper;
+  }
 
-    @Bean
-    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory, ObjectMapper redisObjectMapper) {
-        RedisTemplate<String, Object> template = new RedisTemplate<>();
-        template.setConnectionFactory(connectionFactory);
-        template.setKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
-        template.setHashKeySerializer(new StringRedisSerializer());
-        template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
-        template.afterPropertiesSet();
-        return template;
-    }
+  @Bean
+  public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory, ObjectMapper redisObjectMapper) {
+    RedisTemplate<String, Object> template = new RedisTemplate<>();
+    template.setConnectionFactory(connectionFactory);
+    template.setKeySerializer(new StringRedisSerializer());
+    template.setValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
+    template.setHashKeySerializer(new StringRedisSerializer());
+    template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
+    template.afterPropertiesSet();
+    return template;
+  }
 }
 {{- end}}

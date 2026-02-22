@@ -1,75 +1,74 @@
 package {{.GroupID}}.api.controller;
 
 import {{.GroupID}}.jobs.PlaceholderJobService;
+import java.time.Instant;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
-import java.util.Map;
-
 /**
  * Sample REST controller demonstrating how to enqueue background jobs from the API.
  *
- * This controller shows the two most common patterns:
+ * <p>This controller shows the two most common patterns:
  * - Fire-and-forget: immediate background execution
  * - Scheduled: delayed execution at a specific time
  *
- * Job request contracts are defined in the Model module ({@code ProcessPlaceholderJobRequest}).
+ * <p>Job request contracts are defined in the Model module ({@code ProcessPlaceholderJobRequest}).
  * Job services for enqueueing live in the Jobs module ({@code PlaceholderJobService}).
  * Job handlers live in the Worker module ({@code ProcessPlaceholderJobRequestHandler}).
  *
- * Replace this with your actual job-enqueueing endpoints.
+ * <p>Replace this with your actual job-enqueueing endpoints.
  */
 @RestController
 @RequestMapping("/api/jobs/placeholder")
 public class PlaceholderJobController {
 
-    private final PlaceholderJobService placeholderJobService;
+  private final PlaceholderJobService placeholderJobService;
 
-    public PlaceholderJobController(PlaceholderJobService placeholderJobService) {
-        this.placeholderJobService = placeholderJobService;
-    }
+  public PlaceholderJobController(PlaceholderJobService placeholderJobService) {
+    this.placeholderJobService = placeholderJobService;
+  }
 
-    /**
-     * Enqueue a fire-and-forget background job for immediate processing.
-     *
-     * <pre>
-     * POST /api/jobs/placeholder/process
-     * {"message": "hello"}
-     * </pre>
-     *
-     * @param body JSON body with a "message" field
-     * @return 202 Accepted
-     */
-    @PostMapping("/process")
-    public ResponseEntity<Map<String, String>> enqueue(@RequestBody Map<String, String> body) {
-        String message = body.getOrDefault("message", "default");
-        placeholderJobService.processAsync(message);
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-            .body(Map.of("status", "enqueued", "message", message));
-    }
+  /**
+   * Enqueue a fire-and-forget background job for immediate processing.
+   *
+   * <pre>
+   * POST /api/jobs/placeholder/process
+   * {"message": "hello"}
+   * </pre>
+   *
+   * @param body JSON body with a "message" field
+   * @return 202 Accepted
+   */
+  @PostMapping("/process")
+  public ResponseEntity<Map<String, String>> enqueue(@RequestBody Map<String, String> body) {
+    String message = body.getOrDefault("message", "default");
+    placeholderJobService.processAsync(message);
+    return ResponseEntity.status(HttpStatus.ACCEPTED)
+      .body(Map.of("status", "enqueued", "message", message));
+  }
 
-    /**
-     * Schedule a background job for delayed processing.
-     *
-     * <pre>
-     * POST /api/jobs/placeholder/schedule?delaySeconds=60
-     * {"message": "hello later"}
-     * </pre>
-     *
-     * @param body         JSON body with a "message" field
-     * @param delaySeconds seconds to delay before execution (default 60)
-     * @return 202 Accepted
-     */
-    @PostMapping("/schedule")
-    public ResponseEntity<Map<String, String>> schedule(
-            @RequestBody Map<String, String> body,
-            @RequestParam(defaultValue = "60") long delaySeconds) {
-        String message = body.getOrDefault("message", "default");
-        Instant runAt = Instant.now().plusSeconds(delaySeconds);
-        placeholderJobService.processAt(message, runAt);
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-            .body(Map.of("status", "scheduled", "message", message, "runAt", runAt.toString()));
-    }
+  /**
+   * Schedule a background job for delayed processing.
+   *
+   * <pre>
+   * POST /api/jobs/placeholder/schedule?delaySeconds=60
+   * {"message": "hello later"}
+   * </pre>
+   *
+   * @param body         JSON body with a "message" field
+   * @param delaySeconds seconds to delay before execution (default 60)
+   * @return 202 Accepted
+   */
+  @PostMapping("/schedule")
+  public ResponseEntity<Map<String, String>> schedule(
+      @RequestBody Map<String, String> body,
+      @RequestParam(defaultValue = "60") long delaySeconds) {
+    String message = body.getOrDefault("message", "default");
+    Instant runAt = Instant.now().plusSeconds(delaySeconds);
+    placeholderJobService.processAt(message, runAt);
+    return ResponseEntity.status(HttpStatus.ACCEPTED)
+      .body(Map.of("status", "scheduled", "message", message, "runAt", runAt.toString()));
+  }
 }

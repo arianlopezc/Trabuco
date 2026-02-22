@@ -3,26 +3,26 @@ package {{.GroupID}}.model.jobs;
 /**
  * Job request for processing a placeholder entity.
  *
- * This request can be enqueued from any module that depends on Model:
+ * <p>This request can be enqueued from any module that depends on Model:
  *
  * <pre>
  * // Fire-and-forget (immediate background execution)
  * BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("process this"));
  *
- * // Delayed (execute at specific time)
+ * <p>// Delayed (execute at specific time)
  * BackgroundJobRequest.schedule(
  *     Instant.now().plusHours(1),
  *     new ProcessPlaceholderJobRequest("process later")
  * );
  *
- * // Batch (process multiple items)
+ * <p>// Batch (process multiple items)
  * List&lt;ProcessPlaceholderJobRequest&gt; requests = items.stream()
  *     .map(ProcessPlaceholderJobRequest::new)
  *     .toList();
  * BackgroundJobRequest.enqueue(requests.stream());
  * </pre>
  *
- * The base handler ({@link ProcessPlaceholderJobRequestHandler}) is defined in this
+ * <p>The base handler ({@link ProcessPlaceholderJobRequestHandler}) is defined in this
  * module. The {@code @Component} subclass with actual business logic lives in the
  * Worker module.
  *
@@ -30,13 +30,13 @@ package {{.GroupID}}.model.jobs;
  */
 public record ProcessPlaceholderJobRequest(String message) implements PlaceholderJobRequest {
 
-    /**
-     * Returns the base handler class defined in this module.
-     * At processing time, JobRunr resolves the Spring bean (in the Worker module)
-     * which extends this base class.
-     */
-    @Override
-    public Class<ProcessPlaceholderJobRequestHandler> getJobRequestHandler() {
-        return ProcessPlaceholderJobRequestHandler.class;
-    }
+  /**
+   * Returns the base handler class defined in this module.
+   * At processing time, JobRunr resolves the Spring bean (in the Worker module)
+   * which extends this base class.
+   */
+  @Override
+  public Class<ProcessPlaceholderJobRequestHandler> getJobRequestHandler() {
+    return ProcessPlaceholderJobRequestHandler.class;
+  }
 }

@@ -245,12 +245,23 @@ func GetFilesToBackup(module string) []string {
 		".trabuco.json",
 		// Documentation files that will be regenerated
 		"README.md",
+		"AGENTS.md",
 		// AI agent context files (backup handles nonexistent files gracefully)
 		"CLAUDE.md",
 		".cursorrules",
 		".github/copilot-instructions.md",
 		".windsurf/rules/project.md",
 		".clinerules/project.md",
+		// Agent-specific config files
+		".claude/settings.json",
+		".cursor/rules/java.mdc",
+		".cursor/hooks.json",
+		".github/copilot-setup-steps.yml",
+		".github/instructions/java.instructions.md",
+		".windsurf/rules/java.md",
+		".clinerules/java.md",
+		// CI workflow
+		".github/workflows/ci.yml",
 	}
 
 	// Docker-related files

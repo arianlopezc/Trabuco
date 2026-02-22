@@ -1,0 +1,423 @@
+package {{.GroupID}}.mcp.tools;
+
+import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
+import io.modelcontextprotocol.spec.McpSchema.Tool;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** MCP tools for code review: contextual quality rules, finding logging, and stats. */
+public class ReviewTools {
+
+  private static final Logger log = LoggerFactory.getLogger(ReviewTools.class);
+  private static final String PROJECT_DIR = System.getProperty("user.dir");
+  private static final String QUALITY_SPEC_PATH = ".ai/prompts/JAVA_CODE_QUALITY.md";
+  private static final String REVIEW_LOG_PATH = ".ai/review-log.jsonl";
+  private static final long MAX_LOG_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+
+  private ReviewTools() {
+  }
+
+  /** Register all review tools with the MCP server. */
+  public static void register(McpSyncServer server) {
+    server.addTool(getReviewContextTool());
+    server.addTool(recordReviewFindingTool());
+    server.addTool(getReviewStatsTool());
+    log.info("Registered review tools: get-review-context, record-review-finding, get-review-stats");
+  }
+
+  private static McpServerFeatures.SyncToolSpecification getReviewContextTool() {
+    JsonSchema inputSchema = new JsonSchema(
+      "object",
+      Map.of(
+        "files", Map.of(
+          "type", "array",
+          "items", Map.of("type", "string"),
+          "description", "Array of file paths being reviewed (e.g. [\"API/src/.../UserController.java\"])"
+        )
+      ),
+      List.of("files"),
+      null, null, null
+    );
+
+    return new McpServerFeatures.SyncToolSpecification(
+      new Tool("get-review-context", "Get Review Context",
+        "Get relevant quality rules for specific files being reviewed (filters JAVA_CODE_QUALITY.md by file type)",
+        inputSchema, null, null, null),
+      (exchange, arguments) -> {
+        @SuppressWarnings("unchecked")
+        List<String> files = (List<String>) arguments.get("files");
+        log.info("Getting review context for {} files", files.size());
+        return getReviewContext(files);
+      }
+    );
+  }
+
+  private static McpServerFeatures.SyncToolSpecification recordReviewFindingTool() {
+    JsonSchema inputSchema = new JsonSchema(
+      "object",
+      Map.of(
+        "category", Map.of(
+          "type", "string",
+          "description", "Finding category: code-quality, modern-java, architecture, security, testing"
+        ),
+        "severity", Map.of(
+          "type", "string",
+          "description", "Finding severity: critical, warning, suggestion"
+        ),
+        "file", Map.of(
+          "type", "string",
+          "description", "File path where the issue was found"
+        ),
+        "line", Map.of(
+          "type", "integer",
+          "description", "Line number (optional)"
+        ),
+        "message", Map.of(
+          "type", "string",
+          "description", "Description of the finding"
+        ),
+        "rule", Map.of(
+          "type", "string",
+          "description", "Rule identifier (e.g. method-length, field-injection, missing-test)"
+        )
+      ),
+      List.of("category", "severity", "file", "message", "rule"),
+      null, null, null
+    );
+
+    return new McpServerFeatures.SyncToolSpecification(
+      new Tool("record-review-finding", "Record Review Finding",
+        "Log a code review finding to .ai/review-log.jsonl (append-only)",
+        inputSchema, null, null, null),
+      (exchange, arguments) -> {
+        String category = (String) arguments.get("category");
+        String severity = (String) arguments.get("severity");
+        String file = (String) arguments.get("file");
+        Object lineObj = arguments.get("line");
+        String message = (String) arguments.get("message");
+        String rule = (String) arguments.get("rule");
+        log.info("Recording review finding: {} [{}] in {}", rule, severity, file);
+        return recordReviewFinding(category, severity, file, lineObj, message, rule);
+      }
+    );
+  }
+
+  private static McpServerFeatures.SyncToolSpecification getReviewStatsTool() {
+    JsonSchema inputSchema = new JsonSchema(
+      "object",
+      Map.of(
+        "days", Map.of(
+          "type", "integer",
+          "description", "Only include findings from the last N days (default: 30)"
+        )
+      ),
+      List.of(),
+      null, null, null
+    );
+
+    return new McpServerFeatures.SyncToolSpecification(
+      new Tool("get-review-stats", "Get Review Stats",
+        "Get aggregate review statistics from .ai/review-log.jsonl",
+        inputSchema, null, null, null),
+      (exchange, arguments) -> {
+        Object daysObj = arguments.get("days");
+        int days = daysObj instanceof Number ? ((Number) daysObj).intValue() : 30;
+        log.info("Getting review stats for last {} days", days);
+        return getReviewStats(days);
+      }
+    );
+  }
+
+  // --- Tool implementations ---
+
+  private static CallToolResult getReviewContext(List<String> files) {
+    try {
+      Path specPath = Paths.get(PROJECT_DIR, QUALITY_SPEC_PATH);
+      if (!Files.exists(specPath)) {
+        return new CallToolResult(
+          List.of(new TextContent("Quality spec not found at " + QUALITY_SPEC_PATH
+            + ". Ensure .ai/prompts/JAVA_CODE_QUALITY.md exists.")),
+          true
+        );
+      }
+
+      String fullSpec = Files.readString(specPath);
+      // Split on ## headers. Use (?m) for multiline so ^ matches line starts.
+      // Produces: [0]=title/intro, [1]=Self-Review Workflow, [2]=1. Modern Java,
+      // [3]=2. Method Complexity, [4]=3. Naming, [5]=4. Error Handling,
+      // [6]=5. Architecture, [7]=6. Spring Best Practices, [8]=7. Final Checklist
+      String[] sections = fullSpec.split("(?m)(?=^## )", -1);
+
+      // Determine which section indices are relevant based on file paths
+      var relevantIndices = new java.util.TreeSet<Integer>();
+      boolean anyMatched = false;
+
+      for (String file : files) {
+        String lower = file.toLowerCase().replace('\\', '/');
+        boolean matched = false;
+
+        if (matchesPattern(lower, "controller", "api")) {
+          // Method Complexity (3), Architecture (6), Spring (7), Checklist (8)
+          relevantIndices.addAll(List.of(3, 6, 7, 8));
+          matched = true;
+        }
+        if (matchesPattern(lower, "model", "entity", "dto")) {
+          // Modern Java (2), Naming (4), Checklist (8)
+          relevantIndices.addAll(List.of(2, 4, 8));
+          matched = true;
+        }
+        if (matchesPattern(lower, "service", "shared")) {
+          // Method Complexity (3), Error Handling (5), Spring (7), Checklist (8)
+          relevantIndices.addAll(List.of(3, 5, 7, 8));
+          matched = true;
+        }
+        if (matchesPattern(lower, "repository", "datastore")) {
+          // Architecture (6), Spring (7), Checklist (8)
+          relevantIndices.addAll(List.of(6, 7, 8));
+          matched = true;
+        }
+        if (matchesPattern(lower, "test")) {
+          // Checklist (8) only
+          relevantIndices.add(8);
+          matched = true;
+        }
+
+        if (matched) {
+          anyMatched = true;
+        }
+      }
+
+      // If no patterns matched, return full spec
+      if (!anyMatched) {
+        return new CallToolResult(
+          List.of(new TextContent(fullSpec)),
+          false
+        );
+      }
+
+      // Always include section 0 (title/intro) and section 1 (Self-Review Workflow)
+      StringBuilder filtered = new StringBuilder();
+      for (int i = 0; i < sections.length; i++) {
+        if (i <= 1 || relevantIndices.contains(i)) {
+          filtered.append(sections[i]);
+        }
+      }
+
+      return new CallToolResult(
+        List.of(new TextContent(filtered.toString())),
+        false
+      );
+
+    } catch (IOException e) {
+      log.error("Failed to read quality spec", e);
+      return new CallToolResult(
+        List.of(new TextContent("Failed to read quality spec: " + e.getMessage())),
+        true
+      );
+    }
+  }
+
+  private static boolean matchesPattern(String path, String... keywords) {
+    for (String keyword : keywords) {
+      if (path.contains("/" + keyword + "/") || path.contains("/" + keyword + "\\")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static CallToolResult recordReviewFinding(
+      String category, String severity, String file, Object lineObj, String message, String rule) {
+    try {
+      Path logPath = Paths.get(PROJECT_DIR, REVIEW_LOG_PATH);
+
+      // Ensure parent directory exists
+      Files.createDirectories(logPath.getParent());
+
+      // Check file size
+      if (Files.exists(logPath) && Files.size(logPath) > MAX_LOG_SIZE_BYTES) {
+        return new CallToolResult(
+          List.of(new TextContent("Review log exceeds 10MB. Please manually archive or clean up "
+            + REVIEW_LOG_PATH + " before recording new findings.")),
+          true
+        );
+      }
+
+      // Build JSON line manually to avoid Jackson dependency
+      String lineNum = lineObj instanceof Number ? String.valueOf(((Number) lineObj).intValue()) : "null";
+      String timestamp = Instant.now().toString();
+      String jsonLine = String.format(
+        "{\"timestamp\":\"%s\",\"category\":\"%s\",\"severity\":\"%s\",\"file\":\"%s\",\"line\":%s,\"message\":\"%s\",\"rule\":\"%s\"}",
+        escapeJson(timestamp),
+        escapeJson(category),
+        escapeJson(severity),
+        escapeJson(file),
+        lineNum,
+        escapeJson(message),
+        escapeJson(rule)
+      );
+
+      Files.writeString(logPath, jsonLine + "\n",
+        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+
+      long lineCount;
+      try (var stream = Files.lines(logPath)) {
+        lineCount = stream.count();
+      }
+
+      return new CallToolResult(
+        List.of(new TextContent("Finding recorded. Total findings in log: " + lineCount)),
+        false
+      );
+
+    } catch (IOException e) {
+      log.error("Failed to record review finding", e);
+      return new CallToolResult(
+        List.of(new TextContent("Failed to record finding: " + e.getMessage())),
+        true
+      );
+    }
+  }
+
+  private static CallToolResult getReviewStats(int days) {
+    try {
+      Path logPath = Paths.get(PROJECT_DIR, REVIEW_LOG_PATH);
+      if (!Files.exists(logPath)) {
+        return new CallToolResult(
+          List.of(new TextContent("No review log found at " + REVIEW_LOG_PATH
+            + ". No findings have been recorded yet.")),
+          false
+        );
+      }
+
+      List<String> lines = Files.readAllLines(logPath);
+      if (lines.isEmpty()) {
+        return new CallToolResult(
+          List.of(new TextContent("Review log is empty. No findings recorded yet.")),
+          false
+        );
+      }
+
+      Instant cutoff = Instant.now().minus(days, ChronoUnit.DAYS);
+      int totalFindings = 0;
+      Map<String, Integer> byCategory = new LinkedHashMap<>();
+      Map<String, Integer> bySeverity = new LinkedHashMap<>();
+      Map<String, Integer> byRule = new LinkedHashMap<>();
+      Map<String, Integer> byFile = new LinkedHashMap<>();
+
+      Pattern timestampPattern = Pattern.compile("\"timestamp\":\"([^\"]+)\"");
+      Pattern categoryPattern = Pattern.compile("\"category\":\"([^\"]+)\"");
+      Pattern severityPattern = Pattern.compile("\"severity\":\"([^\"]+)\"");
+      Pattern rulePattern = Pattern.compile("\"rule\":\"([^\"]+)\"");
+      Pattern filePattern = Pattern.compile("\"file\":\"([^\"]+)\"");
+
+      for (String line : lines) {
+        if (line.isBlank()) continue;
+
+        // Extract timestamp and filter by date
+        var tsMatcher = timestampPattern.matcher(line);
+        if (tsMatcher.find()) {
+          try {
+            Instant ts = Instant.parse(tsMatcher.group(1));
+            if (ts.isBefore(cutoff)) continue;
+          } catch (Exception ignored) {
+            // If timestamp can't be parsed, include the finding
+          }
+        }
+
+        totalFindings++;
+
+        var catMatcher = categoryPattern.matcher(line);
+        if (catMatcher.find()) {
+          byCategory.merge(catMatcher.group(1), 1, Integer::sum);
+        }
+
+        var sevMatcher = severityPattern.matcher(line);
+        if (sevMatcher.find()) {
+          bySeverity.merge(sevMatcher.group(1), 1, Integer::sum);
+        }
+
+        var ruleMatcher = rulePattern.matcher(line);
+        if (ruleMatcher.find()) {
+          byRule.merge(ruleMatcher.group(1), 1, Integer::sum);
+        }
+
+        var fileMatcher = filePattern.matcher(line);
+        if (fileMatcher.find()) {
+          byFile.merge(fileMatcher.group(1), 1, Integer::sum);
+        }
+      }
+
+      if (totalFindings == 0) {
+        return new CallToolResult(
+          List.of(new TextContent("No findings in the last " + days + " days.")),
+          false
+        );
+      }
+
+      // Build summary
+      StringBuilder sb = new StringBuilder();
+      sb.append("## Review Stats (last ").append(days).append(" days)\n\n");
+      sb.append("**Total findings:** ").append(totalFindings).append("\n\n");
+
+      sb.append("### By Severity\n");
+      bySeverity.entrySet().stream()
+        .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+        .forEach(e -> sb.append("- ").append(e.getKey()).append(": ").append(e.getValue()).append("\n"));
+
+      sb.append("\n### By Category\n");
+      byCategory.entrySet().stream()
+        .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+        .forEach(e -> sb.append("- ").append(e.getKey()).append(": ").append(e.getValue()).append("\n"));
+
+      sb.append("\n### Top 5 Most Violated Rules\n");
+      byRule.entrySet().stream()
+        .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+        .limit(5)
+        .forEach(e -> sb.append("- ").append(e.getKey()).append(": ").append(e.getValue()).append("\n"));
+
+      sb.append("\n### Top 5 Most Affected Files\n");
+      byFile.entrySet().stream()
+        .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+        .limit(5)
+        .forEach(e -> sb.append("- ").append(e.getKey()).append(": ").append(e.getValue()).append("\n"));
+
+      return new CallToolResult(
+        List.of(new TextContent(sb.toString())),
+        false
+      );
+
+    } catch (IOException e) {
+      log.error("Failed to read review stats", e);
+      return new CallToolResult(
+        List.of(new TextContent("Failed to read review stats: " + e.getMessage())),
+        true
+      );
+    }
+  }
+
+  private static String escapeJson(String value) {
+    if (value == null) return "";
+    return value
+      .replace("\\", "\\\\")
+      .replace("\"", "\\\"")
+      .replace("\n", "\\n")
+      .replace("\r", "\\r")
+      .replace("\t", "\\t");
+  }
+}

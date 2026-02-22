@@ -32,6 +32,9 @@
         <mcp-sdk.version>0.17.2</mcp-sdk.version>
 {{- end}}
         <jacoco.version>0.8.12</jacoco.version>
+        <maven-enforcer.version>3.5.0</maven-enforcer.version>
+        <spotless.version>2.44.4</spotless.version>
+        <archunit.version>1.4.0</archunit.version>
     </properties>
 
     <modules>
@@ -82,6 +85,11 @@
                 <scope>import</scope>
             </dependency>
 {{- end}}
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -122,6 +130,48 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven-enforcer.version}</version>
+                <configuration>
+                    <rules>
+                        <requireMavenVersion>
+                            <version>[3.8,)</version>
+                        </requireMavenVersion>
+                        <requireJavaVersion>
+                            <version>[{{.JavaVersion}},)</version>
+                        </requireJavaVersion>
+                        <bannedDependencies>
+                            <excludes>
+                                <exclude>javax.*:*</exclude>
+                                <exclude>junit:junit</exclude>
+                            </excludes>
+                            <message>Use jakarta.* instead of javax.* and JUnit 5 instead of JUnit 4</message>
+                        </bannedDependencies>
+                        <dependencyConvergence/>
+                    </rules>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>enforce</id>
+                        <goals><goal>enforce</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <googleJavaFormat/>
+                        <removeUnusedImports/>
+                    </java>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 
 </project>

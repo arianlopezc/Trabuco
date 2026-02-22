@@ -1,6 +1,8 @@
 package {{.GroupID}}.eventconsumer.config;
 
 import {{.GroupID}}.model.events.PlaceholderEvent;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
@@ -12,9 +14,6 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * Kafka consumer configuration.
  *
@@ -25,40 +24,40 @@ import java.util.Map;
 @EnableKafka
 public class KafkaConfig {
 
-    /**
-     * Creates a consumer factory for PlaceholderEvent types.
-     *
-     * <p>Uses Spring Boot's KafkaProperties for base configuration
-     * and adds JSON deserialization with trusted packages.</p>
-     */
-    @Bean
-    public ConsumerFactory<String, PlaceholderEvent> consumerFactory(KafkaProperties kafkaProperties) {
-        Map<String, Object> props = new HashMap<>(kafkaProperties.buildConsumerProperties(null));
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "{{.GroupID}}.model.events");
-        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, true);
+  /**
+   * Creates a consumer factory for PlaceholderEvent types.
+   *
+   * <p>Uses Spring Boot's KafkaProperties for base configuration
+   * and adds JSON deserialization with trusted packages.</p>
+   */
+  @Bean
+  public ConsumerFactory<String, PlaceholderEvent> consumerFactory(KafkaProperties kafkaProperties) {
+    Map<String, Object> props = new HashMap<>(kafkaProperties.buildConsumerProperties(null));
+    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+    props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
+    props.put(JsonDeserializer.TRUSTED_PACKAGES, "{{.GroupID}}.model.events");
+    props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, true);
 
-        return new DefaultKafkaConsumerFactory<>(props);
-    }
+    return new DefaultKafkaConsumerFactory<>(props);
+  }
 
-    /**
-     * Creates the Kafka listener container factory.
-     *
-     * <p>Configures:
-     * <ul>
-     *   <li>Concurrency of 3 consumer threads</li>
-     *   <li>Manual offset acknowledgment is handled by Spring</li>
-     * </ul>
-     * </p>
-     */
-    @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, PlaceholderEvent> kafkaListenerContainerFactory(
-            ConsumerFactory<String, PlaceholderEvent> consumerFactory) {
-        ConcurrentKafkaListenerContainerFactory<String, PlaceholderEvent> factory =
-            new ConcurrentKafkaListenerContainerFactory<>();
-        factory.setConsumerFactory(consumerFactory);
-        factory.setConcurrency(3);
-        return factory;
-    }
+  /**
+   * Creates the Kafka listener container factory.
+   *
+   * <p>Configures:
+   * <ul>
+   *   <li>Concurrency of 3 consumer threads</li>
+   *   <li>Manual offset acknowledgment is handled by Spring</li>
+   * </ul>
+   * </p>
+   */
+  @Bean
+  public ConcurrentKafkaListenerContainerFactory<String, PlaceholderEvent> kafkaListenerContainerFactory(
+      ConsumerFactory<String, PlaceholderEvent> consumerFactory) {
+    ConcurrentKafkaListenerContainerFactory<String, PlaceholderEvent> factory =
+      new ConcurrentKafkaListenerContainerFactory<>();
+    factory.setConsumerFactory(consumerFactory);
+    factory.setConcurrency(3);
+    return factory;
+  }
 }

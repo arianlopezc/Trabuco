@@ -17,28 +17,28 @@ import org.springframework.context.annotation.Primary;
 @Configuration
 public class PubSubPublisherConfig {
 
-    /**
-     * ObjectMapper configured for Pub/Sub message serialization.
-     *
-     * <p>Includes JavaTimeModule for proper handling of Instant,
-     * LocalDateTime, and other Java 8 date/time types.</p>
-     */
-    @Bean
-    @Primary
-    public ObjectMapper objectMapper() {
-        return new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-    }
+  /**
+   * ObjectMapper configured for Pub/Sub message serialization.
+   *
+   * <p>Includes JavaTimeModule for proper handling of Instant,
+   * LocalDateTime, and other Java 8 date/time types.</p>
+   */
+  @Bean
+  @Primary
+  public ObjectMapper objectMapper() {
+    return new ObjectMapper()
+      .registerModule(new JavaTimeModule())
+      .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+  }
 
-    /**
-     * Jackson-based message converter for Pub/Sub.
-     *
-     * <p>Converts Java objects to JSON for publishing to Pub/Sub topics.
-     * Uses the configured ObjectMapper with JavaTimeModule support.</p>
-     */
-    @Bean
-    public JacksonPubSubMessageConverter jacksonPubSubMessageConverter(ObjectMapper objectMapper) {
-        return new JacksonPubSubMessageConverter(objectMapper);
-    }
+  /**
+   * Jackson-based message converter for Pub/Sub.
+   *
+   * <p>Converts Java objects to JSON for publishing to Pub/Sub topics.
+   * Uses the configured ObjectMapper with JavaTimeModule support.</p>
+   */
+  @Bean
+  public JacksonPubSubMessageConverter jacksonPubSubMessageConverter(ObjectMapper objectMapper) {
+    return new JacksonPubSubMessageConverter(objectMapper);
+  }
 }

@@ -19,7 +19,7 @@ import java.time.Instant;
  * // Publishing
  * eventPublisher.publish(PlaceholderCreatedEvent.create("123", "My Placeholder"));
  *
- * // Consuming (pattern matching)
+ * <p>// Consuming (pattern matching)
  * switch (event) {
  *     case PlaceholderCreatedEvent e -> handleCreated(e);
  *     // Add more cases as event types grow
@@ -28,24 +28,22 @@ import java.time.Instant;
  * </p>
  */
 @JsonTypeInfo(
-    use = JsonTypeInfo.Id.NAME,
-    include = JsonTypeInfo.As.PROPERTY,
-    property = "@type"
+  use = JsonTypeInfo.Id.NAME,
+  include = JsonTypeInfo.As.PROPERTY,
+  property = "@type"
 )
 @JsonSubTypes({
-    @JsonSubTypes.Type(value = PlaceholderCreatedEvent.class, name = "PlaceholderCreatedEvent")
+  @JsonSubTypes.Type(value = PlaceholderCreatedEvent.class, name = "PlaceholderCreatedEvent")
 })
 public sealed interface PlaceholderEvent
-    permits PlaceholderCreatedEvent {
+  permits PlaceholderCreatedEvent {
 
-    /**
-     * Unique event identifier for idempotency and tracing.
-     * Consumers should use this to detect duplicate events.
-     */
-    String eventId();
+  /**
+   * Unique event identifier for idempotency and tracing.
+   * Consumers should use this to detect duplicate events.
+   */
+  String eventId();
 
-    /**
-     * Timestamp when the event occurred (not when it was published or received).
-     */
-    Instant occurredAt();
+  /** Timestamp when the event occurred (not when it was published or received). */
+  Instant occurredAt();
 }

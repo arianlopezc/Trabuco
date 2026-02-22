@@ -52,144 +52,144 @@ import org.springframework.messaging.handler.annotation.Header;
 @Component
 public class PlaceholderEventListener {
 
-    private static final Logger logger = LoggerFactory.getLogger(PlaceholderEventListener.class);
+  private static final Logger logger = LoggerFactory.getLogger(PlaceholderEventListener.class);
 {{if .UsesKafka}}
-    /**
-     * Main event handler with automatic retry and DLT support.
-     *
-     * <p>Retry configuration:
-     * <ul>
-     *   <li>4 total attempts (1 initial + 3 retries)</li>
-     *   <li>Exponential backoff starting at 1 second, multiplier 2.0</li>
-     *   <li>Failed events go to DLT after exhausting retries</li>
-     * </ul>
-     * </p>
-     */
-    @RetryableTopic(
-        attempts = "4",
-        backoff = @Backoff(delay = 1000, multiplier = 2.0),
-        dltStrategy = DltStrategy.FAIL_ON_ERROR,
-        autoCreateTopics = "false"
-    )
-    @KafkaListener(
-        topics = "${app.kafka.topics.placeholder-events}",
-        groupId = "${spring.kafka.consumer.group-id}"
-    )
-    public void handlePlaceholderEvent(PlaceholderEvent event) {
-        logger.info("Received event: eventId={}, type={}",
-            event.eventId(), event.getClass().getSimpleName());
+  /**
+   * Main event handler with automatic retry and DLT support.
+   *
+   * <p>Retry configuration:
+   * <ul>
+   *   <li>4 total attempts (1 initial + 3 retries)</li>
+   *   <li>Exponential backoff starting at 1 second, multiplier 2.0</li>
+   *   <li>Failed events go to DLT after exhausting retries</li>
+   * </ul>
+   * </p>
+   */
+  @RetryableTopic(
+    attempts = "4",
+    backoff = @Backoff(delay = 1000, multiplier = 2.0),
+    dltStrategy = DltStrategy.FAIL_ON_ERROR,
+    autoCreateTopics = "false"
+  )
+  @KafkaListener(
+    topics = "${app.kafka.topics.placeholder-events}",
+    groupId = "${spring.kafka.consumer.group-id}"
+  )
+  public void handlePlaceholderEvent(PlaceholderEvent event) {
+    logger.info("Received event: eventId={}, type={}",
+      event.eventId(), event.getClass().getSimpleName());
 
-        switch (event) {
-            case PlaceholderCreatedEvent created -> handleCreated(created);
-            // Add more cases as event types grow
-        }
+    switch (event) {
+      case PlaceholderCreatedEvent created -> handleCreated(created);
+      // Add more cases as event types grow
     }
+  }
 
-    /**
-     * Dead Letter Topic handler for events that failed after all retries.
-     *
-     * <p>This method is called when an event cannot be processed after
-     * exhausting all retry attempts. Use this for alerting, logging,
-     * or storing for manual review.</p>
-     */
-    @DltHandler
-    public void handleDlt(PlaceholderEvent event, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
-        logger.error("Event sent to DLT: topic={}, eventId={}, type={}",
-            topic, event.eventId(), event.getClass().getSimpleName());
-        // TODO: Add alerting, store for manual review, etc.
-    }
+  /**
+   * Dead Letter Topic handler for events that failed after all retries.
+   *
+   * <p>This method is called when an event cannot be processed after
+   * exhausting all retry attempts. Use this for alerting, logging,
+   * or storing for manual review.</p>
+   */
+  @DltHandler
+  public void handleDlt(PlaceholderEvent event, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
+    logger.error("Event sent to DLT: topic={}, eventId={}, type={}",
+      topic, event.eventId(), event.getClass().getSimpleName());
+    // TODO: Add alerting, store for manual review, etc.
+  }
 {{else if .UsesRabbitMQ}}
-    /**
-     * Main event handler for RabbitMQ messages.
-     *
-     * <p>If processing fails, the message is rejected (not requeued).
-     * Configure a Dead Letter Exchange (DLX) on the queue for failed messages.</p>
-     */
-    @RabbitListener(queues = "${app.rabbitmq.queues.placeholder-events}")
-    public void handlePlaceholderEvent(PlaceholderEvent event) {
-        logger.info("Received event: eventId={}, type={}",
-            event.eventId(), event.getClass().getSimpleName());
+  /**
+   * Main event handler for RabbitMQ messages.
+   *
+   * <p>If processing fails, the message is rejected (not requeued).
+   * Configure a Dead Letter Exchange (DLX) on the queue for failed messages.</p>
+   */
+  @RabbitListener(queues = "${app.rabbitmq.queues.placeholder-events}")
+  public void handlePlaceholderEvent(PlaceholderEvent event) {
+    logger.info("Received event: eventId={}, type={}",
+      event.eventId(), event.getClass().getSimpleName());
 
-        switch (event) {
-            case PlaceholderCreatedEvent created -> handleCreated(created);
-            // Add more cases as event types grow
-        }
+    switch (event) {
+      case PlaceholderCreatedEvent created -> handleCreated(created);
+      // Add more cases as event types grow
     }
+  }
 {{else if .UsesSQS}}
-    /**
-     * Main event handler for SQS messages.
-     *
-     * <p>Uses manual acknowledgment for reliable message processing.
-     * If processing fails, the message returns to the queue after
-     * the visibility timeout expires.</p>
-     *
-     * <p>Configure a Dead Letter Queue (DLQ) in AWS Console to capture
-     * messages that exceed the maxReceiveCount.</p>
-     */
-    @SqsListener("${app.sqs.queue.placeholder-events}")
-    public void handlePlaceholderEvent(PlaceholderEvent event, Acknowledgement acknowledgement) {
-        logger.info("Received event: eventId={}, type={}",
-            event.eventId(), event.getClass().getSimpleName());
+  /**
+   * Main event handler for SQS messages.
+   *
+   * <p>Uses manual acknowledgment for reliable message processing.
+   * If processing fails, the message returns to the queue after
+   * the visibility timeout expires.</p>
+   *
+   * <p>Configure a Dead Letter Queue (DLQ) in AWS Console to capture
+   * messages that exceed the maxReceiveCount.</p>
+   */
+  @SqsListener("${app.sqs.queue.placeholder-events}")
+  public void handlePlaceholderEvent(PlaceholderEvent event, Acknowledgement acknowledgement) {
+    logger.info("Received event: eventId={}, type={}",
+      event.eventId(), event.getClass().getSimpleName());
 
-        try {
-            switch (event) {
-                case PlaceholderCreatedEvent created -> handleCreated(created);
-                // Add more cases as event types grow
-            }
-            acknowledgement.acknowledge();
-        } catch (Exception e) {
-            logger.error("Failed to process event: eventId={}, error={}",
-                event.eventId(), e.getMessage());
-            throw e; // Message returns to queue after visibility timeout
-        }
+    try {
+      switch (event) {
+        case PlaceholderCreatedEvent created -> handleCreated(created);
+        // Add more cases as event types grow
+      }
+      acknowledgement.acknowledge();
+    } catch (Exception e) {
+      logger.error("Failed to process event: eventId={}, error={}",
+        event.eventId(), e.getMessage());
+      throw e; // Message returns to queue after visibility timeout
     }
+  }
 {{else if .UsesPubSub}}
-    /**
-     * Main event handler for Pub/Sub messages.
-     *
-     * <p>Uses manual acknowledgment for reliable message processing.
-     * Successfully processed messages are acked; failed messages are
-     * nacked and will be redelivered.</p>
-     *
-     * <p>Configure a Dead Letter Topic in GCP Console to capture
-     * messages that exceed the maximum delivery attempts.</p>
-     */
-    @ServiceActivator(inputChannel = "placeholderInputChannel")
-    public void handlePlaceholderEvent(
-            PlaceholderEvent event,
-            @Header(GcpPubSubHeaders.ORIGINAL_MESSAGE) BasicAcknowledgeablePubsubMessage message) {
-        logger.info("Received event: eventId={}, type={}",
-            event.eventId(), event.getClass().getSimpleName());
+  /**
+   * Main event handler for Pub/Sub messages.
+   *
+   * <p>Uses manual acknowledgment for reliable message processing.
+   * Successfully processed messages are acked; failed messages are
+   * nacked and will be redelivered.</p>
+   *
+   * <p>Configure a Dead Letter Topic in GCP Console to capture
+   * messages that exceed the maximum delivery attempts.</p>
+   */
+  @ServiceActivator(inputChannel = "placeholderInputChannel")
+  public void handlePlaceholderEvent(
+      PlaceholderEvent event,
+      @Header(GcpPubSubHeaders.ORIGINAL_MESSAGE) BasicAcknowledgeablePubsubMessage message) {
+    logger.info("Received event: eventId={}, type={}",
+      event.eventId(), event.getClass().getSimpleName());
 
-        try {
-            switch (event) {
-                case PlaceholderCreatedEvent created -> handleCreated(created);
-                // Add more cases as event types grow
-            }
-            message.ack();
-        } catch (Exception e) {
-            logger.error("Failed to process event: eventId={}, error={}",
-                event.eventId(), e.getMessage());
-            message.nack();
-        }
+    try {
+      switch (event) {
+        case PlaceholderCreatedEvent created -> handleCreated(created);
+        // Add more cases as event types grow
+      }
+      message.ack();
+    } catch (Exception e) {
+      logger.error("Failed to process event: eventId={}, error={}",
+        event.eventId(), e.getMessage());
+      message.nack();
     }
+  }
 {{end}}
 
-    /**
-     * Handles PlaceholderCreatedEvent.
-     *
-     * <p>This is where you implement the business logic for reacting
-     * to placeholder creation events.</p>
-     */
-    private void handleCreated(PlaceholderCreatedEvent event) {
-        logger.info("Processing PlaceholderCreatedEvent: placeholderId={}, name={}, occurredAt={}",
-            event.placeholderId(), event.name(), event.occurredAt());
+  /**
+   * Handles PlaceholderCreatedEvent.
+   *
+   * <p>This is where you implement the business logic for reacting
+   * to placeholder creation events.</p>
+   */
+  private void handleCreated(PlaceholderCreatedEvent event) {
+    logger.info("Processing PlaceholderCreatedEvent: placeholderId={}, name={}, occurredAt={}",
+      event.placeholderId(), event.name(), event.occurredAt());
 
-        // TODO: Implement your business logic here
-        // Examples:
-        // - Send notification
-        // - Update search index
-        // - Trigger downstream processing
-        // - Update analytics
-    }
+    // TODO: Implement your business logic here
+    // Examples:
+    // - Send notification
+    // - Update search index
+    // - Trigger downstream processing
+    // - Update analytics
+  }
 }

@@ -1,0 +1,84 @@
+---
+applyTo: "**/*.java"
+---
+# Java Coding Instructions for {{.ProjectName}}
+
+## Project Structure
+
+This is a multi-module Maven project:
+{{- if .HasModule "Model"}}
+- **Model**: Entities, DTOs, Enums (uses Immutables)
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+- **SQLDatastore**: Spring Data JDBC repositories, Flyway migrations
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+- **NoSQLDatastore**: {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else}}Redis{{end}} repositories
+{{- end}}
+{{- if .HasModule "Shared"}}
+- **Shared**: Business services with @CircuitBreaker
+{{- end}}
+{{- if .HasModule "API"}}
+- **API**: REST controllers with OpenAPI docs
+{{- end}}
+{{- if .HasModule "Worker"}}
+- **Worker**: JobRunr background job handlers
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+- **EventConsumer**: {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}SQS{{else}}Pub/Sub{{end}} event listeners
+{{- end}}
+
+## Immutables Pattern (CRITICAL)
+
+Always use `ImmutableX` concrete types and builders:
+
+```java
+// CORRECT
+public ImmutableUser createUser(ImmutableCreateUserRequest request) {
+    return ImmutableUser.builder()
+        .name(request.name())
+        .email(request.email())
+        .build();
+}
+
+// WRONG - Never do this
+public User createUser(CreateUserRequest request) {
+    return new User(request.name(), request.email());
+}
+```
+
+## Modern Java ({{.JavaVersion}}+)
+
+- Streams over loops for filter/map/collect
+- Pattern matching: `instanceof Type t`, switch expressions
+- Optional: `map`/`orElse`, never `isPresent()+get()`
+- Collections: `List.of()`, `.toList()`, no `Arrays.asList()`
+
+## Method Guidelines
+
+- Maximum 30 lines per method
+- Maximum 5 parameters (use objects for more)
+- Maximum 2 levels of nesting
+- Use early returns to reduce complexity
+
+## Dependency Injection
+
+- Constructor injection only, all fields `private final`
+- Never use `@Autowired` on fields
+
+## Module Dependencies
+
+- Model -> (none)
+- SQLDatastore/NoSQLDatastore -> Model
+- Shared -> Model, Datastores
+- API -> Model, Shared
+- Worker -> Model, Shared
+- EventConsumer -> Model, Shared
+
+Never import from API in Worker/EventConsumer or vice versa.
+
+## Quality
+
+- Run `mvn spotless:apply` to auto-format after changes
+- Run `mvn enforcer:enforce` to check dependency rules
+- Full specification: `.ai/prompts/JAVA_CODE_QUALITY.md`

@@ -20,16 +20,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 {{- end}}
-
+import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Instant;
 import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Integration tests for PlaceholderRepository.
  *
- * Uses Testcontainers for realistic database testing.
+ * <p>Uses Testcontainers for realistic database testing.
  * Tests are automatically skipped if Docker is not available.
  */
 @DataJdbcTest
@@ -41,82 +39,82 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PlaceholderRepositoryTest {
 
 {{- if eq .Database "postgresql"}}
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:15-alpine");
+  @Container
+  @ServiceConnection
+  static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:15-alpine");
 {{- else if eq .Database "mysql"}}
-    @Container
-    static MySQLContainer mysql = new MySQLContainer("mysql:8.0");
+  @Container
+  static MySQLContainer mysql = new MySQLContainer("mysql:8.0");
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", mysql::getJdbcUrl);
-        registry.add("spring.datasource.username", mysql::getUsername);
-        registry.add("spring.datasource.password", mysql::getPassword);
-    }
+  @DynamicPropertySource
+  static void configureProperties(DynamicPropertyRegistry registry) {
+    registry.add("spring.datasource.url", mysql::getJdbcUrl);
+    registry.add("spring.datasource.username", mysql::getUsername);
+    registry.add("spring.datasource.password", mysql::getPassword);
+  }
 {{- end}}
 
-    @Autowired
-    private PlaceholderRepository repository;
+  @Autowired
+  private PlaceholderRepository repository;
 
-    @BeforeEach
-    void setUp() {
-        repository.deleteAll();
-    }
+  @BeforeEach
+  void setUp() {
+    repository.deleteAll();
+  }
 
-    @Test
-    void shouldSavePlaceholder() {
-        // Given
-        PlaceholderRecord record = new PlaceholderRecord("Test", "Test description", Instant.now());
+  @Test
+  void shouldSavePlaceholder() {
+    // Given
+    PlaceholderRecord record = new PlaceholderRecord("Test", "Test description", Instant.now());
 
-        // When
-        PlaceholderRecord saved = repository.save(record);
+    // When
+    PlaceholderRecord saved = repository.save(record);
 
-        // Then
-        assertThat(saved.id()).isNotNull();
-        assertThat(saved.name()).isEqualTo("Test");
-        assertThat(saved.description()).isEqualTo("Test description");
-    }
+    // Then
+    assertThat(saved.id()).isNotNull();
+    assertThat(saved.name()).isEqualTo("Test");
+    assertThat(saved.description()).isEqualTo("Test description");
+  }
 
-    @Test
-    void shouldFindById() {
-        // Given
-        PlaceholderRecord saved = repository.save(
-            new PlaceholderRecord("Find Me", "Description", Instant.now())
-        );
+  @Test
+  void shouldFindById() {
+    // Given
+    PlaceholderRecord saved = repository.save(
+      new PlaceholderRecord("Find Me", "Description", Instant.now())
+    );
 
-        // When
-        Optional<PlaceholderRecord> found = repository.findById(saved.id());
+    // When
+    Optional<PlaceholderRecord> found = repository.findById(saved.id());
 
-        // Then
-        assertThat(found).isPresent();
-        assertThat(found.get().name()).isEqualTo("Find Me");
-    }
+    // Then
+    assertThat(found).isPresent();
+    assertThat(found.get().name()).isEqualTo("Find Me");
+  }
 
-    @Test
-    void shouldFindByName() {
-        // Given
-        repository.save(new PlaceholderRecord("Unique Name", "Description", Instant.now()));
+  @Test
+  void shouldFindByName() {
+    // Given
+    repository.save(new PlaceholderRecord("Unique Name", "Description", Instant.now()));
 
-        // When
-        Optional<PlaceholderRecord> found = repository.findByName("Unique Name");
+    // When
+    Optional<PlaceholderRecord> found = repository.findByName("Unique Name");
 
-        // Then
-        assertThat(found).isPresent();
-        assertThat(found.get().description()).isEqualTo("Description");
-    }
+    // Then
+    assertThat(found).isPresent();
+    assertThat(found.get().description()).isEqualTo("Description");
+  }
 
-    @Test
-    void shouldDeletePlaceholder() {
-        // Given
-        PlaceholderRecord saved = repository.save(
-            new PlaceholderRecord("To Delete", "Will be deleted", Instant.now())
-        );
+  @Test
+  void shouldDeletePlaceholder() {
+    // Given
+    PlaceholderRecord saved = repository.save(
+      new PlaceholderRecord("To Delete", "Will be deleted", Instant.now())
+    );
 
-        // When
-        repository.deleteById(saved.id());
+    // When
+    repository.deleteById(saved.id());
 
-        // Then
-        assertThat(repository.findById(saved.id())).isEmpty();
-    }
+    // Then
+    assertThat(repository.findById(saved.id())).isEmpty();
+  }
 }

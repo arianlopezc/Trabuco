@@ -1,6 +1,5 @@
 package {{.GroupID}}.eventconsumer.config;
 
-import {{.GroupID}}.model.events.PlaceholderEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -8,6 +7,7 @@ import com.google.cloud.spring.pubsub.core.PubSubTemplate;
 import com.google.cloud.spring.pubsub.integration.AckMode;
 import com.google.cloud.spring.pubsub.integration.inbound.PubSubInboundChannelAdapter;
 import com.google.cloud.spring.pubsub.support.converter.JacksonPubSubMessageConverter;
+import {{.GroupID}}.model.events.PlaceholderEvent;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -31,66 +31,66 @@ import org.springframework.messaging.MessageChannel;
 @Configuration
 public class PubSubConfig {
 
-    @Value("${app.pubsub.subscription.placeholder-events}")
-    private String placeholderSubscription;
+  @Value("${app.pubsub.subscription.placeholder-events}")
+  private String placeholderSubscription;
 
-    /**
-     * ObjectMapper configured for Pub/Sub message serialization/deserialization.
-     *
-     * <p>Includes JavaTimeModule for proper handling of Instant,
-     * LocalDateTime, and other Java 8 date/time types.</p>
-     */
-    @Bean
-    @Primary
-    public ObjectMapper objectMapper() {
-        return new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-    }
+  /**
+   * ObjectMapper configured for Pub/Sub message serialization/deserialization.
+   *
+   * <p>Includes JavaTimeModule for proper handling of Instant,
+   * LocalDateTime, and other Java 8 date/time types.</p>
+   */
+  @Bean
+  @Primary
+  public ObjectMapper objectMapper() {
+    return new ObjectMapper()
+      .registerModule(new JavaTimeModule())
+      .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+  }
 
-    /**
-     * Message channel for placeholder events.
-     *
-     * <p>DirectChannel provides synchronous message delivery
-     * to a single subscriber.</p>
-     */
-    @Bean
-    public MessageChannel placeholderInputChannel() {
-        return new DirectChannel();
-    }
+  /**
+   * Message channel for placeholder events.
+   *
+   * <p>DirectChannel provides synchronous message delivery
+   * to a single subscriber.</p>
+   */
+  @Bean
+  public MessageChannel placeholderInputChannel() {
+    return new DirectChannel();
+  }
 
-    /**
-     * Jackson-based message converter for Pub/Sub.
-     *
-     * <p>Converts Pub/Sub messages to/from Java objects using Jackson.</p>
-     */
-    @Bean
-    public JacksonPubSubMessageConverter pubSubMessageConverter(ObjectMapper objectMapper) {
-        return new JacksonPubSubMessageConverter(objectMapper);
-    }
+  /**
+   * Jackson-based message converter for Pub/Sub.
+   *
+   * <p>Converts Pub/Sub messages to/from Java objects using Jackson.</p>
+   */
+  @Bean
+  public JacksonPubSubMessageConverter pubSubMessageConverter(ObjectMapper objectMapper) {
+    return new JacksonPubSubMessageConverter(objectMapper);
+  }
 
-    /**
-     * Inbound channel adapter for placeholder events subscription.
-     *
-     * <p>Receives messages from the Pub/Sub subscription and forwards
-     * them to the placeholder input channel for processing.</p>
-     *
-     * <p>Configuration:
-     * <ul>
-     *   <li>Manual acknowledgment mode for reliable processing</li>
-     *   <li>Payload type set to PlaceholderEvent for automatic conversion</li>
-     * </ul>
-     * </p>
-     */
-    @Bean
-    public PubSubInboundChannelAdapter placeholderInboundAdapter(
-            @Qualifier("placeholderInputChannel") MessageChannel channel,
-            PubSubTemplate pubSubTemplate) {
-        PubSubInboundChannelAdapter adapter =
-            new PubSubInboundChannelAdapter(pubSubTemplate, placeholderSubscription);
-        adapter.setOutputChannel(channel);
-        adapter.setAckMode(AckMode.MANUAL);
-        adapter.setPayloadType(PlaceholderEvent.class);
-        return adapter;
-    }
+  /**
+   * Inbound channel adapter for placeholder events subscription.
+   *
+   * <p>Receives messages from the Pub/Sub subscription and forwards
+   * them to the placeholder input channel for processing.</p>
+   *
+   * <p>Configuration:
+   * <ul>
+   *   <li>Manual acknowledgment mode for reliable processing</li>
+   *   <li>Payload type set to PlaceholderEvent for automatic conversion</li>
+   * </ul>
+   * </p>
+   */
+  @Bean
+  public PubSubInboundChannelAdapter placeholderInboundAdapter(
+      @Qualifier("placeholderInputChannel") MessageChannel channel,
+      PubSubTemplate pubSubTemplate) {
+    PubSubInboundChannelAdapter adapter =
+      new PubSubInboundChannelAdapter(pubSubTemplate, placeholderSubscription);
+    adapter.setOutputChannel(channel);
+    adapter.setAckMode(AckMode.MANUAL);
+    adapter.setPayloadType(PlaceholderEvent.class);
+    return adapter;
+  }
 }

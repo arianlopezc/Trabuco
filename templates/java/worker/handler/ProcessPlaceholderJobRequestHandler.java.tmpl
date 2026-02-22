@@ -9,62 +9,62 @@ import org.springframework.stereotype.Component;
 /**
  * Concrete handler for ProcessPlaceholderJobRequest.
  *
- * Extends the base handler defined in the Model module. JobRunr discovers
+ * <p>Extends the base handler defined in the Model module. JobRunr discovers
  * this Spring bean at processing time via the base class type returned
  * by {@code ProcessPlaceholderJobRequest.getJobRequestHandler()}.
  *
- * Handler responsibilities:
+ * <p>Handler responsibilities:
  * - Process the job request
  * - Log progress and completion
  * - Handle errors (JobRunr provides automatic retry with exponential backoff)
  *
- * Best practices:
+ * <p>Best practices:
  * - Keep handlers focused on a single responsibility
  * - Make operations idempotent (jobs may retry on failure)
  * - Use constructor injection for dependencies
  * - Log meaningful messages for debugging
  *
- * Transaction handling:
+ * <p>Transaction handling:
  * - If this handler modifies data, consider adding @Transactional
  * - Use @Transactional(propagation = Propagation.REQUIRES_NEW) for independent transactions
  * - JobRunr runs handlers outside of any existing transaction context
  */
 @Component
 public class ProcessPlaceholderJobRequestHandler
-        extends {{.GroupID}}.model.jobs.ProcessPlaceholderJobRequestHandler {
+    extends {{.GroupID}}.model.jobs.ProcessPlaceholderJobRequestHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(ProcessPlaceholderJobRequestHandler.class);
+  private static final Logger log = LoggerFactory.getLogger(ProcessPlaceholderJobRequestHandler.class);
 
-    // Inject dependencies via constructor
-    // Example:
-    // private final PlaceholderService placeholderService;
-    //
-    // public ProcessPlaceholderJobRequestHandler(PlaceholderService placeholderService) {
-    //     this.placeholderService = placeholderService;
-    // }
+  // Inject dependencies via constructor
+  // Example:
+  // private final PlaceholderService placeholderService;
+  //
+  // public ProcessPlaceholderJobRequestHandler(PlaceholderService placeholderService) {
+  //     this.placeholderService = placeholderService;
+  // }
 
-    /**
-     * Process the job request.
-     *
-     * @param request The job request containing the message to process
-     */
-    @Override
-    @Job(name = "Process Placeholder: %0")
-    public void run(ProcessPlaceholderJobRequest request) {
-        log.info("Processing placeholder job with message: {}", request.message());
+  /**
+   * Process the job request.
+   *
+   * @param request The job request containing the message to process
+   */
+  @Override
+  @Job(name = "Process Placeholder: %0")
+  public void run(ProcessPlaceholderJobRequest request) {
+    log.info("Processing placeholder job with message: {}", request.message());
 
-        // TODO: Remove this sleep and replace with actual business logic
-        // This is just a placeholder to demonstrate job execution
-        try {
-            Thread.sleep(100); // Brief delay for demo - DELETE THIS
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Job interrupted", e);
-        }
-
-        // TODO: Replace with actual business logic, e.g.:
-        // placeholderService.process(request.message());
-
-        log.info("Placeholder job completed: {}", request.message());
+    // TODO: Remove this sleep and replace with actual business logic
+    // This is just a placeholder to demonstrate job execution
+    try {
+      Thread.sleep(100); // Brief delay for demo - DELETE THIS
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Job interrupted", e);
     }
+
+    // TODO: Replace with actual business logic, e.g.:
+    // placeholderService.process(request.message());
+
+    log.info("Placeholder job completed: {}", request.message());
+  }
 }

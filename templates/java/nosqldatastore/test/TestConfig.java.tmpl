@@ -8,22 +8,21 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 /**
  * Test configuration for NoSQLDatastore module integration tests.
  *
- * Since NoSQLDatastore is a library module (not a Spring Boot application),
+ * <p>Since NoSQLDatastore is a library module (not a Spring Boot application),
  * tests need this configuration to bootstrap the Spring context.
  *
- * The scanBasePackages includes both nosqldatastore (for repositories/config)
+ * <p>The scanBasePackages includes both nosqldatastore (for repositories/config)
  * and model (for entities).
 {{- if eq .NoSQLDatabase "redis"}}
  *
- * Note: Redis repositories are enabled via NoSQLConfig which is scanned automatically.
+ * <p>Note: Redis repositories are enabled via NoSQLConfig which is scanned automatically.
 {{- end}}
  */
 @SpringBootApplication(scanBasePackages = {
-    "{{.GroupID}}.nosqldatastore",
-    "{{.GroupID}}.model"
+  "{{.GroupID}}.nosqldatastore",
+  "{{.GroupID}}.model"
 })
 {{- if eq .NoSQLDatabase "mongodb"}}
 @EnableMongoRepositories(basePackages = "{{.GroupID}}.nosqldatastore.repository")
 {{- end}}
-public class TestConfig {
-}
+public class TestConfig {}

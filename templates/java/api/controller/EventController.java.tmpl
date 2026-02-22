@@ -2,6 +2,8 @@ package {{.GroupID}}.api.controller;
 
 import {{.GroupID}}.events.EventPublisher;
 import {{.GroupID}}.model.events.PlaceholderCreatedEvent;
+import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -9,9 +11,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
-import java.util.UUID;
 
 /**
  * Example controller demonstrating event publishing.
@@ -24,7 +23,7 @@ import java.util.UUID;
  * POST /api/events/placeholder
  * Content-Type: application/json
  *
- * {
+ * <p>{
  *   "name": "Example Placeholder"
  * }
  * </pre>
@@ -34,39 +33,39 @@ import java.util.UUID;
 @RequestMapping("/api/events")
 public class EventController {
 
-    private static final Logger logger = LoggerFactory.getLogger(EventController.class);
+  private static final Logger logger = LoggerFactory.getLogger(EventController.class);
 
-    private final EventPublisher eventPublisher;
+  private final EventPublisher eventPublisher;
 
-    public EventController(EventPublisher eventPublisher) {
-        this.eventPublisher = eventPublisher;
-    }
+  public EventController(EventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
+  }
 
-    /**
-     * Publishes a PlaceholderCreatedEvent.
-     *
-     * <p>The event will be processed by the PlaceholderEventListener
-     * in the EventConsumer module.</p>
-     *
-     * @param request Request containing the placeholder name
-     * @return Response with the generated event ID
-     */
-    @PostMapping("/placeholder")
-    public ResponseEntity<Map<String, String>> publishPlaceholderEvent(
-            @RequestBody Map<String, String> request) {
+  /**
+   * Publishes a PlaceholderCreatedEvent.
+   *
+   * <p>The event will be processed by the PlaceholderEventListener
+   * in the EventConsumer module.</p>
+   *
+   * @param request Request containing the placeholder name
+   * @return Response with the generated event ID
+   */
+  @PostMapping("/placeholder")
+  public ResponseEntity<Map<String, String>> publishPlaceholderEvent(
+      @RequestBody Map<String, String> request) {
 
-        String name = request.getOrDefault("name", "Unnamed");
-        String entityId = UUID.randomUUID().toString();
+    String name = request.getOrDefault("name", "Unnamed");
+    String entityId = UUID.randomUUID().toString();
 
-        PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create(entityId, name);
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create(entityId, name);
 
-        logger.info("Publishing PlaceholderCreatedEvent: entityId={}, name={}", entityId, name);
-        eventPublisher.publish(event);
+    logger.info("Publishing PlaceholderCreatedEvent: entityId={}, name={}", entityId, name);
+    eventPublisher.publish(event);
 
-        return ResponseEntity.accepted().body(Map.of(
-            "eventId", event.eventId(),
-            "entityId", entityId,
-            "message", "Event published successfully"
-        ));
-    }
+    return ResponseEntity.accepted().body(Map.of(
+      "eventId", event.eventId(),
+      "entityId", entityId,
+      "message", "Event published successfully"
+    ));
+  }
 }

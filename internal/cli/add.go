@@ -211,7 +211,30 @@ func runAdd(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Step 10: Success message
+	// Step 10: Offer CI if not configured
+	if metadata.CIProvider == "" {
+		ciProvider, err := prompts.PromptCIProvider()
+		if err == nil && ciProvider != "" {
+			// Update metadata and config with CI provider
+			metadata.CIProvider = ciProvider
+			if err := config.SaveMetadata(projectPath, metadata); err != nil {
+				yellow.Fprintf(os.Stderr, "Warning: failed to save CI provider to metadata: %v\n", err)
+			} else {
+				// Generate the CI workflow
+				cfg := metadata.ToProjectConfig()
+				gen, genErr := generator.NewWithVersionAt(cfg, Version, projectPath)
+				if genErr == nil {
+					if genErr = gen.GenerateCIWorkflow(); genErr != nil {
+						yellow.Fprintf(os.Stderr, "Warning: failed to generate CI workflow: %v\n", genErr)
+					} else {
+						green.Println("  \u2713 Generated .github/workflows/ci.yml")
+					}
+				}
+			}
+		}
+	}
+
+	// Step 11: Success message
 	fmt.Println()
 	green.Println("✓ Module added successfully!")
 	fmt.Println()

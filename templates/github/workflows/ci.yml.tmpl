@@ -1,0 +1,237 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+{{- /* Conditional services based on selected modules */}}
+{{- $hasSQLService := and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql")) }}
+{{- $hasNoSQLService := and (.HasModule "NoSQLDatastore") (or (eq .NoSQLDatabase "mongodb") (eq .NoSQLDatabase "redis")) }}
+{{- $hasKafkaOrRabbit := and (.HasModule "EventConsumer") (or .UsesKafka .UsesRabbitMQ) }}
+{{- $hasSQS := and (.HasModule "EventConsumer") .UsesSQS }}
+{{- $hasBrokerService := or $hasKafkaOrRabbit $hasSQS }}
+{{- $needsServices := or (or (or $hasSQLService $hasNoSQLService) $hasBrokerService) .WorkerNeedsOwnPostgres }}
+{{- if $needsServices}}
+
+    services:
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: {{.ProjectName}}
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+{{- end}}
+{{- if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: {{.ProjectNameSnake}}
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+{{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+      mongodb:
+        image: mongo:7.0
+        env:
+          MONGO_INITDB_DATABASE: {{.ProjectName}}
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+{{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+{{- end}}
+{{- if and (.HasModule "EventConsumer") .UsesKafka}}
+      zookeeper:
+        image: confluentinc/cp-zookeeper:7.6.0
+        env:
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
+        ports:
+          - 2181:2181
+      kafka:
+        image: confluentinc/cp-kafka:7.6.0
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "kafka-topics --bootstrap-server localhost:9092 --list"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 5
+{{- end}}
+{{- if and (.HasModule "EventConsumer") .UsesRabbitMQ}}
+      rabbitmq:
+        image: rabbitmq:3.13-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics check_running"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 5
+{{- end}}
+{{- if and (.HasModule "EventConsumer") .UsesSQS}}
+      localstack:
+        image: localstack/localstack:3.0
+        env:
+          SERVICES: sqs
+          DEFAULT_REGION: us-east-1
+          DEBUG: "0"
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/_localstack/health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+{{- end}}
+{{- if .WorkerNeedsOwnPostgres}}
+      postgres-jobrunr:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: {{.ProjectName}}_jobs
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+{{- end}}
+{{- end}}
+{{- /* Conditional environment variables */}}
+{{- $hasEnvBroker := and (.HasModule "EventConsumer") (or (or .UsesKafka .UsesRabbitMQ) (or .UsesSQS .UsesPubSub)) }}
+{{- $needsEnv := or (or (or $hasSQLService $hasNoSQLService) $hasEnvBroker) .WorkerNeedsOwnPostgres }}
+{{- if $needsEnv}}
+
+    env:
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5433/{{.ProjectName}}
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+{{- end}}
+{{- if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+      SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3307/{{.ProjectNameSnake}}
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+{{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+      SPRING_DATA_MONGODB_URI: mongodb://localhost:27017/{{.ProjectName}}
+{{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+      SPRING_DATA_REDIS_HOST: localhost
+      SPRING_DATA_REDIS_PORT: 6379
+{{- end}}
+{{- if and (.HasModule "EventConsumer") .UsesKafka}}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+{{- end}}
+{{- if and (.HasModule "EventConsumer") .UsesRabbitMQ}}
+      SPRING_RABBITMQ_HOST: localhost
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
+{{- end}}
+{{- if and (.HasModule "EventConsumer") .UsesSQS}}
+      SPRING_CLOUD_AWS_SQS_ENDPOINT: http://localhost:4566
+      SPRING_CLOUD_AWS_REGION_STATIC: us-east-1
+      SPRING_CLOUD_AWS_CREDENTIALS_ACCESS_KEY: test
+      SPRING_CLOUD_AWS_CREDENTIALS_SECRET_KEY: test
+{{- end}}
+{{- if and (.HasModule "EventConsumer") .UsesPubSub}}
+      PUBSUB_EMULATOR_HOST: localhost:8085
+      SPRING_CLOUD_GCP_PROJECT_ID: local-project
+{{- end}}
+{{- if .WorkerNeedsOwnPostgres}}
+      SPRING_JOBRUNR_DATASOURCE_URL: jdbc:postgresql://localhost:5434/{{.ProjectName}}_jobs
+      SPRING_JOBRUNR_DATASOURCE_USERNAME: postgres
+      SPRING_JOBRUNR_DATASOURCE_PASSWORD: postgres
+{{- end}}
+{{- end}}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java {{.JavaVersion}}
+        uses: actions/setup-java@v4
+        with:
+          java-version: '{{.JavaVersion}}'
+          distribution: 'temurin'
+          cache: 'maven'
+{{- if and (.HasModule "EventConsumer") .UsesSQS}}
+
+      - name: Create SQS queue
+        run: |
+          curl -s -X POST "http://localhost:4566" \
+            -H "Content-Type: application/x-amz-json-1.0" \
+            -H "X-Amz-Target: AmazonSQS.CreateQueue" \
+            -d '{"QueueName": "placeholder-events"}'
+{{- end}}
+{{- if and (.HasModule "EventConsumer") .UsesPubSub}}
+
+      - name: Start Pub/Sub emulator
+        run: |
+          docker run -d --name pubsub-emulator \
+            -p 8085:8085 \
+            gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators \
+            gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=local-project
+          sleep 5
+          curl -s -X PUT "http://localhost:8085/v1/projects/local-project/topics/placeholder-events"
+          curl -s -X PUT "http://localhost:8085/v1/projects/local-project/subscriptions/placeholder-events-sub" \
+            -H "Content-Type: application/json" \
+            -d '{"topic": "projects/local-project/topics/placeholder-events"}'
+
+{{- end}}
+
+      - name: Compile
+        run: mvn clean compile -B
+
+      - name: Check formatting
+        run: mvn spotless:check -B
+
+      - name: Check dependency rules
+        run: mvn enforcer:enforce -B
+
+      - name: Run tests
+        run: mvn test -B

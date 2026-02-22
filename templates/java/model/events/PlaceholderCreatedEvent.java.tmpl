@@ -16,25 +16,25 @@ import java.util.UUID;
  * @param name The name of the created placeholder
  */
 public record PlaceholderCreatedEvent(
-    @JsonProperty("eventId") String eventId,
-    @JsonProperty("occurredAt") Instant occurredAt,
-    @JsonProperty("placeholderId") String placeholderId,
-    @JsonProperty("name") String name
+  @JsonProperty("eventId") String eventId,
+  @JsonProperty("occurredAt") Instant occurredAt,
+  @JsonProperty("placeholderId") String placeholderId,
+  @JsonProperty("name") String name
 ) implements PlaceholderEvent {
 
-    /**
-     * Factory method for creating a new event with auto-generated ID and timestamp.
-     *
-     * @param placeholderId The ID of the created placeholder
-     * @param name The name of the created placeholder
-     * @return A new PlaceholderCreatedEvent
-     */
-    public static PlaceholderCreatedEvent create(String placeholderId, String name) {
-        return new PlaceholderCreatedEvent(
-            UUID.randomUUID().toString(),
-            Instant.now(),
-            placeholderId,
-            name
-        );
-    }
+  /**
+   * Factory method for creating a new event with auto-generated ID and timestamp.
+   *
+   * @param placeholderId The ID of the created placeholder
+   * @param name The name of the created placeholder
+   * @return A new PlaceholderCreatedEvent
+   */
+  public static PlaceholderCreatedEvent create(String placeholderId, String name) {
+    return new PlaceholderCreatedEvent(
+      UUID.randomUUID().toString(),
+      Instant.now(),
+      placeholderId,
+      name
+    );
+  }
 }

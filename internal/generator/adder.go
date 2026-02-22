@@ -22,6 +22,9 @@ const (
 	LocalStackImageVersion   = "3.0"
 	ConfluentKafkaVersion    = "7.5.0"
 	MCPSDKVersion            = "0.17.2"
+	EnforcerVersion          = "3.5.0"
+	SpotlessVersion          = "2.44.4"
+	ArchUnitVersion          = "1.4.0"
 )
 
 // Module, database, and broker constants are defined in config package
@@ -216,6 +219,10 @@ func (a *ModuleAdder) DryRun(module string) *DryRunResult {
 	// Add AI agent files that are present
 	for _, agent := range a.config.GetSelectedAIAgents() {
 		result.FilesModified = append(result.FilesModified, agent.FilePath)
+	}
+	// Add CI workflow if configured
+	if a.config.HasCIProvider("github") {
+		result.FilesModified = append(result.FilesModified, ".github/workflows/ci.yml")
 	}
 
 	return result
@@ -591,6 +598,17 @@ func (a *ModuleAdder) updateParentPOM(modules []string, messageBroker string) er
 			// MCP SDK version for AI tool integration
 			if err := updater.AddProperty("mcp-sdk.version", MCPSDKVersion); err != nil {
 				return fmt.Errorf("failed to add mcp-sdk.version property: %w", err)
+			}
+		case config.ModuleShared:
+			// Quality plugin versions (Enforcer, Spotless, ArchUnit)
+			if err := updater.AddProperty("maven-enforcer.version", EnforcerVersion); err != nil {
+				return fmt.Errorf("failed to add maven-enforcer.version property: %w", err)
+			}
+			if err := updater.AddProperty("spotless.version", SpotlessVersion); err != nil {
+				return fmt.Errorf("failed to add spotless.version property: %w", err)
+			}
+			if err := updater.AddProperty("archunit.version", ArchUnitVersion); err != nil {
+				return fmt.Errorf("failed to add archunit.version property: %w", err)
 			}
 		}
 	}
@@ -1017,6 +1035,13 @@ func (a *ModuleAdder) regenerateDocs() error {
 		}
 	}
 
+	// Regenerate AGENTS.md cross-tool baseline
+	if a.config.HasAnyAIAgent() {
+		if err := gen.writeTemplate("docs/AGENTS.md.tmpl", "AGENTS.md"); err != nil {
+			return fmt.Errorf("failed to regenerate AGENTS.md: %w", err)
+		}
+	}
+
 	// Update .ai directory with new prompts if any AI agent is selected
 	if a.config.HasAnyAIAgent() {
 		if err := gen.generateAIDirectory(); err != nil {
@@ -1044,6 +1069,40 @@ func (a *ModuleAdder) regenerateDocs() error {
 		// MCP README with setup instructions for all agents
 		if err := gen.writeTemplate("docs/MCP-README.md.tmpl", "MCP/README.md"); err != nil {
 			return fmt.Errorf("failed to generate MCP/README.md: %w", err)
+		}
+	}
+
+	// Regenerate CI workflow when a CI provider is configured
+	if a.config.HasCIProvider("github") {
+		if err := gen.writeTemplate("github/workflows/ci.yml.tmpl", ".github/workflows/ci.yml"); err != nil {
+			return fmt.Errorf("failed to regenerate CI workflow: %w", err)
+		}
+	}
+
+	// Regenerate agent-specific files
+	if a.config.HasAIAgent("claude") {
+		if err := gen.generateClaudeCodeFiles(); err != nil {
+			return fmt.Errorf("failed to regenerate Claude Code files: %w", err)
+		}
+	}
+	if a.config.HasAIAgent("cursor") {
+		if err := gen.generateCursorFiles(); err != nil {
+			return fmt.Errorf("failed to regenerate Cursor files: %w", err)
+		}
+	}
+	if a.config.HasAIAgent("copilot") {
+		if err := gen.generateCopilotFiles(); err != nil {
+			return fmt.Errorf("failed to regenerate Copilot files: %w", err)
+		}
+	}
+	if a.config.HasAIAgent("windsurf") {
+		if err := gen.generateWindsurfFiles(); err != nil {
+			return fmt.Errorf("failed to regenerate Windsurf files: %w", err)
+		}
+	}
+	if a.config.HasAIAgent("cline") {
+		if err := gen.generateClineFiles(); err != nil {
+			return fmt.Errorf("failed to regenerate Cline files: %w", err)
 		}
 	}
 
@@ -1087,12 +1146,14 @@ func (a *ModuleAdder) getModuleFiles(module string) []string {
 
 	case config.ModuleShared:
 		base := filepath.Join(config.ModuleShared, "src", "main", "java", packagePath, "shared")
+		testBase := filepath.Join(config.ModuleShared, "src", "test", "java", packagePath, "shared")
 		files = append(files,
 			filepath.Join(config.ModuleShared, "pom.xml"),
 			filepath.Join(base, "config", "SharedConfig.java"),
 			filepath.Join(base, "config", "CircuitBreakerConfiguration.java"),
 			filepath.Join(base, "service", "PlaceholderService.java"),
 			filepath.Join(config.ModuleShared, "src", "main", "resources", "application.yml"),
+			filepath.Join(testBase, "ArchitectureTest.java"),
 		)
 
 	case config.ModuleAPI:
@@ -1153,6 +1214,8 @@ func (a *ModuleAdder) getModuleFiles(module string) []string {
 			filepath.Join(base, "tools", "BuildTools.java"),
 			filepath.Join(base, "tools", "TestTools.java"),
 			filepath.Join(base, "tools", "ProjectTools.java"),
+			filepath.Join(base, "tools", "QualityTools.java"),
+			filepath.Join(base, "tools", "ReviewTools.java"),
 			filepath.Join(config.ModuleMCP, "src", "main", "resources", "logback.xml"),
 			filepath.Join(config.ModuleMCP, "README.md"),
 			".mcp.json",

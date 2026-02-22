@@ -340,6 +340,21 @@ func ValidateModuleCanBeAdded(module string, existingModules []string) error {
 	return nil
 }
 
+// PromptCIProvider asks if the user wants to add a CI workflow
+func PromptCIProvider() (string, error) {
+	var addCI bool
+	if err := survey.AskOne(&survey.Confirm{
+		Message: "Would you like to add a GitHub Actions CI workflow?",
+		Default: false,
+	}, &addCI); err != nil {
+		return "", err
+	}
+	if addCI {
+		return "github", nil
+	}
+	return "", nil
+}
+
 // getParentModule returns the parent module that auto-includes an internal module
 func getParentModule(internal string) string {
 	switch internal {

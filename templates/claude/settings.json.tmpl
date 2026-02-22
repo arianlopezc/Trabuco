@@ -17,5 +17,18 @@
       "Bash(curl * | sh)",
       "Bash(wget * | sh)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mvn spotless:apply -q 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
   }
 }

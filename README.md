@@ -50,6 +50,13 @@ The real power lies in the modular structure. Instead of a monolithic source tre
   - [Events](#events)
   - [EventConsumer](#eventconsumer)
   - [MCP](#mcp)
+- [Code Quality & Architecture](#code-quality--architecture)
+  - [Auto-Formatting](#auto-formatting)
+  - [Architecture Tests](#architecture-tests)
+  - [AI Task Prompts](#ai-task-prompts)
+  - [Code Review Workflow](#code-review-workflow)
+- [CI/CD](#cicd)
+  - [GitHub Actions](#github-actions)
 - [Observability](#observability)
   - [Metrics](#metrics)
   - [API Documentation](#api-documentation)
@@ -60,6 +67,7 @@ The real power lies in the modular structure. Instead of a monolithic source tre
   - [Available Modules](#available-modules)
   - [Java Version Detection](#java-version-detection)
   - [AI Coding Agents](#ai-coding-agents)
+  - [CI/CD Provider](#cicd-provider)
 - [Tech Stack](#tech-stack)
 - [Local Development](#local-development)
 - [Requirements](#requirements)
@@ -87,8 +95,11 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - **Test coverage** — JaCoCo reports for code coverage
 - **Docker Compose** — Local development stack included
 - **IntelliJ run configs** — Just open and run
-- **AI-friendly** — Generates context files for Claude, Cursor, GitHub Copilot, Windsurf, and Cline
-- **MCP server** — Optional Model Context Protocol server for AI tool integration in generated projects
+- **GitHub Actions CI** — Opt-in CI workflow that adapts to your modules with `--ci github`
+- **Code quality enforcement** — Google Java Format (Spotless), Maven Enforcer, and auto-formatting hooks
+- **Architecture tests** — ArchUnit rules enforce constructor injection, layer boundaries, and no cyclic dependencies
+- **AI-friendly** — Generates context files, coding rules, quality specs, and task prompts for Claude, Cursor, GitHub Copilot, Windsurf, and Cline
+- **MCP server** — Optional Model Context Protocol server with build, test, quality, and code review tools
 - **CLI MCP server** — `trabuco mcp` exposes all CLI functionality as structured tools for AI coding agents
 
 ## Installation
@@ -147,6 +158,11 @@ trabuco init --name=myapp --group-id=com.company.myapp \
 # Add MCP server for AI tool integration
 trabuco init --name=myapp --group-id=com.company.myapp \
   --modules=Model,SQLDatastore,Shared,API,MCP --database=postgresql
+
+# Full setup with CI, AI agents, and all modules
+trabuco init --name=myapp --group-id=com.company.myapp \
+  --modules=Model,SQLDatastore,Shared,API,Worker,EventConsumer,MCP \
+  --database=postgresql --message-broker=kafka --ai-agents=claude,cursor --ci github
 ```
 
 ### Run your new project
@@ -396,8 +412,11 @@ The `add` command automatically:
 - Updates the parent POM with the new module
 - Adds required properties and dependencies
 - Updates `docker-compose.yml` with necessary services
+- Regenerates CI workflow with new services (if CI is configured)
+- Regenerates `AGENTS.md` with updated module list
 - Updates `.trabuco.json` metadata
 - Auto-includes dependent modules (e.g., `Worker` includes `Jobs`)
+- Prompts to add CI if not already configured
 
 **Add command options:**
 
@@ -605,15 +624,30 @@ myapp/
 │   └── src/main/
 │       ├── java/.../mcp/
 │       │   ├── McpServerApplication.java  # MCP server entry point
-│       │   └── tools/               # Build, test, and project tools
+│       │   └── tools/               # Build, test, quality, and review tools
 │       └── resources/
 │           └── logback.xml          # MCP logging configuration
+├── .ai/                             # AI context directory
+│   ├── prompts/                     # Task guides and quality specs
+│   │   ├── JAVA_CODE_QUALITY.md     # Code quality specification
+│   │   ├── code-review.md           # Review checklist
+│   │   ├── add-entity.md            # How to add an entity
+│   │   ├── add-endpoint.md          # How to add a REST endpoint
+│   │   ├── add-job.md               # How to add a background job
+│   │   └── add-event.md             # How to add an event type
+│   ├── checkpoint.json              # Session state for AI continuity
+│   └── review-log.jsonl             # Append-only review findings log
+├── .github/workflows/ci.yml         # GitHub Actions CI (if --ci github)
 ├── docker-compose.yml               # Local dev stack (database, message broker)
 ├── .run/                            # IntelliJ run configurations
 ├── .mcp.json                        # MCP config for Claude Code (if MCP selected)
-├── .cursor/mcp.json                 # MCP config for Cursor (if MCP selected)
+├── .cursor/                         # Cursor IDE configuration
+│   ├── mcp.json                     # MCP config (if MCP selected)
+│   ├── rules/java.mdc               # Java coding rules
+│   └── hooks.json                   # Auto-formatting hooks
 ├── .vscode/mcp.json                 # MCP config for VS Code/Copilot (if MCP selected)
-├── CLAUDE.md                        # AI assistant context
+├── CLAUDE.md                        # AI assistant context (Claude Code)
+├── AGENTS.md                        # Cross-tool AI agent baseline
 └── README.md                        # Project documentation
 ```
 
@@ -811,13 +845,15 @@ public void handleEvent(PlaceholderEvent event, BasicAcknowledgeablePubsubMessag
 
 ### MCP
 
-Model Context Protocol server — provides AI coding assistants with tools for building, testing, and introspecting the project.
+Model Context Protocol server — provides AI coding assistants with tools for building, testing, quality checking, and reviewing the project.
 
 | What | Description |
 |------|-------------|
 | **Build tools** | `build`, `package`, `clean` — Maven build operations |
 | **Test tools** | `test`, `test-single` — Run tests or specific test classes |
 | **Project tools** | `list-modules`, `list-entities`, `get-config`, `project-info` — Project introspection |
+| **Quality tools** | `format`, `check-quality` — Auto-format and enforce dependency rules |
+| **Review tools** | `get-review-context`, `record-review-finding`, `get-review-stats` — Structured code review |
 
 The MCP server is a standalone Java application that communicates via STDIO with AI coding assistants that support the Model Context Protocol.
 
@@ -856,6 +892,114 @@ For agents with project-local configs (Claude Code, Cursor, VS Code), just open 
 | `list-entities` | List all entity classes in the Model module |
 | `get-config` | Get the application.yml for a module |
 | `project-info` | Get project metadata from .trabuco.json |
+| `format` | Auto-format all Java files using Google Java Format (Spotless) |
+| `check-quality` | Run formatting check and dependency enforcement rules |
+| `get-review-context` | Get relevant quality rules filtered by file type |
+| `record-review-finding` | Log a code review finding to `.ai/review-log.jsonl` |
+| `get-review-stats` | Get aggregate review statistics by category, severity, and rule |
+
+## Code Quality & Architecture
+
+Generated projects come with strict code quality enforcement out of the box. Every project includes Google Java Format via Spotless, Maven Enforcer for dependency rules, and ArchUnit for architecture tests. These run as part of the normal build — violations fail the build, not just a linter warning.
+
+### Auto-Formatting
+
+All generated code follows Google Java Format (2-space indentation, specific import ordering). Trabuco runs `spotless:apply` during project generation so your code is formatted from the first commit.
+
+**Manual commands:**
+
+```bash
+mvn spotless:apply      # Auto-format all Java files
+mvn spotless:check      # Check formatting without modifying (CI-friendly)
+mvn enforcer:enforce    # Check dependency rules
+```
+
+**IDE integration:** When you select AI coding agents during setup, Trabuco generates auto-formatting hooks so code stays formatted as you work:
+
+| Agent | Hook File | Behavior |
+|-------|-----------|----------|
+| Claude Code | `.claude/settings.json` | Runs `spotless:apply` after Write/Edit operations |
+| Cursor | `.cursor/hooks.json` | Runs `spotless:apply` after file edits |
+
+### Architecture Tests
+
+The Shared module includes [ArchUnit](https://www.archunit.org/) tests that enforce architectural rules at build time:
+
+| Rule | Description |
+|------|-------------|
+| No field injection | `@Autowired` on fields is forbidden — use constructor injection |
+| Controller-service boundary | Controllers cannot access repositories directly |
+| No cyclic dependencies | Cross-module cyclic dependencies are not allowed |
+
+These tests run as part of `mvn test` and fail the build if violated. To add project-specific rules, edit `Shared/src/test/java/.../shared/ArchitectureTest.java`.
+
+### AI Task Prompts
+
+Every generated project includes an `.ai/` directory with task-specific guides for AI coding assistants. Instead of relying on the AI to guess your project's patterns, these prompts provide step-by-step instructions with file locations and code examples.
+
+| Prompt | Description |
+|--------|-------------|
+| `JAVA_CODE_QUALITY.md` | Comprehensive code quality specification |
+| `code-review.md` | Review checklist and process |
+| `add-entity.md` | How to add a new entity with migrations |
+| `add-endpoint.md` | How to add a REST endpoint (if API selected) |
+| `add-job.md` | How to add a background job (if Worker selected) |
+| `add-event.md` | How to add an event type (if EventConsumer selected) |
+
+The `checkpoint.json` file tracks session state (current work, completed steps, test status) so AI assistants can resume context across sessions.
+
+### Code Review Workflow
+
+When the MCP module is selected, the generated project includes structured code review tools. Claude Code gets a `/review` skill that uses MCP tools to review code against the project's quality specification.
+
+**How it works:**
+1. The AI reads `.ai/prompts/JAVA_CODE_QUALITY.md` for the project's quality rules
+2. `get-review-context` filters rules by file type (controller, service, model, etc.)
+3. The AI reviews code against relevant rules
+4. `record-review-finding` logs findings to `.ai/review-log.jsonl` (append-only)
+5. `get-review-stats` shows aggregate statistics — top violated rules, most affected files, trends over time
+
+**Review findings are categorized by:**
+- **Category:** code-quality, modern-java, architecture, security, testing
+- **Severity:** critical, warning, suggestion
+
+## CI/CD
+
+### GitHub Actions
+
+Trabuco can generate a GitHub Actions CI workflow that matches your project's module configuration. The workflow is opt-in — pass `--ci github` during `init` or answer the CI prompt in interactive mode.
+
+```bash
+# Generate project with CI
+trabuco init --name=myapp --group-id=com.company.myapp \
+  --modules=Model,SQLDatastore,Shared,API --database=postgresql --ci github
+```
+
+The generated `.github/workflows/ci.yml` runs on pushes and pull requests to `main` and includes:
+
+| Step | Description |
+|------|-------------|
+| Java setup | Configures your selected Java version with Maven caching |
+| Compile | `mvn clean compile` |
+| Format check | `mvn spotless:check` — fails if code isn't formatted |
+| Dependency rules | `mvn enforcer:enforce` — fails if dependency boundaries are violated |
+| Tests | `mvn test` — runs all tests including ArchUnit and Testcontainers |
+
+**Conditional services:** The workflow automatically includes Docker services based on your modules:
+
+| Module | Service |
+|--------|---------|
+| SQLDatastore (PostgreSQL) | PostgreSQL container with health check |
+| SQLDatastore (MySQL) | MySQL container with health check |
+| NoSQLDatastore (MongoDB) | MongoDB container |
+| NoSQLDatastore (Redis) | Redis container |
+| EventConsumer (Kafka) | Kafka + Zookeeper containers |
+| EventConsumer (RabbitMQ) | RabbitMQ container |
+| EventConsumer (SQS) | LocalStack with auto-created queue |
+| EventConsumer (Pub/Sub) | Pub/Sub emulator with topic/subscription |
+| Worker (no datastore) | PostgreSQL container for JobRunr storage |
+
+**Regeneration on module addition:** When you add a module with `trabuco add`, the CI workflow is automatically regenerated to include the new services. If CI wasn't configured during `init`, you'll be prompted to add it after a module addition.
 
 ## Observability
 
@@ -914,6 +1058,7 @@ mvn test
 | `--message-broker` | Message broker: `kafka`, `rabbitmq`, `sqs`, `pubsub` | `kafka` |
 | `--java-version` | Java version: `17`, `21`, or `25` | `21` |
 | `--ai-agents` | AI coding agents (comma-separated): `claude`, `cursor`, `copilot`, `windsurf`, `cline` | — |
+| `--ci` | CI/CD provider: `github` | — |
 | `--skip-build` | Skip running `mvn clean install` after generation | `false` |
 | `--strict` | Fail if specified Java version is not detected | `false` |
 
@@ -936,6 +1081,7 @@ mvn test
 - Jobs module is auto-included when Worker is selected (not shown in CLI)
 - Events module is auto-included when EventConsumer is selected (not shown in CLI)
 - MCP generates configuration files for Claude Code, Cursor, VS Code, Windsurf, and Cline
+- MCP includes quality tools (format, check) and review tools (context, findings, stats)
 
 ### Java Version Detection
 
@@ -959,15 +1105,17 @@ trabuco init --name=myapp --group-id=com.example --modules=Model --java-version=
 
 ### AI Coding Agents
 
-Trabuco can generate context files for popular AI coding assistants. These files contain project-specific conventions, commands, and patterns that help AI tools write code that fits naturally into your project.
+Trabuco generates context files, coding rules, and quality hooks for popular AI coding assistants. These aren't generic instructions — they contain your project's actual module structure, dependency boundaries, and quality standards.
 
-| Agent | Context File | Description |
-|-------|--------------|-------------|
-| Claude Code | `CLAUDE.md` | Anthropic's CLI for Claude |
-| Cursor | `.cursorrules` | AI-first code editor |
-| GitHub Copilot | `.github/copilot-instructions.md` | GitHub's AI pair programmer |
-| Windsurf | `.windsurf/rules/project.md` | Codeium's agentic IDE |
-| Cline | `.clinerules/project.md` | VS Code autonomous agent |
+| Agent | Files Generated | Description |
+|-------|----------------|-------------|
+| Claude Code | `CLAUDE.md`, `.claude/settings.json`, `.claude/skills/review.md` | Project context, permissions, auto-formatting hooks, code review skill |
+| Cursor | `.cursor/rules/java.mdc`, `.cursor/hooks.json` | Java coding rules with auto-formatting hooks |
+| GitHub Copilot | `.github/instructions/java.instructions.md`, `.github/copilot-setup-steps.yml` | Java coding instructions and cloud agent setup |
+| Windsurf | `.windsurf/rules/java.md` | Java coding rules with glob-scoped triggers |
+| Cline | `.clinerules/java.md` | Java coding rules and conventions |
+
+Every agent also gets `AGENTS.md` — a cross-tool baseline with the project's structure, build commands, module dependencies, and coding patterns.
 
 In interactive mode, you'll be prompted to select which agents you want context files for. In non-interactive mode:
 
@@ -978,6 +1126,26 @@ trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents
 # Generate for all agents
 trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents=claude,cursor,copilot,windsurf,cline
 ```
+
+All agents also get the `.ai/` directory with task prompts, quality specifications, and a review log. See [Code Quality & Architecture](#code-quality--architecture) for details.
+
+### CI/CD Provider
+
+Trabuco can generate a CI/CD workflow during project creation. In interactive mode, you'll be prompted to choose a CI provider. In non-interactive mode, use the `--ci` flag:
+
+```bash
+# Generate with GitHub Actions CI
+trabuco init --name=myapp --group-id=com.example --modules=Model,SQLDatastore,Shared,API \
+  --database=postgresql --ci github
+```
+
+Currently supported providers:
+
+| Provider | Flag Value | What's Generated |
+|----------|-----------|-----------------|
+| GitHub Actions | `github` | `.github/workflows/ci.yml` |
+
+See [CI/CD](#cicd) for details on what the workflow includes.
 
 ## Tech Stack
 
@@ -996,6 +1164,8 @@ trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents
 | Flyway | — | SQL database migrations |
 | JobRunr | 7.3.2 | Background job processing |
 | Testcontainers | 2.0.3 | Integration testing |
+| ArchUnit | — | Architecture enforcement tests |
+| Spotless | — | Code formatting (Google Java Format) |
 | Resilience4j | — | Circuit breakers |
 | PostgreSQL / MySQL | — | SQL databases |
 | MongoDB / Redis | — | NoSQL databases |

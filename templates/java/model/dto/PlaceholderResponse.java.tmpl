@@ -4,17 +4,16 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import {{.GroupID}}.model.ImmutableStyle;
 import jakarta.annotation.Nullable;
-import org.immutables.value.Value;
-
 import java.time.Instant;
+import org.immutables.value.Value;
 
 /**
  * Response DTO for Placeholder data.
  *
- * Uses Immutables for immutable value objects with builder pattern.
+ * <p>Uses Immutables for immutable value objects with builder pattern.
  * Always use ImmutablePlaceholderResponse.builder() to create instances.
  *
- * Replace this with your actual response DTOs.
+ * <p>Replace this with your actual response DTOs.
  */
 @Value.Immutable
 @ImmutableStyle
@@ -23,37 +22,31 @@ import java.time.Instant;
 public interface PlaceholderResponse {
 
 {{- if .HasModule "SQLDatastore"}}
-    /**
-     * SQL database ID (Long).
-     */
-    @Nullable
-    Long id();
+  /** SQL database ID (Long). */
+  @Nullable
+  Long id();
 {{- end}}
 
 {{- if .HasModule "NoSQLDatastore"}}
-    /**
-     * NoSQL document ID (String).
-     */
-    @Nullable
-    String documentId();
+  /** NoSQL document ID (String). */
+  @Nullable
+  String documentId();
 {{- end}}
 
 {{- if not .HasAnyDatastore}}
-    /**
-     * Placeholder ID (add a datastore module).
-     */
-    @Nullable
-    Long id();
+  /** Placeholder ID (add a datastore module). */
+  @Nullable
+  Long id();
 {{- end}}
 
-    String name();
+  String name();
 
-    @Nullable
-    String description();
+  @Nullable
+  String description();
 
-    @Nullable
-    Instant createdAt();
+  @Nullable
+  Instant createdAt();
 
-    @Nullable
-    Instant updatedAt();
+  @Nullable
+  Instant updatedAt();
 }

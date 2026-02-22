@@ -25,6 +25,13 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
+	// Generate AGENTS.md cross-tool baseline (when any AI agent is selected)
+	if g.config.HasAnyAIAgent() {
+		if err := g.writeTemplate("docs/AGENTS.md.tmpl", "AGENTS.md"); err != nil {
+			return err
+		}
+	}
+
 	// Generate .ai directory with prompts and checkpoint (only if any AI agent is selected)
 	if g.config.HasAnyAIAgent() {
 		if err := g.generateAIDirectory(); err != nil {
@@ -79,6 +86,13 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
+	// Generate CI workflow when a CI provider is configured
+	if g.config.HasCIProvider("github") {
+		if err := g.writeTemplate("github/workflows/ci.yml.tmpl", ".github/workflows/ci.yml"); err != nil {
+			return err
+		}
+	}
+
 	// Generate Claude Code specific files when Claude is selected
 	if g.config.HasAIAgent("claude") {
 		if err := g.generateClaudeCodeFiles(); err != nil {
@@ -89,6 +103,27 @@ func (g *Generator) generateDocs() error {
 	// Generate Cursor specific files when Cursor is selected
 	if g.config.HasAIAgent("cursor") {
 		if err := g.generateCursorFiles(); err != nil {
+			return err
+		}
+	}
+
+	// Generate Copilot specific files when Copilot is selected
+	if g.config.HasAIAgent("copilot") {
+		if err := g.generateCopilotFiles(); err != nil {
+			return err
+		}
+	}
+
+	// Generate Windsurf specific files when Windsurf is selected
+	if g.config.HasAIAgent("windsurf") {
+		if err := g.generateWindsurfFiles(); err != nil {
+			return err
+		}
+	}
+
+	// Generate Cline specific files when Cline is selected
+	if g.config.HasAIAgent("cline") {
+		if err := g.generateClineFiles(); err != nil {
 			return err
 		}
 	}
@@ -115,6 +150,11 @@ func (g *Generator) generateAIDirectory() error {
 
 	// Generate code review guide (always - for proactive self-review)
 	if err := g.writeTemplate("ai/prompts/code-review.md.tmpl", ".ai/prompts/code-review.md"); err != nil {
+		return err
+	}
+
+	// Generate .ai/review-log.jsonl (append-only review findings log)
+	if err := g.writeTemplate("ai/review-log.jsonl.tmpl", ".ai/review-log.jsonl"); err != nil {
 		return err
 	}
 
@@ -177,6 +217,46 @@ func (g *Generator) generateClaudeCodeFiles() error {
 func (g *Generator) generateCursorFiles() error {
 	// Generate .cursor/rules/java.mdc with Java coding rules
 	if err := g.writeTemplate("cursor/rules/java.mdc.tmpl", ".cursor/rules/java.mdc"); err != nil {
+		return err
+	}
+
+	// Generate .cursor/hooks.json for auto-formatting
+	if err := g.writeTemplate("cursor/hooks.json.tmpl", ".cursor/hooks.json"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// generateCopilotFiles generates GitHub Copilot specific configuration files
+func (g *Generator) generateCopilotFiles() error {
+	// Generate .github/copilot-setup-steps.yml for cloud coding agent
+	if err := g.writeTemplate("copilot/copilot-setup-steps.yml.tmpl", ".github/copilot-setup-steps.yml"); err != nil {
+		return err
+	}
+
+	// Generate .github/instructions/java.instructions.md with scoped Java rules
+	if err := g.writeTemplate("copilot/instructions/java.instructions.md.tmpl", ".github/instructions/java.instructions.md"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// generateWindsurfFiles generates Windsurf specific configuration files
+func (g *Generator) generateWindsurfFiles() error {
+	// Generate .windsurf/rules/java.md with glob-scoped Java rules
+	if err := g.writeTemplate("windsurf/rules/java.md.tmpl", ".windsurf/rules/java.md"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// generateClineFiles generates Cline specific configuration files
+func (g *Generator) generateClineFiles() error {
+	// Generate .clinerules/java.md with Java coding rules
+	if err := g.writeTemplate("cline/rules/java.md.tmpl", ".clinerules/java.md"); err != nil {
 		return err
 	}
 

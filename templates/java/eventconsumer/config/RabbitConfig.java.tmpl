@@ -30,69 +30,69 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitConfig {
 
-    @Value("${app.rabbitmq.queues.placeholder-events}")
-    private String placeholderQueueName;
+  @Value("${app.rabbitmq.queues.placeholder-events}")
+  private String placeholderQueueName;
 
-    @Value("${app.rabbitmq.exchanges.placeholder}")
-    private String placeholderExchangeName;
+  @Value("${app.rabbitmq.exchanges.placeholder}")
+  private String placeholderExchangeName;
 
-    // ==================== Message Converter ====================
+  // ==================== Message Converter ====================
 
-    @Bean
-    public Jackson2JsonMessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
-        return new Jackson2JsonMessageConverter(objectMapper);
-    }
+  @Bean
+  public Jackson2JsonMessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
+    return new Jackson2JsonMessageConverter(objectMapper);
+  }
 
-    // ==================== Listener Factory ====================
+  // ==================== Listener Factory ====================
 
-    @Bean
-    public RabbitListenerContainerFactory<SimpleMessageListenerContainer> rabbitListenerContainerFactory(
-            ConnectionFactory connectionFactory,
-            Jackson2JsonMessageConverter converter) {
-        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
-        factory.setConnectionFactory(connectionFactory);
-        factory.setMessageConverter(converter);
-        factory.setConcurrentConsumers(3);
-        factory.setMaxConcurrentConsumers(10);
-        factory.setDefaultRequeueRejected(false);
-        return factory;
-    }
+  @Bean
+  public RabbitListenerContainerFactory<SimpleMessageListenerContainer> rabbitListenerContainerFactory(
+      ConnectionFactory connectionFactory,
+      Jackson2JsonMessageConverter converter) {
+    SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+    factory.setConnectionFactory(connectionFactory);
+    factory.setMessageConverter(converter);
+    factory.setConcurrentConsumers(3);
+    factory.setMaxConcurrentConsumers(10);
+    factory.setDefaultRequeueRejected(false);
+    return factory;
+  }
 
-    // ==================== Queue & Exchange Declarations ====================
+  // ==================== Queue & Exchange Declarations ====================
 
-    /**
-     * Declares all RabbitMQ infrastructure: queues, exchanges, and bindings.
-     *
-     * <p>Using Declarables avoids bean injection ambiguity issues with multiple
-     * Queue/Exchange beans.</p>
-     */
-    @Bean
-    public Declarables rabbitDeclarables() {
-        // Main queue with DLX routing
-        Queue mainQueue = QueueBuilder.durable(placeholderQueueName)
-            .withArgument("x-dead-letter-exchange", placeholderExchangeName + ".dlx")
-            .build();
+  /**
+   * Declares all RabbitMQ infrastructure: queues, exchanges, and bindings.
+   *
+   * <p>Using Declarables avoids bean injection ambiguity issues with multiple
+   * Queue/Exchange beans.</p>
+   */
+  @Bean
+  public Declarables rabbitDeclarables() {
+    // Main queue with DLX routing
+    Queue mainQueue = QueueBuilder.durable(placeholderQueueName)
+      .withArgument("x-dead-letter-exchange", placeholderExchangeName + ".dlx")
+      .build();
 
-        // Main exchange
-        FanoutExchange mainExchange = new FanoutExchange(placeholderExchangeName, true, false);
+    // Main exchange
+    FanoutExchange mainExchange = new FanoutExchange(placeholderExchangeName, true, false);
 
-        // Dead letter queue
-        Queue dlq = QueueBuilder.durable(placeholderQueueName + ".dlq").build();
+    // Dead letter queue
+    Queue dlq = QueueBuilder.durable(placeholderQueueName + ".dlq").build();
 
-        // Dead letter exchange
-        FanoutExchange dlx = new FanoutExchange(placeholderExchangeName + ".dlx", true, false);
+    // Dead letter exchange
+    FanoutExchange dlx = new FanoutExchange(placeholderExchangeName + ".dlx", true, false);
 
-        // Bindings
-        Binding mainBinding = BindingBuilder.bind(mainQueue).to(mainExchange);
-        Binding dlqBinding = BindingBuilder.bind(dlq).to(dlx);
+    // Bindings
+    Binding mainBinding = BindingBuilder.bind(mainQueue).to(mainExchange);
+    Binding dlqBinding = BindingBuilder.bind(dlq).to(dlx);
 
-        return new Declarables(
-            mainQueue,
-            mainExchange,
-            dlq,
-            dlx,
-            mainBinding,
-            dlqBinding
-        );
-    }
+    return new Declarables(
+      mainQueue,
+      mainExchange,
+      dlq,
+      dlx,
+      mainBinding,
+      dlqBinding
+    );
+  }
 }

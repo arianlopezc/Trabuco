@@ -5,15 +5,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 {{- if .UsesSQS}}
-import org.mockito.Mock;
 import io.awspring.cloud.sqs.listener.acknowledgement.Acknowledgement;
-{{- else if .UsesPubSub}}
 import org.mockito.Mock;
+{{- else if .UsesPubSub}}
 import com.google.cloud.spring.pubsub.support.BasicAcknowledgeablePubsubMessage;
+import org.mockito.Mock;
 {{- end}}
-import org.mockito.junit.jupiter.MockitoExtension;
-
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit tests for PlaceholderEventListener.
@@ -33,48 +32,48 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 @ExtendWith(MockitoExtension.class)
 class PlaceholderEventListenerTest {
 
-    @InjectMocks
-    private PlaceholderEventListener listener;
+  @InjectMocks
+  private PlaceholderEventListener listener;
 {{if .UsesSQS}}
-    @Mock
-    private Acknowledgement acknowledgement;
+  @Mock
+  private Acknowledgement acknowledgement;
 {{else if .UsesPubSub}}
-    @Mock
-    private BasicAcknowledgeablePubsubMessage message;
+  @Mock
+  private BasicAcknowledgeablePubsubMessage message;
 {{end}}
-    @Test
-    void handlePlaceholderEvent_withCreatedEvent_processesSuccessfully() {
-        // Arrange
-        PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("123", "Test Placeholder");
+  @Test
+  void handlePlaceholderEvent_withCreatedEvent_processesSuccessfully() {
+    // Arrange
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("123", "Test Placeholder");
 
-        // Act & Assert
+    // Act & Assert
 {{- if .UsesSQS}}
-        assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, acknowledgement));
+    assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, acknowledgement));
 {{- else if .UsesPubSub}}
-        assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, message));
+    assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, message));
 {{- else}}
-        assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event));
+    assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event));
 {{- end}}
-    }
+  }
 
-    @Test
-    void handlePlaceholderEvent_withMultipleEvents_processesAll() {
-        // Arrange
-        PlaceholderCreatedEvent event1 = PlaceholderCreatedEvent.create("1", "First");
-        PlaceholderCreatedEvent event2 = PlaceholderCreatedEvent.create("2", "Second");
+  @Test
+  void handlePlaceholderEvent_withMultipleEvents_processesAll() {
+    // Arrange
+    PlaceholderCreatedEvent event1 = PlaceholderCreatedEvent.create("1", "First");
+    PlaceholderCreatedEvent event2 = PlaceholderCreatedEvent.create("2", "Second");
 
-        // Act & Assert
-        assertDoesNotThrow(() -> {
+    // Act & Assert
+    assertDoesNotThrow(() -> {
 {{- if .UsesSQS}}
-            listener.handlePlaceholderEvent(event1, acknowledgement);
-            listener.handlePlaceholderEvent(event2, acknowledgement);
+      listener.handlePlaceholderEvent(event1, acknowledgement);
+      listener.handlePlaceholderEvent(event2, acknowledgement);
 {{- else if .UsesPubSub}}
-            listener.handlePlaceholderEvent(event1, message);
-            listener.handlePlaceholderEvent(event2, message);
+      listener.handlePlaceholderEvent(event1, message);
+      listener.handlePlaceholderEvent(event2, message);
 {{- else}}
-            listener.handlePlaceholderEvent(event1);
-            listener.handlePlaceholderEvent(event2);
+      listener.handlePlaceholderEvent(event1);
+      listener.handlePlaceholderEvent(event2);
 {{- end}}
-        });
-    }
+    });
+  }
 }

@@ -1,0 +1,7 @@
+setup:
+  steps:
+    - uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '{{.JavaVersion}}'
+    - run: mvn dependency:go-offline -q

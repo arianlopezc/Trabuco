@@ -1,44 +1,37 @@
 package {{.GroupID}}.sqldatastore.repository;
 
 import {{.GroupID}}.model.entities.PlaceholderRecord;
+import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
-
 /**
  * Repository for PlaceholderRecord using Spring Data JDBC.
  *
- * Spring Data JDBC provides a simpler alternative to JPA:
+ * <p>Spring Data JDBC provides a simpler alternative to JPA:
  * - No lazy loading or session management
  * - Aggregate-focused design
  * - Direct SQL mapping
  *
- * Note: This repository works with PlaceholderRecord (database entity).
+ * <p>Note: This repository works with PlaceholderRecord (database entity).
  * For business logic, convert to/from Placeholder interface using
  * Placeholder.fromRecord() and placeholder.toRecord().
  *
- * Replace this with your actual repositories.
+ * <p>Replace this with your actual repositories.
  */
 @Repository
 public interface PlaceholderRepository extends CrudRepository<PlaceholderRecord, Long> {
 
-    /**
-     * Find a placeholder by name.
-     */
-    Optional<PlaceholderRecord> findByName(String name);
+  /** Find a placeholder by name. */
+  Optional<PlaceholderRecord> findByName(String name);
 
-    /**
-     * Find all placeholders with name containing the search term.
-     */
-    @Query("SELECT * FROM placeholders WHERE name ILIKE '%' || :search || '%'")
-    List<PlaceholderRecord> searchByName(@Param("search") String search);
+  /** Find all placeholders with name containing the search term. */
+  @Query("SELECT * FROM placeholders WHERE name ILIKE '%' || :search || '%'")
+  List<PlaceholderRecord> searchByName(@Param("search") String search);
 
-    /**
-     * Check if a placeholder with the given name exists.
-     */
-    boolean existsByName(String name);
+  /** Check if a placeholder with the given name exists. */
+  boolean existsByName(String name);
 }

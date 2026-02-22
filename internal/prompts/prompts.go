@@ -159,6 +159,28 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		cfg.AIAgents[i] = allAgents[idx].ID
 	}
 
+	// 9. CI/CD provider
+	ciOptions := append(config.GetCIProviderDisplayOptions(), "None - Skip CI configuration")
+	var ciChoice string
+	if err := survey.AskOne(&survey.Select{
+		Message: "CI/CD provider:",
+		Options: ciOptions,
+		Default: "None - Skip CI configuration",
+		Help:    "Generate a CI workflow for your repository.",
+	}, &ciChoice); err != nil {
+		return nil, err
+	}
+	// Extract provider ID if not "None"
+	if !strings.HasPrefix(ciChoice, "None") {
+		providers := config.GetAvailableCIProviders()
+		for _, p := range providers {
+			if strings.HasPrefix(ciChoice, p.Name) {
+				cfg.CIProvider = p.ID
+				break
+			}
+		}
+	}
+
 	return cfg, nil
 }
 

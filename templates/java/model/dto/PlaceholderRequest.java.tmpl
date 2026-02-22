@@ -11,7 +11,7 @@ import org.immutables.value.Value;
 /**
  * Request DTO for creating or updating a Placeholder.
  *
- * Uses Immutables for immutable value objects with builder pattern.
+ * <p>Uses Immutables for immutable value objects with builder pattern.
  * Replace this with your actual request DTOs.
  */
 @Value.Immutable
@@ -20,11 +20,11 @@ import org.immutables.value.Value;
 @JsonDeserialize(as = ImmutablePlaceholderRequest.class)
 public interface PlaceholderRequest {
 
-    @NotBlank(message = "Name is required")
-    @Size(min = 1, max = 255, message = "Name must be between 1 and 255 characters")
-    String name();
+  @NotBlank(message = "Name is required")
+  @Size(min = 1, max = 255, message = "Name must be between 1 and 255 characters")
+  String name();
 
-    @Nullable
-    @Size(max = 1000, message = "Description must not exceed 1000 characters")
-    String description();
+  @Nullable
+  @Size(max = 1000, message = "Description must not exceed 1000 characters")
+  String description();
 }

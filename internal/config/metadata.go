@@ -24,6 +24,7 @@ type ProjectMetadata struct {
 	NoSQLDatabase string   `json:"noSqlDatabase,omitempty"`
 	MessageBroker string   `json:"messageBroker,omitempty"`
 	AIAgents      []string `json:"aiAgents,omitempty"`
+	CIProvider    string   `json:"ciProvider,omitempty"`
 }
 
 // LoadMetadata loads project metadata from .trabuco.json in the specified directory
@@ -83,6 +84,7 @@ func NewMetadataFromConfig(cfg *ProjectConfig, version string) *ProjectMetadata 
 		NoSQLDatabase: cfg.NoSQLDatabase,
 		MessageBroker: cfg.MessageBroker,
 		AIAgents:      cfg.AIAgents,
+		CIProvider:    cfg.CIProvider,
 	}
 }
 
@@ -99,6 +101,7 @@ func (m *ProjectMetadata) ToProjectConfig() *ProjectConfig {
 		NoSQLDatabase: m.NoSQLDatabase,
 		MessageBroker: m.MessageBroker,
 		AIAgents:      m.AIAgents,
+		CIProvider:    m.CIProvider,
 	}
 }
 

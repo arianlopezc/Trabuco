@@ -47,6 +47,9 @@ This project enforces strict code quality standards. You MUST:
 {{- if .HasModule "EventConsumer"}}
 | `cd EventConsumer && mvn spring-boot:run` | Start EventConsumer (port 8083) |
 {{- end}}
+| `mvn spotless:apply` | Auto-format all Java files |
+| `mvn spotless:check` | Check formatting (CI) |
+| `mvn enforcer:enforce` | Check dependency and version rules |
 {{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
 | `docker-compose up -d` | Start infrastructure services |
 {{- end}}

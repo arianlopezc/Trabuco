@@ -1,0 +1,132 @@
+package {{.GroupID}}.mcp.tools;
+
+import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
+import io.modelcontextprotocol.spec.McpSchema.Tool;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** MCP tools for code quality checks (formatting and dependency enforcement). */
+public class QualityTools {
+
+  private static final Logger log = LoggerFactory.getLogger(QualityTools.class);
+  private static final String PROJECT_DIR = System.getProperty("user.dir");
+  private static final int TIMEOUT_MINUTES = 5;
+
+  private QualityTools() {
+  }
+
+  /** Register all quality tools with the MCP server. */
+  public static void register(McpSyncServer server) {
+    server.addTool(formatTool());
+    server.addTool(checkQualityTool());
+    log.info("Registered quality tools: format, check-quality");
+  }
+
+  private static McpServerFeatures.SyncToolSpecification formatTool() {
+    JsonSchema inputSchema = new JsonSchema(
+      "object",
+      Map.of(),
+      List.of(),
+      null, null, null
+    );
+
+    return new McpServerFeatures.SyncToolSpecification(
+      new Tool("format", "Format", "Auto-format all Java files using Google Java Format (Spotless)", inputSchema, null, null, null),
+      (exchange, arguments) -> {
+        log.info("Executing: mvn spotless:apply");
+        return executeCommand("mvn spotless:apply", "Format");
+      }
+    );
+  }
+
+  private static McpServerFeatures.SyncToolSpecification checkQualityTool() {
+    JsonSchema inputSchema = new JsonSchema(
+      "object",
+      Map.of(),
+      List.of(),
+      null, null, null
+    );
+
+    return new McpServerFeatures.SyncToolSpecification(
+      new Tool("check-quality", "Check Quality", "Run formatting check and dependency enforcement rules", inputSchema, null, null, null),
+      (exchange, arguments) -> {
+        log.info("Executing: mvn spotless:check enforcer:enforce");
+        return executeCommand("mvn spotless:check enforcer:enforce", "Quality Check");
+      }
+    );
+  }
+
+  private static CallToolResult executeCommand(String command, String operationName) {
+    try {
+      ProcessBuilder pb = new ProcessBuilder();
+      pb.directory(new File(PROJECT_DIR));
+
+      if (System.getProperty("os.name").toLowerCase().contains("win")) {
+        pb.command("cmd.exe", "/c", command);
+      } else {
+        pb.command("sh", "-c", command);
+      }
+
+      pb.redirectErrorStream(true);
+
+      Process process = pb.start();
+      StringBuilder output = new StringBuilder();
+
+      try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+          output.append(line).append("\n");
+        }
+      }
+
+      boolean completed = process.waitFor(TIMEOUT_MINUTES, TimeUnit.MINUTES);
+      if (!completed) {
+        process.destroyForcibly();
+        return new CallToolResult(
+          List.of(new TextContent(operationName + " timed out after " + TIMEOUT_MINUTES + " minutes")),
+          true
+        );
+      }
+
+      int exitCode = process.exitValue();
+      String result = output.toString();
+
+      if (exitCode == 0) {
+        return new CallToolResult(
+          List.of(new TextContent(operationName + " completed successfully.\n\n" + truncateOutput(result))),
+          false
+        );
+      } else {
+        return new CallToolResult(
+          List.of(new TextContent(operationName + " failed with exit code " + exitCode + ".\n\n" + truncateOutput(result))),
+          true
+        );
+      }
+
+    } catch (Exception e) {
+      log.error("{} failed", operationName, e);
+      return new CallToolResult(
+        List.of(new TextContent(operationName + " failed: " + e.getMessage())),
+        true
+      );
+    }
+  }
+
+  private static String truncateOutput(String output) {
+    int maxLength = 10000;
+    if (output.length() <= maxLength) {
+      return output;
+    }
+    return "... (truncated)\n" + output.substring(output.length() - maxLength);
+  }
+}

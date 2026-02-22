@@ -1,6 +1,9 @@
 package {{.GroupID}}.api.config;
 
 import jakarta.validation.ConstraintViolationException;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -16,10 +19,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 {{- if .HasModule "EventConsumer"}}
 {{- if .UsesKafka}}
 import org.apache.kafka.common.KafkaException;
@@ -31,302 +30,280 @@ import org.springframework.amqp.AmqpException;
 /**
  * Global exception handler for REST API.
  *
- * SECURITY: Prevents stack traces from being leaked to clients.
+ * <p>SECURITY: Prevents stack traces from being leaked to clients.
  * All exceptions are logged server-side and clients receive sanitized error responses.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+  private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /**
-     * Handle validation errors from @Valid annotations.
-     */
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach(error -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
+  /** Handle validation errors from @Valid annotations. */
+  @ExceptionHandler(MethodArgumentNotValidException.class)
+  public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
+    Map<String, String> errors = new HashMap<>();
+    ex.getBindingResult().getAllErrors().forEach(error -> {
+      String fieldName = ((FieldError) error).getField();
+      String errorMessage = error.getDefaultMessage();
+      errors.put(fieldName, errorMessage);
+    });
 
-        logger.warn("Validation failed: {}", errors);
+    logger.warn("Validation failed: {}", errors);
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Validation Failed")
-                .message("One or more fields have invalid values")
-                .details(errors)
-                .build());
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.BAD_REQUEST.value())
+        .error("Validation Failed")
+        .message("One or more fields have invalid values")
+        .details(errors)
+        .build());
+  }
+
+  /** Handle malformed JSON request bodies. */
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
+    logger.warn("Malformed JSON request: {}", ex.getMessage());
+
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.BAD_REQUEST.value())
+        .error("Bad Request")
+        .message("Malformed JSON request body")
+        .build());
+  }
+
+  /** Handle missing required request parameters. */
+  @ExceptionHandler(MissingServletRequestParameterException.class)
+  public ResponseEntity<ErrorResponse> handleMissingServletRequestParameter(MissingServletRequestParameterException ex) {
+    logger.warn("Missing request parameter: {}", ex.getParameterName());
+
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.BAD_REQUEST.value())
+        .error("Bad Request")
+        .message("Required parameter '" + ex.getParameterName() + "' is missing")
+        .build());
+  }
+
+  /** Handle type mismatches in request parameters. */
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException ex) {
+    logger.warn("Type mismatch for parameter '{}': {}", ex.getName(), ex.getMessage());
+
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.BAD_REQUEST.value())
+        .error("Bad Request")
+        .message("Parameter '" + ex.getName() + "' has an invalid type")
+        .build());
+  }
+
+  /** Handle constraint violations from @Validated on path/query params. */
+  @ExceptionHandler(ConstraintViolationException.class)
+  public ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException ex) {
+    Map<String, String> errors = new HashMap<>();
+    ex.getConstraintViolations().forEach(violation -> {
+      String path = violation.getPropertyPath().toString();
+      String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+      errors.put(field, violation.getMessage());
+    });
+
+    logger.warn("Constraint violations: {}", errors);
+
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.BAD_REQUEST.value())
+        .error("Validation Failed")
+        .message("One or more constraints were violated")
+        .details(errors)
+        .build());
+  }
+
+  /** Handle requests for resources that do not exist. */
+  @ExceptionHandler(NoResourceFoundException.class)
+  public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
+    logger.warn("Resource not found: {}", ex.getMessage());
+
+    return ResponseEntity.status(HttpStatus.NOT_FOUND)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.NOT_FOUND.value())
+        .error("Not Found")
+        .message("The requested resource was not found")
+        .build());
+  }
+
+  /** Handle unsupported HTTP methods. */
+  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+  public ResponseEntity<ErrorResponse> handleHttpRequestMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+    logger.warn("Method not supported: {}", ex.getMethod());
+
+    return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.METHOD_NOT_ALLOWED.value())
+        .error("Method Not Allowed")
+        .message("HTTP method '" + ex.getMethod() + "' is not supported for this endpoint")
+        .build());
+  }
+
+  /** Handle unsupported media types. */
+  @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+  public ResponseEntity<ErrorResponse> handleHttpMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex) {
+    logger.warn("Unsupported media type: {}", ex.getContentType());
+
+    return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.UNSUPPORTED_MEDIA_TYPE.value())
+        .error("Unsupported Media Type")
+        .message("Content type '" + ex.getContentType() + "' is not supported")
+        .build());
+  }
+
+  /** Handle ResponseStatusException (dynamic status codes). */
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<ErrorResponse> handleResponseStatusException(ResponseStatusException ex) {
+    HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
+
+    if (status.is5xxServerError()) {
+      logger.error("Response status error: {} {}", status.value(), ex.getReason(), ex);
+    } else {
+      logger.warn("Response status error: {} {}", status.value(), ex.getReason());
     }
 
-    /**
-     * Handle malformed JSON request bodies.
-     */
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
-        logger.warn("Malformed JSON request: {}", ex.getMessage());
+    return ResponseEntity.status(status)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(status.value())
+        .error(status.getReasonPhrase())
+        .message(ex.getReason() != null ? ex.getReason() : status.getReasonPhrase())
+        .build());
+  }
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
-                .message("Malformed JSON request body")
-                .build());
-    }
+  /** Handle illegal argument exceptions. */
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
+    logger.warn("Invalid argument: {}", ex.getMessage());
 
-    /**
-     * Handle missing required request parameters.
-     */
-    @ExceptionHandler(MissingServletRequestParameterException.class)
-    public ResponseEntity<ErrorResponse> handleMissingServletRequestParameter(MissingServletRequestParameterException ex) {
-        logger.warn("Missing request parameter: {}", ex.getParameterName());
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
-                .message("Required parameter '" + ex.getParameterName() + "' is missing")
-                .build());
-    }
-
-    /**
-     * Handle type mismatches in request parameters.
-     */
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException ex) {
-        logger.warn("Type mismatch for parameter '{}': {}", ex.getName(), ex.getMessage());
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
-                .message("Parameter '" + ex.getName() + "' has an invalid type")
-                .build());
-    }
-
-    /**
-     * Handle constraint violations from @Validated on path/query params.
-     */
-    @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException ex) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getConstraintViolations().forEach(violation -> {
-            String path = violation.getPropertyPath().toString();
-            String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
-            errors.put(field, violation.getMessage());
-        });
-
-        logger.warn("Constraint violations: {}", errors);
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Validation Failed")
-                .message("One or more constraints were violated")
-                .details(errors)
-                .build());
-    }
-
-    /**
-     * Handle requests for resources that do not exist.
-     */
-    @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
-        logger.warn("Resource not found: {}", ex.getMessage());
-
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.NOT_FOUND.value())
-                .error("Not Found")
-                .message("The requested resource was not found")
-                .build());
-    }
-
-    /**
-     * Handle unsupported HTTP methods.
-     */
-    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ErrorResponse> handleHttpRequestMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
-        logger.warn("Method not supported: {}", ex.getMethod());
-
-        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.METHOD_NOT_ALLOWED.value())
-                .error("Method Not Allowed")
-                .message("HTTP method '" + ex.getMethod() + "' is not supported for this endpoint")
-                .build());
-    }
-
-    /**
-     * Handle unsupported media types.
-     */
-    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
-    public ResponseEntity<ErrorResponse> handleHttpMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex) {
-        logger.warn("Unsupported media type: {}", ex.getContentType());
-
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.UNSUPPORTED_MEDIA_TYPE.value())
-                .error("Unsupported Media Type")
-                .message("Content type '" + ex.getContentType() + "' is not supported")
-                .build());
-    }
-
-    /**
-     * Handle ResponseStatusException (dynamic status codes).
-     */
-    @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<ErrorResponse> handleResponseStatusException(ResponseStatusException ex) {
-        HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
-
-        if (status.is5xxServerError()) {
-            logger.error("Response status error: {} {}", status.value(), ex.getReason(), ex);
-        } else {
-            logger.warn("Response status error: {} {}", status.value(), ex.getReason());
-        }
-
-        return ResponseEntity.status(status)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(status.value())
-                .error(status.getReasonPhrase())
-                .message(ex.getReason() != null ? ex.getReason() : status.getReasonPhrase())
-                .build());
-    }
-
-    /**
-     * Handle illegal argument exceptions.
-     */
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
-        logger.warn("Invalid argument: {}", ex.getMessage());
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
-                .message(ex.getMessage())
-                .build());
-    }
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.BAD_REQUEST.value())
+        .error("Bad Request")
+        .message(ex.getMessage())
+        .build());
+  }
 
 {{- if .HasModule "EventConsumer"}}
 {{- if .UsesKafka}}
-    /**
-     * Handle Kafka messaging exceptions.
-     * Returns 503 Service Unavailable when the message broker is unreachable or misconfigured.
-     */
-    @ExceptionHandler(KafkaException.class)
-    public ResponseEntity<ErrorResponse> handleKafkaException(KafkaException ex) {
-        logger.error("Kafka messaging error: {}", ex.getMessage(), ex);
+  /**
+   * Handle Kafka messaging exceptions.
+   * Returns 503 Service Unavailable when the message broker is unreachable or misconfigured.
+   */
+  @ExceptionHandler(KafkaException.class)
+  public ResponseEntity<ErrorResponse> handleKafkaException(KafkaException ex) {
+    logger.error("Kafka messaging error: {}", ex.getMessage(), ex);
 
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
-                .error("Service Unavailable")
-                .message("Unable to publish event. The messaging service is temporarily unavailable.")
-                .build());
-    }
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.SERVICE_UNAVAILABLE.value())
+        .error("Service Unavailable")
+        .message("Unable to publish event. The messaging service is temporarily unavailable.")
+        .build());
+  }
 {{- else if .UsesRabbitMQ}}
-    /**
-     * Handle RabbitMQ messaging exceptions.
-     * Returns 503 Service Unavailable when the message broker is unreachable or misconfigured.
-     */
-    @ExceptionHandler(AmqpException.class)
-    public ResponseEntity<ErrorResponse> handleAmqpException(AmqpException ex) {
-        logger.error("RabbitMQ messaging error: {}", ex.getMessage(), ex);
+  /**
+   * Handle RabbitMQ messaging exceptions.
+   * Returns 503 Service Unavailable when the message broker is unreachable or misconfigured.
+   */
+  @ExceptionHandler(AmqpException.class)
+  public ResponseEntity<ErrorResponse> handleAmqpException(AmqpException ex) {
+    logger.error("RabbitMQ messaging error: {}", ex.getMessage(), ex);
 
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
-                .error("Service Unavailable")
-                .message("Unable to publish event. The messaging service is temporarily unavailable.")
-                .build());
-    }
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.SERVICE_UNAVAILABLE.value())
+        .error("Service Unavailable")
+        .message("Unable to publish event. The messaging service is temporarily unavailable.")
+        .build());
+  }
 {{- end}}
 {{- end}}
 
-    /**
-     * Handle all other unexpected exceptions.
-     * SECURITY: Do not expose internal error details to clients.
-     */
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleAllExceptions(Exception ex) {
-        // Log the full stack trace server-side for debugging
-        logger.error("Unexpected error occurred", ex);
+  /**
+   * Handle all other unexpected exceptions.
+   * SECURITY: Do not expose internal error details to clients.
+   */
+  @ExceptionHandler(Exception.class)
+  public ResponseEntity<ErrorResponse> handleAllExceptions(Exception ex) {
+    // Log the full stack trace server-side for debugging
+    logger.error("Unexpected error occurred", ex);
 
-        // Return sanitized error response to client
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(ErrorResponse.builder()
-                .timestamp(Instant.now())
-                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                .error("Internal Server Error")
-                .message("An unexpected error occurred. Please try again later.")
-                .build());
+    // Return sanitized error response to client
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+        .error("Internal Server Error")
+        .message("An unexpected error occurred. Please try again later.")
+        .build());
+  }
+
+  /** Error response DTO. */
+  public record ErrorResponse(
+    Instant timestamp,
+    int status,
+    String error,
+    String message,
+    Map<String, String> details
+  ) {
+    public static Builder builder() {
+      return new Builder();
     }
 
-    /**
-     * Error response DTO.
-     */
-    public record ErrorResponse(
-        Instant timestamp,
-        int status,
-        String error,
-        String message,
-        Map<String, String> details
-    ) {
-        public static Builder builder() {
-            return new Builder();
-        }
+    public static class Builder {
+      private Instant timestamp;
+      private int status;
+      private String error;
+      private String message;
+      private Map<String, String> details;
 
-        public static class Builder {
-            private Instant timestamp;
-            private int status;
-            private String error;
-            private String message;
-            private Map<String, String> details;
+      public Builder timestamp(Instant timestamp) {
+        this.timestamp = timestamp;
+        return this;
+      }
 
-            public Builder timestamp(Instant timestamp) {
-                this.timestamp = timestamp;
-                return this;
-            }
+      public Builder status(int status) {
+        this.status = status;
+        return this;
+      }
 
-            public Builder status(int status) {
-                this.status = status;
-                return this;
-            }
+      public Builder error(String error) {
+        this.error = error;
+        return this;
+      }
 
-            public Builder error(String error) {
-                this.error = error;
-                return this;
-            }
+      public Builder message(String message) {
+        this.message = message;
+        return this;
+      }
 
-            public Builder message(String message) {
-                this.message = message;
-                return this;
-            }
+      public Builder details(Map<String, String> details) {
+        this.details = details;
+        return this;
+      }
 
-            public Builder details(Map<String, String> details) {
-                this.details = details;
-                return this;
-            }
-
-            public ErrorResponse build() {
-                return new ErrorResponse(timestamp, status, error, message, details);
-            }
-        }
+      public ErrorResponse build() {
+        return new ErrorResponse(timestamp, status, error, message, details);
+      }
     }
+  }
 }

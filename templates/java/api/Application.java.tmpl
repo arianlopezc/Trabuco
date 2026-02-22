@@ -6,16 +6,16 @@ import org.springframework.context.annotation.ComponentScan;
 
 @SpringBootApplication
 @ComponentScan(basePackages = {
-    "{{.GroupID}}.api"{{if .HasModule "Shared"}},
-    "{{.GroupID}}.shared"{{end}}{{if .HasModule "SQLDatastore"}},
-    "{{.GroupID}}.sqldatastore"{{end}}{{if .HasModule "NoSQLDatastore"}},
-    "{{.GroupID}}.nosqldatastore"{{end}}{{if .HasModule "Events"}},
-    "{{.GroupID}}.events"{{end}}{{if .HasModule "Jobs"}},
-    "{{.GroupID}}.jobs"{{end}}
+  "{{.GroupID}}.api"{{if .HasModule "Shared"}},
+  "{{.GroupID}}.shared"{{end}}{{if .HasModule "SQLDatastore"}},
+  "{{.GroupID}}.sqldatastore"{{end}}{{if .HasModule "NoSQLDatastore"}},
+  "{{.GroupID}}.nosqldatastore"{{end}}{{if .HasModule "Events"}},
+  "{{.GroupID}}.events"{{end}}{{if .HasModule "Jobs"}},
+  "{{.GroupID}}.jobs"{{end}}
 })
 public class {{.ProjectNamePascal}}ApiApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run({{.ProjectNamePascal}}ApiApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run({{.ProjectNamePascal}}ApiApplication.class, args);
+  }
 }

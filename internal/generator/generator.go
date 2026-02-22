@@ -38,6 +38,26 @@ func NewWithVersion(cfg *config.ProjectConfig, version string) (*Generator, erro
 	}, nil
 }
 
+// NewWithVersionAt creates a new Generator with a specified version and output directory
+func NewWithVersionAt(cfg *config.ProjectConfig, version string, outDir string) (*Generator, error) {
+	engine := templates.NewEngine()
+
+	return &Generator{
+		config:  cfg,
+		engine:  engine,
+		outDir:  outDir,
+		version: version,
+	}, nil
+}
+
+// GenerateCIWorkflow generates only the CI workflow file
+func (g *Generator) GenerateCIWorkflow() error {
+	if g.config.HasCIProvider("github") {
+		return g.writeTemplate("github/workflows/ci.yml.tmpl", ".github/workflows/ci.yml")
+	}
+	return nil
+}
+
 // Generate creates the complete project structure
 func (g *Generator) Generate() error {
 	green := color.New(color.FgGreen)

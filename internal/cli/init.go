@@ -35,6 +35,7 @@ var (
 	flagMessageBroker string
 	flagJavaVersion   string
 	flagAIAgents      string
+	flagCI            string
 	flagIncludeClaude bool // Deprecated: use flagAIAgents instead
 	flagStrict        bool
 	flagSkipBuild     bool
@@ -67,6 +68,7 @@ func init() {
 	initCmd.Flags().StringVar(&flagMessageBroker, "message-broker", "kafka", "Message broker type: kafka, rabbitmq, sqs, pubsub (non-interactive, only used when EventConsumer is selected)")
 	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 17, 21, or 25 (non-interactive)")
 	initCmd.Flags().StringVar(&flagAIAgents, "ai-agents", "", "Comma-separated AI agents: claude,cursor,copilot,windsurf,cline (non-interactive)")
+	initCmd.Flags().StringVar(&flagCI, "ci", "", "CI provider to generate (github)")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", false, "Deprecated: use --ai-agents=claude instead")
 	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
 	initCmd.Flags().BoolVar(&flagSkipBuild, "skip-build", false, "Skip running 'mvn clean install' after generation")
@@ -189,6 +191,12 @@ func runInit(cmd *cobra.Command, args []string) {
 			}
 		}
 
+		// Validate CI provider
+		if flagCI != "" && flagCI != "github" {
+			color.Red("\nError: Invalid CI provider '%s'. Valid options: github\n", flagCI)
+			return
+		}
+
 		// Handle deprecated --include-claude flag
 		if flagIncludeClaude {
 			hasClaudeInList := false
@@ -229,6 +237,7 @@ func runInit(cmd *cobra.Command, args []string) {
 			NoSQLDatabase:       flagNoSQLDatabase,
 			MessageBroker:       flagMessageBroker,
 			AIAgents:            aiAgents,
+			CIProvider:          flagCI,
 		}
 
 		// Warn about Redis + Worker combination
@@ -282,6 +291,13 @@ func runInit(cmd *cobra.Command, args []string) {
 			agentNames[i] = a.Name
 		}
 		fmt.Printf("  AI Agents:  %s\n", strings.Join(agentNames, ", "))
+	}
+	if cfg.HasAnyCIProvider() {
+		for _, p := range config.GetAvailableCIProviders() {
+			if cfg.HasCIProvider(p.ID) {
+				fmt.Printf("  CI:         %s\n", p.Name)
+			}
+		}
 	}
 	yellow.Println("─────────────────────────────────────────")
 	fmt.Println()
@@ -361,12 +377,22 @@ func runInit(cmd *cobra.Command, args []string) {
 	}
 }
 
+// runSpotlessFormat runs 'mvn spotless:apply' to auto-format generated Java code
+func runSpotlessFormat(projectDir string) {
+	cmd := exec.Command("mvn", "spotless:apply", "-q", "-B")
+	cmd.Dir = projectDir
+	_ = cmd.Run() // Best-effort: ignore errors since build will catch issues
+}
+
 // runMavenBuild executes 'mvn clean install -DskipTests' in the given directory
 func runMavenBuild(projectDir string) error {
 	cyan := color.New(color.FgCyan)
 
 	cyan.Println("Building project with Maven...")
 	fmt.Println()
+
+	// Format code before building
+	runSpotlessFormat(projectDir)
 
 	// Create spinner animation
 	done := make(chan bool)

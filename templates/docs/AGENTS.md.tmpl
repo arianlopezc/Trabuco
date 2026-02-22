@@ -1,0 +1,102 @@
+# {{.ProjectName}} — AI Agent Guide
+
+This file provides a cross-tool baseline for any AI coding agent working on this project.
+
+## Project Structure
+
+Java multi-module Maven project (Spring Boot {{.JavaVersion}}+):
+
+| Module | Purpose |
+|--------|---------|
+{{- if .HasModule "Model"}}
+| **Model** | Entities, DTOs, Enums (Immutables) |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| **SQLDatastore** | Spring Data JDBC, Flyway migrations |
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+| **NoSQLDatastore** | {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else}}Redis{{end}} repositories |
+{{- end}}
+{{- if .HasModule "Shared"}}
+| **Shared** | Business services, circuit breaker |
+{{- end}}
+{{- if .HasModule "API"}}
+| **API** | REST controllers, OpenAPI |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| **Worker** | JobRunr background jobs |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| **EventConsumer** | {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}SQS{{else}}Pub/Sub{{end}} listeners |
+{{- end}}
+{{- if .HasModule "MCP"}}
+| **MCP** | AI tool server (Model Context Protocol) |
+{{- end}}
+
+## Build Commands
+
+```bash
+mvn clean compile          # Build all modules
+mvn test                   # Run all tests
+mvn clean package          # Package all modules
+```
+
+## Quality Commands
+
+```bash
+mvn spotless:apply         # Auto-format all Java files (Google Java Format)
+mvn spotless:check         # Check formatting without modifying (CI)
+mvn enforcer:enforce       # Check dependency and version rules
+```
+
+## Module Dependency Rules
+
+```
+Model -> (none)
+{{- if .HasModule "SQLDatastore"}}
+SQLDatastore -> Model
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+NoSQLDatastore -> Model
+{{- end}}
+{{- if .HasModule "Shared"}}
+Shared -> Model{{if .HasModule "SQLDatastore"}}, SQLDatastore{{end}}{{if .HasModule "NoSQLDatastore"}}, NoSQLDatastore{{end}}
+{{- end}}
+{{- if .HasModule "API"}}
+API -> Model, Shared
+{{- end}}
+{{- if .HasModule "Worker"}}
+Worker -> Model, Shared, Jobs
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+EventConsumer -> Model, Shared, Events
+{{- end}}
+```
+
+Never import from API in Worker/EventConsumer or vice versa.
+
+## Key Patterns
+
+- **Immutables**: Use `ImmutableX.builder()...build()` for all DTOs and entities
+- **Constructor injection**: All fields `private final`, no `@Autowired` on fields
+- **Modern Java**: Streams over loops, pattern matching, `Optional.map()`/`orElse()`
+- **Method size**: Max 30 lines, extract helpers for complex logic
+
+## Quality Specification
+
+For the full coding standards, read: `.ai/prompts/JAVA_CODE_QUALITY.md`
+{{- if .HasModule "MCP"}}
+
+## Review Tools (MCP)
+
+When the MCP server is running, use these tools for efficient code reviews:
+
+| Tool | Description |
+|------|-------------|
+| `get-review-context` | Get only the relevant quality rules for files being reviewed |
+| `record-review-finding` | Log a finding to `.ai/review-log.jsonl` (append-only) |
+| `get-review-stats` | View aggregate stats and recurring patterns |
+
+Review findings are stored in `.ai/review-log.jsonl` (JSON Lines, append-only).
+Use `get-review-stats` to identify recurring issues across reviews.
+{{- end}}

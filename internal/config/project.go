@@ -28,6 +28,9 @@ type ProjectConfig struct {
 	// AI Coding Agents
 	AIAgents []string // Selected agents: "claude", "cursor", "copilot", "windsurf", "cline"
 
+	// CI/CD Provider
+	CIProvider string // "github" or "" (empty = none)
+
 	// Deprecated: Use AIAgents instead
 	IncludeCLAUDEMD bool // Legacy field for backwards compatibility
 }
@@ -303,4 +306,40 @@ func (c *ProjectConfig) GetSelectedAIAgents() []AIAgentInfo {
 		}
 	}
 	return selected
+}
+
+// CI/CD Provider Configuration Helpers
+
+// CIProviderInfo contains metadata about a CI/CD provider
+type CIProviderInfo struct {
+	ID          string
+	Name        string
+	Description string
+}
+
+// GetAvailableCIProviders returns all supported CI/CD providers
+func GetAvailableCIProviders() []CIProviderInfo {
+	return []CIProviderInfo{
+		{ID: "github", Name: "GitHub Actions", Description: "CI/CD for GitHub repositories"},
+	}
+}
+
+// GetCIProviderDisplayOptions returns formatted display strings for prompts
+func GetCIProviderDisplayOptions() []string {
+	providers := GetAvailableCIProviders()
+	options := make([]string, len(providers))
+	for i, p := range providers {
+		options[i] = p.Name + " - " + p.Description
+	}
+	return options
+}
+
+// HasCIProvider checks if a specific CI provider is configured
+func (c *ProjectConfig) HasCIProvider(id string) bool {
+	return c.CIProvider == id
+}
+
+// HasAnyCIProvider returns true if any CI provider is configured
+func (c *ProjectConfig) HasAnyCIProvider() bool {
+	return c.CIProvider != ""
 }

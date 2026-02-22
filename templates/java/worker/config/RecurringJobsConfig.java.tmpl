@@ -13,9 +13,9 @@ import org.springframework.context.event.EventListener;
 /**
  * Configuration for recurring (CRON) jobs.
  *
- * Define all recurring jobs here. They will be registered when the application starts.
+ * <p>Define all recurring jobs here. They will be registered when the application starts.
  *
- * Common Cron expressions:
+ * <p>Common Cron expressions:
  * - Cron.minutely()           - Every minute
  * - Cron.hourly()             - Every hour at minute 0
  * - Cron.hourly(30)           - Every hour at minute 30
@@ -27,33 +27,33 @@ import org.springframework.context.event.EventListener;
 @Configuration
 public class RecurringJobsConfig {
 
-    private static final Logger log = LoggerFactory.getLogger(RecurringJobsConfig.class);
+  private static final Logger log = LoggerFactory.getLogger(RecurringJobsConfig.class);
 
-    private final JobScheduler jobScheduler;
+  private final JobScheduler jobScheduler;
 
-    public RecurringJobsConfig(JobScheduler jobScheduler) {
-        this.jobScheduler = jobScheduler;
-    }
+  public RecurringJobsConfig(JobScheduler jobScheduler) {
+    this.jobScheduler = jobScheduler;
+  }
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void registerRecurringJobs() {
-        log.info("Registering recurring jobs...");
+  @EventListener(ApplicationReadyEvent.class)
+  public void registerRecurringJobs() {
+    log.info("Registering recurring jobs...");
 
-        // Example: Run a job every hour using JobRequest pattern
-        // Uncomment to enable:
-        // jobScheduler.scheduleRecurrently(
-        //     "hourly-placeholder-job",
-        //     Cron.hourly(),
-        //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Hourly job executed"))
-        // );
+    // Example: Run a job every hour using JobRequest pattern
+    // Uncomment to enable:
+    // jobScheduler.scheduleRecurrently(
+    //     "hourly-placeholder-job",
+    //     Cron.hourly(),
+    //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Hourly job executed"))
+    // );
 
-        // Example: Run a job daily at 6 AM
-        // jobScheduler.scheduleRecurrently(
-        //     "daily-morning-job",
-        //     Cron.daily(6, 0),
-        //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Daily morning job executed"))
-        // );
+    // Example: Run a job daily at 6 AM
+    // jobScheduler.scheduleRecurrently(
+    //     "daily-morning-job",
+    //     Cron.daily(6, 0),
+    //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Daily morning job executed"))
+    // );
 
-        log.info("Recurring jobs registered successfully");
-    }
+    log.info("Recurring jobs registered successfully");
+  }
 }

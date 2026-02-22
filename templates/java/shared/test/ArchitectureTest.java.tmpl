@@ -1,0 +1,71 @@
+package {{.GroupID}}.shared;
+
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
+
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.ArchRule;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Architecture tests that enforce project conventions.
+ *
+ * <p>These tests run as part of the normal test suite and fail the build if architectural rules are
+ * violated.
+ */
+class ArchitectureTest {
+
+  private static JavaClasses classes;
+
+  @BeforeAll
+  static void importClasses() {
+    classes =
+        new ClassFileImporter()
+            .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+            .importPackages("{{.GroupID}}");
+  }
+
+  @Test
+  void noFieldInjection() {
+    ArchRule rule =
+        fields()
+            .should()
+            .notBeAnnotatedWith(org.springframework.beans.factory.annotation.Autowired.class)
+            .because("Use constructor injection instead of field injection");
+
+    rule.check(classes);
+  }
+{{- if .HasModule "API"}}
+
+  @Test
+  void controllersShouldNotAccessRepositoriesDirectly() {
+    ArchRule rule =
+        noClasses()
+            .that()
+            .resideInAPackage("..api.controller..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("..repository..")
+            .because("Controllers should use services, not repositories directly")
+            .allowEmptyShould(true);
+
+    rule.check(classes);
+  }
+{{- end}}
+
+  @Test
+  void noCyclicDependenciesBetweenPackages() {
+    ArchRule rule =
+        slices()
+            .matching("{{.GroupID}}.(*)..")
+            .should()
+            .beFreeOfCycles()
+            .because("Cyclic dependencies between modules are not allowed");
+
+    rule.check(classes);
+  }
+}

@@ -1,14 +1,14 @@
 package {{.GroupID}}.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import {{.GroupID}}.mcp.tools.BuildTools;
+import {{.GroupID}}.mcp.tools.ProjectTools;
+import {{.GroupID}}.mcp.tools.TestTools;
 import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
-import {{.GroupID}}.mcp.tools.BuildTools;
-import {{.GroupID}}.mcp.tools.ProjectTools;
-import {{.GroupID}}.mcp.tools.TestTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,47 +34,47 @@ import org.slf4j.LoggerFactory;
  */
 public class McpServerApplication {
 
-    private static final Logger log = LoggerFactory.getLogger(McpServerApplication.class);
-    private static final String SERVER_NAME = "{{.ProjectName}}-mcp";
-    private static final String SERVER_VERSION = "1.0.0";
+  private static final Logger log = LoggerFactory.getLogger(McpServerApplication.class);
+  private static final String SERVER_NAME = "{{.ProjectName}}-mcp";
+  private static final String SERVER_VERSION = "1.0.0";
 
-    public static void main(String[] args) {
-        log.info("Starting {} MCP Server v{}", SERVER_NAME, SERVER_VERSION);
+  public static void main(String[] args) {
+    log.info("Starting {} MCP Server v{}", SERVER_NAME, SERVER_VERSION);
 
-        try {
-            JacksonMcpJsonMapper jsonMapper = new JacksonMcpJsonMapper(new ObjectMapper());
-            StdioServerTransportProvider transportProvider = new StdioServerTransportProvider(jsonMapper);
+    try {
+      JacksonMcpJsonMapper jsonMapper = new JacksonMcpJsonMapper(new ObjectMapper());
+      StdioServerTransportProvider transportProvider = new StdioServerTransportProvider(jsonMapper);
 
-            McpSyncServer server = McpServer.sync(transportProvider)
-                .serverInfo(SERVER_NAME, SERVER_VERSION)
-                .capabilities(McpSchema.ServerCapabilities.builder()
-                    .tools(true)      // Enable tool support
-                    .logging()        // Enable logging support
-                    .build())
-                .build();
+      McpSyncServer server = McpServer.sync(transportProvider)
+        .serverInfo(SERVER_NAME, SERVER_VERSION)
+        .capabilities(McpSchema.ServerCapabilities.builder()
+          .tools(true)      // Enable tool support
+          .logging()        // Enable logging support
+          .build())
+        .build();
 
-            // Register tools
-            BuildTools.register(server);
-            TestTools.register(server);
-            ProjectTools.register(server);
+      // Register tools
+      BuildTools.register(server);
+      TestTools.register(server);
+      ProjectTools.register(server);
 
-            log.info("MCP Server started successfully. Listening on STDIO...");
+      log.info("MCP Server started successfully. Listening on STDIO...");
 
-            // Keep the server running until terminated
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                log.info("Shutting down MCP Server...");
-                server.close();
-            }));
+      // Keep the server running until terminated
+      Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+        log.info("Shutting down MCP Server...");
+        server.close();
+      }));
 
-            // Block main thread
-            Thread.currentThread().join();
+      // Block main thread
+      Thread.currentThread().join();
 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.info("MCP Server interrupted");
-        } catch (Exception e) {
-            log.error("Failed to start MCP Server", e);
-            System.exit(1);
-        }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.info("MCP Server interrupted");
+    } catch (Exception e) {
+      log.error("Failed to start MCP Server", e);
+      System.exit(1);
     }
+  }
 }

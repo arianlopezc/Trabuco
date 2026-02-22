@@ -9,67 +9,62 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.redis.core.RedisHash;
 import org.springframework.data.redis.core.index.Indexed;
 {{- end}}
-
 import java.time.Instant;
 
 /**
  * NoSQL document/entity for Placeholder.
  *
 {{- if eq .NoSQLDatabase "mongodb"}}
- * MongoDB document stored in the 'placeholders' collection.
+ * <p>MongoDB document stored in the 'placeholders' collection.
  * Uses Spring Data MongoDB annotations.
 {{- else if eq .NoSQLDatabase "redis"}}
  * Redis hash stored with key prefix 'placeholder'.
  * Uses Spring Data Redis annotations.
 {{- end}}
  *
- * This is separate from PlaceholderRecord (SQL) to allow
+ * <p>This is separate from PlaceholderRecord (SQL) to allow
  * different storage strategies for different databases.
  *
- * Replace this with your actual document entities.
+ * <p>Replace this with your actual document entities.
  */
 {{- if eq .NoSQLDatabase "mongodb"}}
 @Document(collection = "placeholders")
 public record PlaceholderDocument(
-    @Id
-    String id,
+  @Id
+  String id,
 
-    @Indexed
-    String name,
+  @Indexed
+  String name,
 
-    String description,
+  String description,
 
-    Instant createdAt,
+  Instant createdAt,
 
-    Instant updatedAt
+  Instant updatedAt
 ) {
-    /**
-     * Create a new document with updated fields.
-     */
-    public PlaceholderDocument withNameAndDescription(String newName, String newDescription) {
-        return new PlaceholderDocument(id, newName, newDescription, createdAt, Instant.now());
-    }
+  /** Create a new document with updated fields. */
+  public PlaceholderDocument withNameAndDescription(String newName, String newDescription) {
+    return new PlaceholderDocument(id, newName, newDescription, createdAt, Instant.now());
+  }
 }
 {{- else if eq .NoSQLDatabase "redis"}}
 @RedisHash("placeholder")
 public record PlaceholderDocument(
-    @Id
-    String id,
+  @Id
+  String id,
 
-    @Indexed
-    String name,
+  @Indexed
+  String name,
 
-    String description,
+  String description,
 
-    Instant createdAt,
+  Instant createdAt,
 
-    Instant updatedAt
+  Instant updatedAt
 ) {
-    /**
-     * Create a new document with updated fields.
-     */
-    public PlaceholderDocument withNameAndDescription(String newName, String newDescription) {
-        return new PlaceholderDocument(id, newName, newDescription, createdAt, Instant.now());
-    }
+  /** Create a new document with updated fields. */
+  public PlaceholderDocument withNameAndDescription(String newName, String newDescription) {
+    return new PlaceholderDocument(id, newName, newDescription, createdAt, Instant.now());
+  }
 }
 {{- end}}

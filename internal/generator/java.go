@@ -270,6 +270,14 @@ func (g *Generator) generateSharedModule() error {
 		return fmt.Errorf("failed to generate PlaceholderServiceTest.java: %w", err)
 	}
 
+	// ArchitectureTest.java (ArchUnit rules)
+	if err := g.writeTemplate(
+		"java/shared/test/ArchitectureTest.java.tmpl",
+		g.testJavaPath("Shared", "ArchitectureTest.java"),
+	); err != nil {
+		return fmt.Errorf("failed to generate ArchitectureTest.java: %w", err)
+	}
+
 	return nil
 }
 
@@ -681,6 +689,22 @@ func (g *Generator) generateMCPModule() error {
 		g.javaPath("MCP", filepath.Join("tools", "ProjectTools.java")),
 	); err != nil {
 		return fmt.Errorf("failed to generate ProjectTools.java: %w", err)
+	}
+
+	// QualityTools.java
+	if err := g.writeTemplate(
+		"java/mcp/tools/QualityTools.java.tmpl",
+		g.javaPath("MCP", filepath.Join("tools", "QualityTools.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate QualityTools.java: %w", err)
+	}
+
+	// ReviewTools.java
+	if err := g.writeTemplate(
+		"java/mcp/tools/ReviewTools.java.tmpl",
+		g.javaPath("MCP", filepath.Join("tools", "ReviewTools.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate ReviewTools.java: %w", err)
 	}
 
 	// logback.xml (logs to file only - STDOUT reserved for MCP JSON-RPC)
