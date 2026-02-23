@@ -137,6 +137,14 @@ Never import from API in Worker/EventConsumer or vice versa.
 
 ## Testing
 
-- Use `@SpringBootTest` with Testcontainers for integration tests
-- Follow Arrange-Act-Assert pattern
-- Name tests: `should_ExpectedBehavior_When_Condition`
+- Write a **failing test BEFORE** writing implementation code
+- **One test at a time** — do not write all tests in bulk
+- Fix implementation to make tests pass — **never modify tests to pass**
+- Test through **public interfaces**, not private methods
+- Name tests: `should_ExpectedBehavior_When_Condition` with Given/When/Then comments
+- Use `@ExtendWith(MockitoExtension.class)` for unit tests
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+- Use `@Testcontainers(disabledWithoutDocker = true)` for repository integration tests
+{{- end}}
+- Cover: happy path, not-found/empty, validation failures, error conditions
+- Full spec: `.ai/prompts/JAVA_CODE_QUALITY.md` (Section 7) | Guide: `.ai/prompts/testing-guide.md`

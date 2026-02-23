@@ -172,7 +172,9 @@ List<{JobName}Request> requests = entities.stream()
 BackgroundJobRequest.enqueue(requests.stream());
 ```
 
-### 5. Create Handler Test
+### 5. Write Handler Tests
+
+Write tests one at a time. For each test: write the failing test first, implement the minimum code to make it pass.
 
 **File**: `Worker/src/test/java/{{.PackagePath}}/worker/handler/{JobName}RequestHandlerTest.java`
 
@@ -180,25 +182,76 @@ BackgroundJobRequest.enqueue(requests.stream());
 package {{.GroupID}}.worker.handler;
 
 import {{.GroupID}}.model.jobs.{JobName}Request;
+{{- if .HasModule "Shared"}}
+import {{.GroupID}}.shared.service.PlaceholderService;
+import {{.GroupID}}.model.entities.ImmutablePlaceholder;
+{{- end}}
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+{{- if .HasModule "Shared"}}
+import org.mockito.Mock;
+{{- end}}
 import org.mockito.junit.jupiter.MockitoExtension;
 
+{{- if .HasModule "Shared"}}
+import java.util.Optional;
+
+import static org.mockito.Mockito.*;
+{{- end}}
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
 class {JobName}RequestHandlerTest {
 
+{{- if .HasModule "Shared"}}
+    @Mock
+    private PlaceholderService placeholderService;
+
+{{- end}}
     @InjectMocks
     private {JobName}RequestHandler handler;
 
     @Test
-    void shouldProcessJobSuccessfully() throws Exception {
-        // given
+    void should_ProcessJob_When_ValidRequest() throws Exception {
+        // Given
         var request = new {JobName}Request("entity-123", "process");
+{{- if .HasModule "Shared"}}
+        when(placeholderService.findById(any())).thenReturn(Optional.of(
+            ImmutablePlaceholder.builder().id("entity-123").name("Test").build()
+        ));
+{{- end}}
 
-        // when/then - should not throw
+        // When/Then
+        assertDoesNotThrow(() -> handler.run(request));
+    }
+
+    @Test
+    void should_BeIdempotent_When_CalledMultipleTimes() throws Exception {
+        // Given
+        var request = new {JobName}Request("entity-123", "process");
+{{- if .HasModule "Shared"}}
+        when(placeholderService.findById(any())).thenReturn(Optional.of(
+            ImmutablePlaceholder.builder().id("entity-123").name("Test").build()
+        ));
+{{- end}}
+
+        // When — run twice (jobs retry on failure)
+        handler.run(request);
+        handler.run(request);
+
+        // Then — should complete without error both times
+    }
+
+    @Test
+    void should_HandleGracefully_When_EntityNotFound() throws Exception {
+        // Given
+        var request = new {JobName}Request("nonexistent", "process");
+{{- if .HasModule "Shared"}}
+        when(placeholderService.findById(any())).thenReturn(Optional.empty());
+{{- end}}
+
+        // When/Then — should not throw or should throw a retryable exception
         assertDoesNotThrow(() -> handler.run(request));
     }
 }
@@ -226,7 +279,7 @@ mvn test
 - [ ] Handler annotated with `@Job(name = "...")`
 - [ ] Handler is idempotent (safe to retry)
 - [ ] Job service created (optional, for clean API)
-- [ ] Unit tests for handler
+- [ ] Handler tests written (success, idempotency, error handling)
 - [ ] Code compiles (`mvn clean compile`)
 - [ ] Tests pass (`mvn test`)
 

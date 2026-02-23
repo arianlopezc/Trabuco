@@ -191,6 +191,11 @@ func (g *Generator) generateAIDirectory() error {
 		return err
 	}
 
+	// Generate .ai/prompts/testing-guide.md (always — comprehensive testing playbook)
+	if err := g.writeTemplate("ai/prompts/testing-guide.md.tmpl", ".ai/prompts/testing-guide.md"); err != nil {
+		return err
+	}
+
 	return nil
 }
 

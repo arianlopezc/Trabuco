@@ -123,6 +123,25 @@ EventConsumer   → Model, Shared, Events
 | Empty blocks | Log or handle meaningfully | `catch (E e) { }` |
 | Rethrow | Wrap with context | Swallow or log-and-continue |
 
+### G. Test Quality
+
+| Check | What to Verify |
+|-------|---------------|
+| Tests exist | Every service, controller, handler, and listener has corresponding tests |
+| Test-first evidence | Tests describe behavior, not implementation. Test names use `should_X_When_Y` |
+| Happy path | At least one test for the normal success case |
+| Error cases | Tests for not-found, validation failures, and exception scenarios |
+| Naming convention | `should_ExpectedBehavior_When_Condition` with Given/When/Then comments |
+| No tautologies | No `assertEquals(x, x)` or assertions that always pass |
+| No implementation testing | Tests use public interfaces, not private methods or reflection |
+| Mock hygiene | Mocks use specific matchers, not `any()` everywhere. No mocking the class under test |
+| Independence | Tests don't depend on execution order. State reset in `@BeforeEach` |
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+| Integration tests | Repository tests use Testcontainers with `disabledWithoutDocker = true` |
+{{- end}}
+
+**Key question:** Could you delete the production code, keep only the tests, and rewrite from scratch to pass all tests? If yes, the tests are testing behavior correctly.
+
 ---
 
 ## Review Output Format

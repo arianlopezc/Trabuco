@@ -321,7 +321,101 @@ public interface {EntityName}Response {
 }
 ```
 
-### 5. Compile and Test
+### 5. Write Tests (Before Finalizing Implementation)
+
+Write tests one at a time using TDD. For each test: write the failing test first, then implement the minimum code to make it pass.
+{{- if .HasModule "Shared"}}
+
+**Service unit tests** (`Shared/src/test/java/{{.PackagePath}}/shared/service/{EntityName}ServiceTest.java`):
+
+```java
+package {{.GroupID}}.shared.service;
+
+import {{.GroupID}}.model.entities.Immutable{EntityName};
+{{- if .HasModule "SQLDatastore"}}
+import {{.GroupID}}.model.entities.{EntityName}Record;
+import {{.GroupID}}.sqldatastore.repository.{EntityName}Repository;
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+import {{.GroupID}}.model.entities.{EntityName}Document;
+import {{.GroupID}}.nosqldatastore.repository.{EntityName}DocumentRepository;
+{{- end}}
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class {EntityName}ServiceTest {
+
+    @Mock
+{{- if .HasModule "SQLDatastore"}}
+    private {EntityName}Repository repository;
+{{- else if .HasModule "NoSQLDatastore"}}
+    private {EntityName}DocumentRepository repository;
+{{- end}}
+
+    @InjectMocks
+    private {EntityName}Service service;
+
+    @Test
+    void should_ReturnEntity_When_IdExists() {
+        // Given
+{{- if .HasModule "SQLDatastore"}}
+        var record = new {EntityName}Record(1L, "Test");
+        when(repository.findById(1L)).thenReturn(Optional.of(record));
+{{- else if .HasModule "NoSQLDatastore"}}
+        var document = new {EntityName}Document("1", "Test");
+        when(repository.findById("1")).thenReturn(Optional.of(document));
+{{- end}}
+
+        // When
+{{- if .HasModule "SQLDatastore"}}
+        Optional<Immutable{EntityName}> result = service.findById(1L);
+{{- else if .HasModule "NoSQLDatastore"}}
+        Optional<Immutable{EntityName}> result = service.findById("1");
+{{- end}}
+
+        // Then
+        assertThat(result).isPresent();
+        assertThat(result.get().name()).isEqualTo("Test");
+    }
+
+    @Test
+    void should_ReturnEmpty_When_IdDoesNotExist() {
+        // Given
+{{- if .HasModule "SQLDatastore"}}
+        when(repository.findById(999L)).thenReturn(Optional.empty());
+{{- else if .HasModule "NoSQLDatastore"}}
+        when(repository.findById("999")).thenReturn(Optional.empty());
+{{- end}}
+
+        // When
+{{- if .HasModule "SQLDatastore"}}
+        Optional<Immutable{EntityName}> result = service.findById(999L);
+{{- else if .HasModule "NoSQLDatastore"}}
+        Optional<Immutable{EntityName}> result = service.findById("999");
+{{- end}}
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+}
+```
+{{- end}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+**Repository integration tests**: See `.ai/prompts/testing-guide.md` for full Testcontainers examples.
+{{- end}}
+
+### 6. Compile and Test
 
 ```bash
 mvn clean compile
@@ -342,6 +436,10 @@ mvn test
 {{- end}}
 {{- if .HasModule "Shared"}}
 - [ ] Service class created with CRUD operations
+- [ ] Service unit tests written (happy path + not found)
+{{- end}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+- [ ] Repository integration tests written (if custom queries)
 {{- end}}
 - [ ] Request/Response DTOs created (if API endpoint needed)
 - [ ] Code compiles (`mvn clean compile`)

@@ -161,11 +161,101 @@ public void deleteById({{if .HasModule "SQLDatastore"}}Long{{else}}String{{end}}
 }
 ```
 
-### 5. Test the Endpoint
+### 5. Write Controller Tests
+
+Write tests one at a time. For each test: write the failing test first, implement the minimum code to make it pass.
+
+**File**: `API/src/test/java/{{.PackagePath}}/api/controller/{EntityName}ControllerTest.java`
+
+```java
+package {{.GroupID}}.api.controller;
+
+import {{.GroupID}}.model.entities.Immutable{EntityName};
+import {{.GroupID}}.shared.service.{EntityName}Service;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.bean.MockBean;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.Optional;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@WebMvcTest({EntityName}Controller.class)
+class {EntityName}ControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private {EntityName}Service service;
+
+    @Test
+    void should_Return201_When_CreatingValidEntity() throws Exception {
+        // Given
+        var created = Immutable{EntityName}.builder()
+            .id("1").name("Test").build();
+        when(service.save(any())).thenReturn(created);
+
+        // When/Then
+        mockMvc.perform(post("/api/{entities}")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\": \"Test\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.name").value("Test"));
+    }
+
+    @Test
+    void should_Return400_When_NameIsBlank() throws Exception {
+        mockMvc.perform(post("/api/{entities}")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\": \"\"}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void should_Return404_When_EntityNotFound() throws Exception {
+        // Given
+{{- if .HasModule "SQLDatastore"}}
+        when(service.findById(999L)).thenReturn(Optional.empty());
+{{- else}}
+        when(service.findById("999")).thenReturn(Optional.empty());
+{{- end}}
+
+        // When/Then
+        mockMvc.perform(get("/api/{entities}/999"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void should_Return204_When_DeletingExistingEntity() throws Exception {
+        // Given
+{{- if .HasModule "SQLDatastore"}}
+        when(service.findById(1L)).thenReturn(Optional.of(
+            Immutable{EntityName}.builder().id("1").name("Test").build()));
+{{- else}}
+        when(service.findById("1")).thenReturn(Optional.of(
+            Immutable{EntityName}.builder().id("1").name("Test").build()));
+{{- end}}
+
+        // When/Then
+        mockMvc.perform(delete("/api/{entities}/1"))
+            .andExpect(status().isNoContent());
+    }
+}
+```
+
+### 6. Test the Endpoint
 
 ```bash
-# Compile
+# Compile and run tests
 mvn clean compile
+mvn test
 
 # Start API
 cd API && mvn spring-boot:run
@@ -177,7 +267,7 @@ curl -X POST http://localhost:8080/api/{entities} \
   -d '{"name": "Test"}'
 ```
 
-### 6. Check OpenAPI Documentation
+### 7. Check OpenAPI Documentation
 
 After starting the API:
 - Open http://localhost:8080/swagger-ui.html
@@ -191,7 +281,9 @@ After starting the API:
 - [ ] All methods use `Immutable` types (not interfaces)
 - [ ] Validation enabled with `@Valid`
 - [ ] Proper HTTP status codes (201 for create, 204 for delete)
+- [ ] Controller tests written (201, 400, 404, 204)
 - [ ] Code compiles (`mvn clean compile`)
+- [ ] Tests pass (`mvn test`)
 - [ ] Endpoint works (test with curl or Swagger UI)
 - [ ] Shows in Swagger UI correctly
 

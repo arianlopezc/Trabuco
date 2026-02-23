@@ -639,7 +639,142 @@ private void updateInternal() { }
 
 ---
 
-## 7. Final Review Checklist
+## 7. Testing Standards
+
+### 7.1 Test-Driven Workflow
+
+**Write tests BEFORE implementation code.** One test at a time.
+
+```
+1. Write ONE failing test for the next behavior
+2. Run it — confirm it fails for the RIGHT reason
+3. Write the MINIMUM code to make it pass
+4. Run all tests — confirm nothing broke
+5. Refactor if needed
+6. Repeat
+```
+
+**For bug fixes:** Write a test that reproduces the bug (must fail) → fix production code → verify test passes.
+
+**Golden rule: Fix implementation, not tests.** If a test fails, the production code is wrong. Never modify a test to make it pass.
+
+### 7.2 Test Structure
+
+Use Arrange-Act-Assert (AAA) with Given/When/Then comments:
+
+```java
+@Test
+void should_ReturnEntity_When_IdExists() {
+    // Given
+    var record = new PlaceholderRecord(1L, "Test");
+    when(repository.findById(1L)).thenReturn(Optional.of(record));
+
+    // When
+    Optional<ImmutablePlaceholder> result = service.findById(1L);
+
+    // Then
+    assertThat(result).isPresent();
+    assertThat(result.get().name()).isEqualTo("Test");
+}
+```
+
+**Naming convention:** `should_ExpectedBehavior_When_Condition`
+
+Examples:
+- `should_ReturnEmpty_When_IdDoesNotExist`
+- `should_ThrowException_When_NameIsBlank`
+- `should_SaveEntity_When_ValidInput`
+
+### 7.3 What to Test at Each Layer
+
+| Layer | Test Type | Framework | What to Assert |
+|-------|-----------|-----------|----------------|
+{{- if .HasModule "Shared"}}
+| Service | Unit test | Mockito + JUnit 5 | Business logic, conversions, error handling |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| SQL Repository | Integration | @DataJdbcTest + Testcontainers | CRUD operations, custom queries, constraints |
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+| NoSQL Repository | Integration | {{if eq .NoSQLDatabase "mongodb"}}@DataMongoTest{{else}}@DataRedisTest{{end}} + Testcontainers | CRUD operations, custom queries |
+{{- end}}
+{{- if .HasModule "API"}}
+| Controller | Integration | @WebMvcTest + MockMvc | HTTP status codes, response body, validation |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Job Handler | Unit test | Mockito + JUnit 5 | Processing logic, idempotency, error propagation |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| Event Listener | Unit test | Mockito + JUnit 5 | Processing logic, duplicate handling, error propagation |
+{{- end}}
+
+### 7.4 Test Categories
+
+Every piece of functionality should have tests covering:
+
+1. **Happy path** — normal expected behavior
+2. **Not found / empty** — entity doesn't exist, empty collection
+3. **Validation failures** — invalid input, blank required fields
+4. **Error conditions** — dependency failures, exceptions
+5. **Boundary values** — null, empty string, max length, zero, negative
+
+**Do NOT write tests for:**
+- Getters/setters or trivial delegation
+- Framework behavior (Spring annotations, Jackson serialization)
+- Code you didn't write
+
+### 7.5 Mockito Best Practices
+
+```java
+// CORRECT: Mock dependencies, not the class under test
+@Mock private UserRepository repository;
+@InjectMocks private UserService service;  // This is the class being tested
+
+// CORRECT: Use specific argument matchers
+verify(repository).findById(eq(1L));
+when(repository.save(argThat(r -> r.name().equals("Test")))).thenReturn(saved);
+
+// WRONG: Using any() when specific values are known
+verify(repository).findById(any());  // Too loose — won't catch wrong ID
+
+// WRONG: Mocking the class under test
+@Mock private UserService service;  // Never do this
+
+// CORRECT: Never mock final classes, records, or Immutables
+// Use real instances instead:
+var entity = ImmutablePlaceholder.builder().id("1").name("Test").build();
+
+// CORRECT: Verify no unexpected interactions
+verifyNoMoreInteractions(repository);
+```
+
+### 7.6 Anti-Patterns
+
+| Anti-Pattern | Why It's Wrong | Do This Instead |
+|-------------|----------------|-----------------|
+| Writing all tests first, then implementing | Tests are designed around imagined behavior, not observed | Write one test, implement, repeat |
+| Modifying tests to make them pass | Hides bugs in production code | Fix the implementation |
+| Testing private methods | Couples tests to implementation details | Test through public interface |
+| Tautological assertions (`assertEquals(x, x)`) | Always passes, tests nothing | Assert against expected values |
+| Copying implementation logic into tests | Test mirrors the code, won't catch bugs | Use hardcoded expected values |
+| `@SuppressWarnings` in tests | Hides real problems | Fix the warning |
+| Shared mutable state between tests | Tests pass/fail depending on order | Reset state in `@BeforeEach` |
+| `Thread.sleep()` in tests | Flaky, slow | Use `Awaitility` or mock time |
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+### 7.7 Testcontainers Rules
+
+- **Docker must be running** before executing integration tests
+- Always use `@Testcontainers(disabledWithoutDocker = true)` — tests skip gracefully without Docker
+- Use `@ServiceConnection` for automatic Spring Boot configuration
+- Clean up data in `@BeforeEach` — never share mutable state between tests
+- Use `static` container fields to share the container across test methods (faster startup)
+- Never connect to `localhost` databases in tests — always use Testcontainers
+{{- end}}
+
+---
+
+## 8. Final Review Checklist
 
 Before submitting any code, verify:
 
@@ -665,9 +800,16 @@ Before submitting any code, verify:
 - [ ] DTOs are Immutables in Model module
 
 ### Testing
-- [ ] Unit tests for business logic
-- [ ] Integration tests for repository operations
-- [ ] Tests follow Arrange-Act-Assert pattern
+- [ ] Tests written before implementation (TDD)
+- [ ] Each test covers one behavior
+- [ ] Tests follow Arrange-Act-Assert pattern with Given/When/Then comments
+- [ ] Test names use `should_Expected_When_Condition` convention
+- [ ] Happy path, not-found, validation, and error cases covered
+- [ ] No tautological assertions or implementation logic in tests
+- [ ] Mocks use specific argument matchers, not `any()` everywhere
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+- [ ] Integration tests use Testcontainers with `disabledWithoutDocker = true`
+{{- end}}
 
 ---
 

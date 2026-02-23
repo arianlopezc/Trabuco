@@ -1,0 +1,876 @@
+# Testing Guide
+
+Comprehensive testing reference for {{.ProjectName}}. Use this guide when writing tests for any module.
+
+---
+
+## Quick Reference
+
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+| Module | Test Location | Framework | Docker Required |
+|--------|--------------|-----------|-----------------|
+{{- if .HasModule "Shared"}}
+| Shared (services) | `Shared/src/test/java/` | JUnit 5 + Mockito | No |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| SQLDatastore | `SQLDatastore/src/test/java/` | @DataJdbcTest + Testcontainers | Yes |
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+| NoSQLDatastore | `NoSQLDatastore/src/test/java/` | {{if eq .NoSQLDatabase "mongodb"}}@DataMongoTest{{else}}@DataRedisTest{{end}} + Testcontainers | Yes |
+{{- end}}
+{{- if .HasModule "API"}}
+| API (controllers) | `API/src/test/java/` | @WebMvcTest + MockMvc | No |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Worker (handlers) | `Worker/src/test/java/` | JUnit 5 + Mockito | No |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| EventConsumer | `EventConsumer/src/test/java/` | JUnit 5 + Mockito | No |
+{{- end}}
+{{- else}}
+
+| Module | Test Location | Framework |
+|--------|--------------|-----------|
+{{- if .HasModule "Shared"}}
+| Shared (services) | `Shared/src/test/java/` | JUnit 5 + Mockito |
+{{- end}}
+{{- if .HasModule "API"}}
+| API (controllers) | `API/src/test/java/` | @WebMvcTest + MockMvc |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Worker (handlers) | `Worker/src/test/java/` | JUnit 5 + Mockito |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| EventConsumer | `EventConsumer/src/test/java/` | JUnit 5 + Mockito |
+{{- end}}
+{{- end}}
+
+---
+
+## TDD Workflow
+
+### For New Features
+
+```
+1. Write ONE failing test that describes the expected behavior
+2. Run it — confirm it fails for the RIGHT reason (not a compile error)
+3. Write the MINIMUM code to make that test pass
+4. Run all tests — confirm nothing else broke
+5. Refactor if needed (both production code AND test code)
+6. Repeat from step 1 for the next behavior
+```
+
+**Rules:**
+- Write tests one at a time — never write all tests first
+- Each test should fail before you write the implementation
+- If a test passes immediately, it is either testing the wrong thing or the behavior already exists
+- Fix implementation to make tests pass — never modify tests to match broken code
+
+### For Bug Fixes
+
+```
+1. Write a test that reproduces the bug (must FAIL with current code)
+2. Verify it fails for the same reason as the reported bug
+3. Fix the production code
+4. Run the test — confirm it now passes
+5. Run ALL tests — confirm no regressions
+```
+
+---
+{{- if .HasModule "Shared"}}
+
+## Writing Unit Tests (Services)
+
+Service tests use Mockito to isolate the service from its dependencies.
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+### Full Example: PlaceholderService
+
+```java
+package {{.GroupID}}.shared.service;
+
+import {{.GroupID}}.model.entities.ImmutablePlaceholder;
+{{- if .HasModule "SQLDatastore"}}
+import {{.GroupID}}.model.entities.PlaceholderRecord;
+import {{.GroupID}}.sqldatastore.repository.PlaceholderRepository;
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+import {{.GroupID}}.model.entities.PlaceholderDocument;
+import {{.GroupID}}.nosqldatastore.repository.PlaceholderDocumentRepository;
+{{- end}}
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class PlaceholderServiceTest {
+
+    @Mock
+{{- if .HasModule "SQLDatastore"}}
+    private PlaceholderRepository repository;
+{{- else if .HasModule "NoSQLDatastore"}}
+    private PlaceholderDocumentRepository repository;
+{{- end}}
+
+    @InjectMocks
+    private PlaceholderService service;
+
+    @Test
+    void should_ReturnPlaceholder_When_IdExists() {
+        // Given
+{{- if .HasModule "SQLDatastore"}}
+        var record = new PlaceholderRecord(1L, "Test Placeholder");
+        when(repository.findById(1L)).thenReturn(Optional.of(record));
+{{- else if .HasModule "NoSQLDatastore"}}
+        var document = new PlaceholderDocument("1", "Test Placeholder");
+        when(repository.findById("1")).thenReturn(Optional.of(document));
+{{- end}}
+
+        // When
+{{- if .HasModule "SQLDatastore"}}
+        Optional<ImmutablePlaceholder> result = service.findById(1L);
+{{- else if .HasModule "NoSQLDatastore"}}
+        Optional<ImmutablePlaceholder> result = service.findById("1");
+{{- end}}
+
+        // Then
+        assertThat(result).isPresent();
+        assertThat(result.get().name()).isEqualTo("Test Placeholder");
+{{- if .HasModule "SQLDatastore"}}
+        verify(repository).findById(1L);
+{{- else if .HasModule "NoSQLDatastore"}}
+        verify(repository).findById("1");
+{{- end}}
+    }
+
+    @Test
+    void should_ReturnEmpty_When_IdDoesNotExist() {
+        // Given
+{{- if .HasModule "SQLDatastore"}}
+        when(repository.findById(999L)).thenReturn(Optional.empty());
+{{- else if .HasModule "NoSQLDatastore"}}
+        when(repository.findById("999")).thenReturn(Optional.empty());
+{{- end}}
+
+        // When
+{{- if .HasModule "SQLDatastore"}}
+        Optional<ImmutablePlaceholder> result = service.findById(999L);
+{{- else if .HasModule "NoSQLDatastore"}}
+        Optional<ImmutablePlaceholder> result = service.findById("999");
+{{- end}}
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void should_SaveAndReturnEntity_When_ValidInput() {
+        // Given
+        var entity = ImmutablePlaceholder.builder()
+            .name("New Placeholder")
+            .build();
+{{- if .HasModule "SQLDatastore"}}
+        var savedRecord = new PlaceholderRecord(1L, "New Placeholder");
+        when(repository.save(any(PlaceholderRecord.class))).thenReturn(savedRecord);
+{{- else if .HasModule "NoSQLDatastore"}}
+        var savedDocument = new PlaceholderDocument("1", "New Placeholder");
+        when(repository.save(any(PlaceholderDocument.class))).thenReturn(savedDocument);
+{{- end}}
+
+        // When
+        ImmutablePlaceholder result = service.save(entity);
+
+        // Then
+        assertThat(result.name()).isEqualTo("New Placeholder");
+        assertThat(result.id()).isNotNull();
+    }
+}
+```
+
+### Mockito Patterns for This Project
+
+```java
+// Mock repository returning Optional
+{{- if .HasModule "SQLDatastore"}}
+when(repository.findById(1L)).thenReturn(Optional.of(record));
+when(repository.findById(999L)).thenReturn(Optional.empty());
+{{- else if .HasModule "NoSQLDatastore"}}
+when(repository.findById("1")).thenReturn(Optional.of(document));
+when(repository.findById("999")).thenReturn(Optional.empty());
+{{- end}}
+
+// Mock repository save — capture and return
+{{- if .HasModule "SQLDatastore"}}
+when(repository.save(any(PlaceholderRecord.class))).thenAnswer(invocation -> {
+    PlaceholderRecord input = invocation.getArgument(0);
+    return new PlaceholderRecord(1L, input.name());
+});
+{{- else if .HasModule "NoSQLDatastore"}}
+when(repository.save(any(PlaceholderDocument.class))).thenAnswer(invocation -> {
+    PlaceholderDocument input = invocation.getArgument(0);
+    return new PlaceholderDocument("generated-id", input.name());
+});
+{{- end}}
+
+// Verify interactions
+{{- if .HasModule "SQLDatastore"}}
+verify(repository).findById(1L);
+verify(repository, never()).delete(any());
+verify(repository, times(1)).save(any(PlaceholderRecord.class));
+
+// Use specific argument matchers, NOT any()
+verify(repository).findById(eq(1L));  // Preferred over any()
+{{- else if .HasModule "NoSQLDatastore"}}
+verify(repository).findById("1");
+verify(repository, never()).delete(any());
+verify(repository, times(1)).save(any(PlaceholderDocument.class));
+
+// Use specific argument matchers, NOT any()
+verify(repository).findById(eq("1"));  // Preferred over any()
+{{- end}}
+```
+{{- else}}
+
+### Example: Service Unit Test
+
+```java
+package {{.GroupID}}.shared.service;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+@ExtendWith(MockitoExtension.class)
+class PlaceholderServiceTest {
+
+    @InjectMocks
+    private PlaceholderService service;
+
+    @Test
+    void should_ReturnExpectedResult_When_ValidInput() {
+        // Given — set up test data
+
+        // When — call the method under test
+
+        // Then — verify the result
+    }
+}
+```
+
+Adapt this pattern to your service's actual dependencies. Mock any injected dependencies with `@Mock` and use `when(...).thenReturn(...)` to control behavior.
+{{- end}}
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+
+---
+
+## Writing Integration Tests (SQL Repository)
+
+Repository tests use Testcontainers to run a real database.
+
+```java
+package {{.GroupID}}.sqldatastore.repository;
+
+import {{.GroupID}}.model.entities.PlaceholderRecord;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.{{if eq .Database "postgresql"}}PostgreSQLContainer{{else}}MySQLContainer{{end}};
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DataJdbcTest
+@Testcontainers(disabledWithoutDocker = true)
+class PlaceholderRepositoryTest {
+
+    @Container
+    @ServiceConnection
+{{- if eq .Database "postgresql"}}
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+{{- else}}
+    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0");
+{{- end}}
+
+    @Autowired
+    private PlaceholderRepository repository;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+    }
+
+    @Test
+    void should_SaveAndRetrieve_When_ValidRecord() {
+        // Given
+        var record = new PlaceholderRecord(null, "Test");
+
+        // When
+        PlaceholderRecord saved = repository.save(record);
+
+        // Then
+        assertThat(saved.id()).isNotNull();
+        assertThat(repository.findById(saved.id())).isPresent();
+    }
+
+    @Test
+    void should_ReturnEmpty_When_RecordDoesNotExist() {
+        // When
+        var result = repository.findById(999L);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void should_DeleteRecord_When_Exists() {
+        // Given
+        var saved = repository.save(new PlaceholderRecord(null, "ToDelete"));
+
+        // When
+        repository.deleteById(saved.id());
+
+        // Then
+        assertThat(repository.findById(saved.id())).isEmpty();
+    }
+}
+```
+
+### Testcontainers Rules
+
+- **Docker must be running** before executing repository tests
+- Use `@Testcontainers(disabledWithoutDocker = true)` to skip gracefully when Docker is unavailable
+- Use `@ServiceConnection` for automatic Spring Boot configuration
+- Clean up in `@BeforeEach` — never share mutable state between tests
+- Use `static` container fields so the container is shared across test methods (faster)
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+
+---
+
+## Writing Integration Tests (NoSQL Repository)
+
+{{- if eq .NoSQLDatabase "mongodb"}}
+
+```java
+package {{.GroupID}}.nosqldatastore.repository;
+
+import {{.GroupID}}.model.entities.PlaceholderDocument;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.MongoDBContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DataMongoTest
+@Testcontainers(disabledWithoutDocker = true)
+class PlaceholderDocumentRepositoryTest {
+
+    @Container
+    @ServiceConnection
+    static MongoDBContainer mongodb = new MongoDBContainer("mongo:7.0");
+
+    @Autowired
+    private PlaceholderDocumentRepository repository;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+    }
+
+    @Test
+    void should_SaveAndRetrieve_When_ValidDocument() {
+        // Given
+        var document = new PlaceholderDocument(null, "Test");
+
+        // When
+        PlaceholderDocument saved = repository.save(document);
+
+        // Then
+        assertThat(saved.id()).isNotNull();
+        assertThat(repository.findById(saved.id())).isPresent();
+    }
+
+    @Test
+    void should_ReturnEmpty_When_DocumentDoesNotExist() {
+        // When
+        var result = repository.findById("nonexistent-id");
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+}
+```
+{{- else if eq .NoSQLDatabase "redis"}}
+
+```java
+package {{.GroupID}}.nosqldatastore.repository;
+
+import {{.GroupID}}.model.entities.PlaceholderDocument;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.redis.DataRedisTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DataRedisTest
+@Testcontainers(disabledWithoutDocker = true)
+class PlaceholderDocumentRepositoryTest {
+
+    @Container
+    @ServiceConnection
+    static GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine")
+        .withExposedPorts(6379);
+
+    @Autowired
+    private PlaceholderDocumentRepository repository;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+    }
+
+    @Test
+    void should_SaveAndRetrieve_When_ValidDocument() {
+        // Given
+        var document = new PlaceholderDocument("test-1", "Test");
+
+        // When
+        PlaceholderDocument saved = repository.save(document);
+
+        // Then
+        assertThat(repository.findById(saved.id())).isPresent();
+    }
+
+    @Test
+    void should_ReturnEmpty_When_DocumentDoesNotExist() {
+        // When
+        var result = repository.findById("nonexistent-id");
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+}
+```
+{{- end}}
+{{- end}}
+{{- if .HasModule "API"}}
+
+---
+
+## Writing Controller Tests
+
+Controller tests use `@WebMvcTest` with `MockMvc` — no real server, no database.
+
+```java
+package {{.GroupID}}.api.controller;
+
+import {{.GroupID}}.model.entities.ImmutablePlaceholder;
+import {{.GroupID}}.shared.service.PlaceholderService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.bean.MockBean;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@WebMvcTest(PlaceholderController.class)
+class PlaceholderControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @MockBean
+    private PlaceholderService service;
+
+    @Test
+    void should_Return201_When_CreatingValidEntity() throws Exception {
+        // Given
+        var created = ImmutablePlaceholder.builder()
+            .id("1")
+            .name("New Item")
+            .build();
+        when(service.save(any())).thenReturn(created);
+
+        // When/Then
+        mockMvc.perform(post("/api/placeholders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "New Item"}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.name").value("New Item"));
+    }
+
+    @Test
+    void should_Return400_When_RequestBodyInvalid() throws Exception {
+        // When/Then
+        mockMvc.perform(post("/api/placeholders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": ""}
+                    """))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void should_Return404_When_EntityNotFound() throws Exception {
+        // Given
+{{- if .HasModule "SQLDatastore"}}
+        when(service.findById(999L)).thenReturn(Optional.empty());
+{{- else}}
+        when(service.findById("999")).thenReturn(Optional.empty());
+{{- end}}
+
+        // When/Then
+        mockMvc.perform(get("/api/placeholders/999"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void should_Return200_When_ListingEntities() throws Exception {
+        // Given
+        var items = List.of(
+            ImmutablePlaceholder.builder().id("1").name("First").build(),
+            ImmutablePlaceholder.builder().id("2").name("Second").build()
+        );
+        when(service.findAll()).thenReturn(items);
+
+        // When/Then
+        mockMvc.perform(get("/api/placeholders"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void should_Return204_When_DeletingExistingEntity() throws Exception {
+        // Given
+{{- if .HasModule "SQLDatastore"}}
+        when(service.findById(1L)).thenReturn(Optional.of(
+            ImmutablePlaceholder.builder().id("1").name("ToDelete").build()
+        ));
+{{- else}}
+        when(service.findById("1")).thenReturn(Optional.of(
+            ImmutablePlaceholder.builder().id("1").name("ToDelete").build()
+        ));
+{{- end}}
+
+        // When/Then
+        mockMvc.perform(delete("/api/placeholders/1"))
+            .andExpect(status().isNoContent());
+    }
+}
+```
+
+### MockMvc Patterns
+
+```java
+// POST with JSON body
+mockMvc.perform(post("/api/resource")
+    .contentType(MediaType.APPLICATION_JSON)
+    .content(objectMapper.writeValueAsString(request)))
+    .andExpect(status().isCreated());
+
+// GET with path variable
+mockMvc.perform(get("/api/resource/{id}", 1))
+    .andExpect(status().isOk())
+    .andExpect(jsonPath("$.name").value("expected"));
+
+// GET with query parameters
+mockMvc.perform(get("/api/resource")
+    .param("status", "active")
+    .param("page", "0"))
+    .andExpect(status().isOk());
+
+// Verify JSON structure
+.andExpect(jsonPath("$.id").exists())
+.andExpect(jsonPath("$.items").isArray())
+.andExpect(jsonPath("$.items.length()").value(3));
+```
+{{- end}}
+{{- if .HasModule "Worker"}}
+
+---
+
+## Writing Job Handler Tests
+
+Job handlers are tested as unit tests with mocked dependencies.
+
+```java
+package {{.GroupID}}.worker.handler;
+
+import {{.GroupID}}.model.jobs.ProcessPlaceholderJobRequest;
+{{- if .HasModule "Shared"}}
+import {{.GroupID}}.shared.service.PlaceholderService;
+import {{.GroupID}}.model.entities.ImmutablePlaceholder;
+{{- end}}
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+{{- if .HasModule "Shared"}}
+import org.mockito.Mock;
+{{- end}}
+import org.mockito.junit.jupiter.MockitoExtension;
+
+{{- if .HasModule "Shared"}}
+import java.util.Optional;
+
+import static org.mockito.Mockito.*;
+{{- end}}
+import static org.junit.jupiter.api.Assertions.*;
+
+@ExtendWith(MockitoExtension.class)
+class ProcessPlaceholderJobRequestHandlerTest {
+
+{{- if .HasModule "Shared"}}
+    @Mock
+    private PlaceholderService placeholderService;
+
+{{- end}}
+    @InjectMocks
+    private ProcessPlaceholderJobRequestHandler handler;
+
+    @Test
+    void should_ProcessJob_When_EntityExists() throws Exception {
+        // Given
+        var request = new ProcessPlaceholderJobRequest("entity-123", "process");
+{{- if .HasModule "Shared"}}
+        when(placeholderService.findById(any())).thenReturn(Optional.of(
+            ImmutablePlaceholder.builder().id("entity-123").name("Test").build()
+        ));
+{{- end}}
+
+        // When/Then
+        assertDoesNotThrow(() -> handler.run(request));
+    }
+
+    @Test
+    void should_BeIdempotent_When_CalledMultipleTimes() throws Exception {
+        // Given
+        var request = new ProcessPlaceholderJobRequest("entity-123", "process");
+{{- if .HasModule "Shared"}}
+        when(placeholderService.findById(any())).thenReturn(Optional.of(
+            ImmutablePlaceholder.builder().id("entity-123").name("Test").build()
+        ));
+{{- end}}
+
+        // When — run twice
+        handler.run(request);
+        handler.run(request);
+
+        // Then — should complete without error both times
+    }
+
+    @Test
+    void should_HandleMissingEntity_When_EntityNotFound() throws Exception {
+        // Given
+        var request = new ProcessPlaceholderJobRequest("nonexistent", "process");
+{{- if .HasModule "Shared"}}
+        when(placeholderService.findById(any())).thenReturn(Optional.empty());
+{{- end}}
+
+        // When/Then — handler should handle gracefully or throw a retryable exception
+        assertDoesNotThrow(() -> handler.run(request));
+    }
+}
+```
+
+### Key Principles for Job Tests
+
+- **Test idempotency**: Run the same job request twice, verify no side effects
+- **Test error handling**: Verify exceptions propagate for retry
+- **Mock external calls**: Jobs should be testable without infrastructure
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+
+---
+
+## Writing Event Listener Tests
+
+Event listeners are tested as unit tests with mocked dependencies.
+
+```java
+package {{.GroupID}}.eventconsumer.listener;
+
+import {{.GroupID}}.model.events.ImmutablePlaceholderCreatedEvent;
+{{- if .HasModule "Shared"}}
+import {{.GroupID}}.shared.service.PlaceholderService;
+{{- end}}
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+{{- if .HasModule "Shared"}}
+import org.mockito.Mock;
+{{- end}}
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.Instant;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+@ExtendWith(MockitoExtension.class)
+class PlaceholderEventListenerTest {
+
+{{- if .HasModule "Shared"}}
+    @Mock
+    private PlaceholderService placeholderService;
+
+{{- end}}
+    @InjectMocks
+    private PlaceholderEventListener listener;
+
+    @Test
+    void should_ProcessEvent_When_ValidEvent() {
+        // Given
+        var event = ImmutablePlaceholderCreatedEvent.builder()
+            .eventId("evt-123")
+            .occurredAt(Instant.now())
+            .entityId("entity-456")
+            .name("Test")
+            .build();
+
+        // When/Then
+        assertDoesNotThrow(() -> listener.handleCreated(event));
+    }
+
+    @Test
+    void should_HandleDuplicateDelivery_When_SameEventTwice() {
+        // Given
+        var event = ImmutablePlaceholderCreatedEvent.builder()
+            .eventId("evt-123")
+            .occurredAt(Instant.now())
+            .entityId("entity-456")
+            .name("Test")
+            .build();
+
+        // When — process same event twice (at-least-once delivery)
+        listener.handleCreated(event);
+        listener.handleCreated(event);
+
+        // Then — should handle gracefully without errors
+    }
+
+    @Test
+    void should_PropagateException_When_ProcessingFails() {
+        // Listeners should rethrow exceptions so the broker can retry/DLQ.
+        // Test that exceptions from dependencies are NOT swallowed.
+    }
+}
+```
+
+### Key Principles for Event Tests
+
+- **Test duplicate delivery**: Events may be delivered more than once (at-least-once)
+- **Test error propagation**: Verify exceptions bubble up for retry/DLQ
+- **Mock dependencies**: Listeners should be testable without the message broker
+{{- if .UsesKafka}}
+- **Broker annotation**: Your listener uses `@KafkaListener` — test the handler method directly, not the annotation
+{{- else if .UsesRabbitMQ}}
+- **Broker annotation**: Your listener uses `@RabbitListener` — test the handler method directly, not the annotation
+{{- else if .UsesSQS}}
+- **Broker annotation**: Your listener uses `@SqsListener` — test the handler method directly, not the annotation
+{{- else if .UsesPubSub}}
+- **Broker annotation**: Your listener uses `@ServiceActivator` — test the handler method directly, not the annotation
+{{- end}}
+{{- end}}
+
+---
+
+## Test File Locations
+
+| What | Location |
+|------|----------|
+{{- if .HasModule "Shared"}}
+| Service unit tests | `Shared/src/test/java/{{.PackagePath}}/shared/service/` |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| SQL repository tests | `SQLDatastore/src/test/java/{{.PackagePath}}/sqldatastore/repository/` |
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+| NoSQL repository tests | `NoSQLDatastore/src/test/java/{{.PackagePath}}/nosqldatastore/repository/` |
+{{- end}}
+{{- if .HasModule "API"}}
+| Controller tests | `API/src/test/java/{{.PackagePath}}/api/controller/` |
+{{- end}}
+{{- if .HasModule "Worker"}}
+| Job handler tests | `Worker/src/test/java/{{.PackagePath}}/worker/handler/` |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+| Event listener tests | `EventConsumer/src/test/java/{{.PackagePath}}/eventconsumer/listener/` |
+{{- end}}
+
+---
+
+## Running Tests
+
+| Command | What It Does |
+|---------|-------------|
+| `mvn test` | Run all tests in all modules |
+| `mvn test -pl Shared` | Run tests in a single module |
+| `mvn test -pl Shared -Dtest=PlaceholderServiceTest` | Run a single test class |
+| `mvn test -pl Shared -Dtest="PlaceholderServiceTest#should_ReturnPlaceholder_When_IdExists"` | Run a single test method |
+| `mvn verify` | Run tests + integration tests |
+| `mvn test -DskipTests=false -Dtest="*IntegrationTest"` | Run only integration tests |
+
+---
+
+## Common Test Failures
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+| `Testcontainers: Could not start container` | Docker not running | Start Docker Desktop |
+{{- end}}
+| `ImmutablePlaceholder cannot be resolved` | Annotation processor not run | Run `mvn clean compile` first |
+| `No qualifying bean of type` | Missing `@Mock` or `@MockBean` | Add mock for the dependency |
+| `NullPointerException` in test setup | `@InjectMocks` field not initialized | Add `@ExtendWith(MockitoExtension.class)` |
+{{- if .HasModule "API"}}
+| `Expected 201 but got 400` | Request body validation failing | Check `@NotBlank`/`@Valid` on request DTO |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| `Flyway migration failed` | Schema conflict in test container | Clean up in `@BeforeEach` or use fresh container |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| `Connection refused` on port {{if eq .Database "postgresql"}}5432{{else if eq .Database "mysql"}}3306{{end}} | Test trying to connect to real DB | Use Testcontainers, not localhost |
+{{- else if .HasModule "NoSQLDatastore"}}
+| `Connection refused` on port {{if eq .NoSQLDatabase "mongodb"}}27017{{else if eq .NoSQLDatabase "redis"}}6379{{end}} | Test trying to connect to real DB | Use Testcontainers, not localhost |
+{{- end}}
+
+---
+
+_Full testing standards: `.ai/prompts/JAVA_CODE_QUALITY.md` (Section 7)_

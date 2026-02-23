@@ -371,7 +371,9 @@ public class {Entity}Service {
 }
 ```
 
-### 7. Create Listener Test
+### 7. Write Listener Tests
+
+Write tests one at a time. For each test: write the failing test first, implement the minimum code to make it pass.
 
 **File**: `EventConsumer/src/test/java/{{.PackagePath}}/eventconsumer/listener/{Entity}EventListenerTest.java`
 
@@ -379,31 +381,67 @@ public class {Entity}Service {
 package {{.GroupID}}.eventconsumer.listener;
 
 import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
+{{- if .HasModule "Shared"}}
+import {{.GroupID}}.shared.service.PlaceholderService;
+{{- end}}
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+{{- if .HasModule "Shared"}}
+import org.mockito.Mock;
+{{- end}}
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
 class {Entity}EventListenerTest {
 
+{{- if .HasModule "Shared"}}
+    @Mock
+    private PlaceholderService placeholderService;
+
+{{- end}}
     @InjectMocks
     private {Entity}EventListener listener;
 
     @Test
-    void shouldHandleEventSuccessfully() {
-        // given
+    void should_ProcessEvent_When_ValidEvent() {
+        // Given
         var event = Immutable{Entity}{Action}Event.builder()
             .eventId("evt-123")
-            .occurredAt(java.time.Instant.now())
+            .occurredAt(Instant.now())
             .entityId("entity-456")
             .name("Test")
             .build();
 
-        // when/then - should not throw
+        // When/Then
         assertDoesNotThrow(() -> listener.handle{Action}(event));
+    }
+
+    @Test
+    void should_HandleDuplicateDelivery_When_SameEventTwice() {
+        // Given
+        var event = Immutable{Entity}{Action}Event.builder()
+            .eventId("evt-123")
+            .occurredAt(Instant.now())
+            .entityId("entity-456")
+            .name("Test")
+            .build();
+
+        // When — process same event twice (at-least-once delivery)
+        listener.handle{Action}(event);
+        listener.handle{Action}(event);
+
+        // Then — should handle gracefully without errors
+    }
+
+    @Test
+    void should_PropagateException_When_ProcessingFails() {
+        // Listeners should rethrow exceptions so the broker can retry/DLQ.
+        // Test that exceptions from dependencies are NOT swallowed.
     }
 }
 ```
@@ -424,7 +462,7 @@ mvn test
 - [ ] Listener created with proper annotations
 - [ ] Configuration updated for new topics/queues
 - [ ] Listener handles errors properly (log + rethrow for retry)
-- [ ] Unit tests for listener
+- [ ] Listener tests written (success, duplicate delivery, error propagation)
 - [ ] Code compiles (`mvn clean compile`)
 - [ ] Tests pass (`mvn test`)
 

@@ -201,12 +201,24 @@ public Placeholder create(PlaceholderRequest request) {  // interface type
 **Test Coverage:**
 - JaCoCo reports at `<module>/target/site/jacoco/index.html` after `mvn test`
 {{- end}}
-{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
-
 ## Testing
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 
 Repository tests use Testcontainers — Docker must be running.
 {{- end}}
+
+**Workflow**: Write tests BEFORE implementation. One test at a time.
+
+| Rule | Description |
+|------|-------------|
+| Write test first | Write a failing test before writing any implementation code |
+| One at a time | Do not write all tests in bulk — one test, one implementation cycle |
+| Fix code, not tests | If a test fails, fix the production code. Never modify tests to pass |
+| Test behavior | Test through public interfaces, not private methods or internals |
+| Naming | `should_ExpectedBehavior_When_Condition` with Given/When/Then comments |
+
+**Full testing standards**: `.ai/prompts/JAVA_CODE_QUALITY.md` (Section 7)
+**Comprehensive testing guide**: `.ai/prompts/testing-guide.md`
 
 ## Task Guides
 
@@ -226,6 +238,7 @@ For complex tasks, read the corresponding guide in `.ai/prompts/`:
 | Add event type | `.ai/prompts/add-event.md` | Event-driven features |
 {{- end}}
 | Extend project | `.ai/prompts/extending-the-project.md` | Adding auth, caching, pagination, etc. |
+| **Testing guide** | `.ai/prompts/testing-guide.md` | Writing tests for any module |
 
 ## Boundaries
 
