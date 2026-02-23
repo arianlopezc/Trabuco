@@ -21,20 +21,38 @@ func Start(version string) error {
 		"trabuco",
 		version,
 		server.WithToolCapabilities(false),
+		server.WithPromptCapabilities(false),
+		server.WithResourceCapabilities(false, false),
 		server.WithInstructions(`Trabuco generates production-ready Java multi-module Maven projects with Spring Boot.
 
 WORKFLOW:
-1. Call suggest_architecture with the user's requirements
-2. Read the module catalog — match user needs to module use cases and boundaries
-3. Check warnings for ambiguous terms and not_covered for unsupported requirements
-4. YOU decide which modules, database, and message broker to use based on the catalog
-5. Call init_project with your chosen configuration
-6. The response includes next_steps and key_files to guide post-generation work
-7. Read AGENTS.md in the generated project for coding patterns and conventions
-8. Use add_module to incrementally add capabilities as needs evolve
+1. For single services: suggest_architecture → review patterns and recommended_config → init_project
+2. For multi-service systems: design_system → review with user → generate_workspace
+3. For extending existing projects: get_project_info → add_module
+4. Use MCP Prompts for expert guidance on architecture decisions
+5. Use MCP Resources to read module catalog, patterns, and limitations
+
+TOOLS:
+- suggest_architecture: Returns matched patterns, recommended config, module catalog, and warnings
+- design_system: Decomposes requirements into multiple service definitions (review-only, no generation)
+- generate_workspace: Creates multiple services with shared infrastructure (docker-compose)
+- init_project: Generate a single Trabuco project
+- add_module: Add a module to an existing project
+- get_project_info: Read project metadata
+- list_modules: List all available modules
+
+PROMPTS (request expert knowledge):
+- trabuco_expert: General guidance for any Trabuco task
+- design_microservices: Step-by-step microservice decomposition guide
+- extend_project: Instructions for extending an existing project
+
+RESOURCES (stable reference data):
+- trabuco://modules: Full module catalog with use cases and boundaries
+- trabuco://patterns: Pre-built architecture patterns with module combinations
+- trabuco://limitations: Complete list of what Trabuco does NOT generate
 
 WHAT TRABUCO GENERATES:
-- Multi-module Maven project (Model, Datastore, Shared, API, Worker, EventConsumer)
+- Multi-module Maven project (Model, Datastore, Shared, API, Worker, EventConsumer, MCP)
 - Spring Boot 3.4 with Spring Data JDBC (not JPA), Immutables, Testcontainers
 - Docker Compose, CI workflow, AI context files, code quality enforcement
 - Working placeholder code that serves as patterns for real implementation
@@ -50,6 +68,8 @@ When the user's requirements include items Trabuco doesn't cover, inform them cl
 	)
 
 	registerAllTools(s, version)
+	registerAllPrompts(s)
+	registerAllResources(s)
 
 	stdioServer := server.NewStdioServer(s)
 	return stdioServer.Listen(context.Background(), os.Stdin, realStdout)
