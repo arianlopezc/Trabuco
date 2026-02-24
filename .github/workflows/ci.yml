@@ -475,7 +475,7 @@ jobs:
 
           # Check agent instruction files
           echo "Checking AI agent instruction files..."
-          for file in "CLAUDE.md" ".cursorrules" ".github/copilot-instructions.md" ".windsurf/rules/project.md" ".clinerules/project.md"; do
+          for file in "CLAUDE.md" ".cursor/rules/project.mdc" ".github/copilot-instructions.md" ".windsurf/rules/project.md" ".clinerules/project.md"; do
             if [ -f "$file" ]; then
               echo "  ✓ $file exists ($(wc -l < "$file") lines)"
             else
@@ -517,34 +517,51 @@ jobs:
           echo ""
           echo "All AI agent files verified successfully"
 
-      - name: Verify AI agent files have same content
+      - name: Verify AI agent files share core content
         working-directory: test-ai/ai-project
         run: |
-          # All agent files should have identical content (same template)
-          CLAUDE_HASH=$(md5sum CLAUDE.md | cut -d' ' -f1)
-          CURSOR_HASH=$(md5sum .cursorrules | cut -d' ' -f1)
-          WINDSURF_HASH=$(md5sum .windsurf/rules/project.md | cut -d' ' -f1)
-          CLINE_HASH=$(md5sum .clinerules/project.md | cut -d' ' -f1)
-          COPILOT_HASH=$(md5sum .github/copilot-instructions.md | cut -d' ' -f1)
+          # Each agent file has different frontmatter/paths but must share core content
+          ERRORS=0
+          CORE_PATTERNS=("Module Dependencies" "mvn clean compile" "Constructor injection")
 
-          echo "Content hashes:"
-          echo "  CLAUDE.md:                    $CLAUDE_HASH"
-          echo "  .cursorrules:                 $CURSOR_HASH"
-          echo "  .windsurf/rules/project.md:   $WINDSURF_HASH"
-          echo "  .clinerules/project.md:       $CLINE_HASH"
-          echo "  .github/copilot-instructions: $COPILOT_HASH"
+          for file in "CLAUDE.md" ".cursor/rules/project.mdc" ".github/copilot-instructions.md" ".windsurf/rules/project.md" ".clinerules/project.md"; do
+            for pattern in "${CORE_PATTERNS[@]}"; do
+              if ! grep -q "$pattern" "$file"; then
+                echo "  ✗ $file missing core content: '$pattern'"
+                ERRORS=$((ERRORS + 1))
+              fi
+            done
+          done
 
-          if [ "$CLAUDE_HASH" != "$CURSOR_HASH" ] || \
-             [ "$CLAUDE_HASH" != "$WINDSURF_HASH" ] || \
-             [ "$CLAUDE_HASH" != "$CLINE_HASH" ] || \
-             [ "$CLAUDE_HASH" != "$COPILOT_HASH" ]; then
+          if [ $ERRORS -gt 0 ]; then
             echo ""
-            echo "ERROR: AI agent files have different content (should be identical)"
+            echo "ERROR: $ERRORS core content checks failed"
             exit 1
           fi
 
-          echo ""
-          echo "All AI agent files have identical content ✓"
+          echo "All AI agent files contain core content ✓"
+
+      - name: Verify Claude Code dual-location files
+        working-directory: test-ai/ai-project
+        run: |
+          # Claude Code auto-discovers .claude/rules/*.md — prompts should be copied there
+          ERRORS=0
+          for file in ".claude/rules/JAVA_CODE_QUALITY.md" ".claude/rules/testing-guide.md" ".claude/rules/add-entity.md" ".claude/rules/add-endpoint.md"; do
+            if [ -f "$file" ]; then
+              echo "  ✓ $file exists"
+            else
+              echo "  ✗ $file MISSING"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          if [ $ERRORS -gt 0 ]; then
+            echo ""
+            echo "ERROR: $ERRORS Claude rules files missing"
+            exit 1
+          fi
+
+          echo "All Claude Code dual-location files verified ✓"
 
       - name: Verify prompts contain module-specific content
         working-directory: test-ai/ai-project
