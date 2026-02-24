@@ -16,11 +16,30 @@ func (g *Generator) generateDocs() error {
 		return err
 	}
 
-	// Generate AI agent context files for each selected agent
-	// All agents use the same template content (CLAUDE.md.tmpl), just different file paths
-	// The writeTemplate method handles parent directory creation automatically
+	// Generate AI agent context files for each selected agent.
+	// All agents use the same template content (CLAUDE.md.tmpl), just different file paths,
+	// prompts directories, and optional frontmatter per agent conventions.
 	for _, agent := range g.config.GetSelectedAIAgents() {
-		if err := g.writeTemplate("docs/CLAUDE.md.tmpl", agent.FilePath); err != nil {
+		promptsDir := ".ai/prompts"
+		frontmatter := ""
+
+		switch agent.ID {
+		case "claude":
+			promptsDir = ".claude/rules"
+		case "cursor":
+			// Cursor .mdc files require YAML frontmatter with alwaysApply
+			frontmatter = "description: Project architecture and coding standards\nalwaysApply: true\n"
+		case "windsurf":
+			// Windsurf rules require a trigger field
+			frontmatter = "trigger: always_on\n"
+		}
+
+		data := &templateData{
+			ProjectConfig: g.config,
+			PromptsDir:    promptsDir,
+			Frontmatter:   frontmatter,
+		}
+		if err := g.writeTemplateWithData("docs/CLAUDE.md.tmpl", agent.FilePath, data); err != nil {
 			return err
 		}
 	}
@@ -133,6 +152,13 @@ func (g *Generator) generateDocs() error {
 
 // generateAIDirectory generates the .ai directory with prompts and checkpoint
 func (g *Generator) generateAIDirectory() error {
+	// Prompt templates use {{.PromptsDir}} for cross-references between files.
+	// In .ai/prompts/ (shared cross-agent location), references point to .ai/prompts/.
+	aiData := &templateData{
+		ProjectConfig: g.config,
+		PromptsDir:    ".ai/prompts",
+	}
+
 	// Generate .ai/README.md
 	if err := g.writeTemplate("ai/README.md.tmpl", ".ai/README.md"); err != nil {
 		return err
@@ -144,12 +170,12 @@ func (g *Generator) generateAIDirectory() error {
 	}
 
 	// Generate code quality specification (always - this is the core quality guide)
-	if err := g.writeTemplate("ai/prompts/JAVA_CODE_QUALITY.md.tmpl", ".ai/prompts/JAVA_CODE_QUALITY.md"); err != nil {
+	if err := g.writeTemplateWithData("ai/prompts/JAVA_CODE_QUALITY.md.tmpl", ".ai/prompts/JAVA_CODE_QUALITY.md", aiData); err != nil {
 		return err
 	}
 
 	// Generate code review guide (always - for proactive self-review)
-	if err := g.writeTemplate("ai/prompts/code-review.md.tmpl", ".ai/prompts/code-review.md"); err != nil {
+	if err := g.writeTemplateWithData("ai/prompts/code-review.md.tmpl", ".ai/prompts/code-review.md", aiData); err != nil {
 		return err
 	}
 
@@ -160,39 +186,39 @@ func (g *Generator) generateAIDirectory() error {
 
 	// Generate .ai/prompts/add-entity.md (always, if Model module exists)
 	if g.config.HasModule(config.ModuleModel) {
-		if err := g.writeTemplate("ai/prompts/add-entity.md.tmpl", ".ai/prompts/add-entity.md"); err != nil {
+		if err := g.writeTemplateWithData("ai/prompts/add-entity.md.tmpl", ".ai/prompts/add-entity.md", aiData); err != nil {
 			return err
 		}
 	}
 
 	// Generate .ai/prompts/add-endpoint.md (only if API module exists)
 	if g.config.HasModule(config.ModuleAPI) {
-		if err := g.writeTemplate("ai/prompts/add-endpoint.md.tmpl", ".ai/prompts/add-endpoint.md"); err != nil {
+		if err := g.writeTemplateWithData("ai/prompts/add-endpoint.md.tmpl", ".ai/prompts/add-endpoint.md", aiData); err != nil {
 			return err
 		}
 	}
 
 	// Generate .ai/prompts/add-job.md (only if Worker module exists)
 	if g.config.HasModule(config.ModuleWorker) {
-		if err := g.writeTemplate("ai/prompts/add-job.md.tmpl", ".ai/prompts/add-job.md"); err != nil {
+		if err := g.writeTemplateWithData("ai/prompts/add-job.md.tmpl", ".ai/prompts/add-job.md", aiData); err != nil {
 			return err
 		}
 	}
 
 	// Generate .ai/prompts/add-event.md (only if EventConsumer module exists)
 	if g.config.HasModule(config.ModuleEventConsumer) {
-		if err := g.writeTemplate("ai/prompts/add-event.md.tmpl", ".ai/prompts/add-event.md"); err != nil {
+		if err := g.writeTemplateWithData("ai/prompts/add-event.md.tmpl", ".ai/prompts/add-event.md", aiData); err != nil {
 			return err
 		}
 	}
 
 	// Generate .ai/prompts/extending-the-project.md (always — guides adding auth, caching, etc.)
-	if err := g.writeTemplate("ai/prompts/extending-the-project.md.tmpl", ".ai/prompts/extending-the-project.md"); err != nil {
+	if err := g.writeTemplateWithData("ai/prompts/extending-the-project.md.tmpl", ".ai/prompts/extending-the-project.md", aiData); err != nil {
 		return err
 	}
 
 	// Generate .ai/prompts/testing-guide.md (always — comprehensive testing playbook)
-	if err := g.writeTemplate("ai/prompts/testing-guide.md.tmpl", ".ai/prompts/testing-guide.md"); err != nil {
+	if err := g.writeTemplateWithData("ai/prompts/testing-guide.md.tmpl", ".ai/prompts/testing-guide.md", aiData); err != nil {
 		return err
 	}
 
@@ -220,6 +246,55 @@ func (g *Generator) generateClaudeCodeFiles() error {
 		return err
 	}
 
+	// Generate prompt files to .claude/rules/ (Claude Code's official auto-discovery location).
+	// These use the same templates as .ai/prompts/ but with PromptsDir=".claude/rules" so that
+	// internal cross-references point to .claude/rules/ (not .ai/prompts/).
+	claudeData := &templateData{
+		ProjectConfig: g.config,
+		PromptsDir:    ".claude/rules",
+	}
+
+	if err := g.writeTemplateWithData("ai/prompts/JAVA_CODE_QUALITY.md.tmpl", ".claude/rules/JAVA_CODE_QUALITY.md", claudeData); err != nil {
+		return err
+	}
+
+	if err := g.writeTemplateWithData("ai/prompts/code-review.md.tmpl", ".claude/rules/code-review.md", claudeData); err != nil {
+		return err
+	}
+
+	if err := g.writeTemplateWithData("ai/prompts/testing-guide.md.tmpl", ".claude/rules/testing-guide.md", claudeData); err != nil {
+		return err
+	}
+
+	if err := g.writeTemplateWithData("ai/prompts/extending-the-project.md.tmpl", ".claude/rules/extending-the-project.md", claudeData); err != nil {
+		return err
+	}
+
+	// Conditionally generate task playbooks
+	if g.config.HasModule(config.ModuleModel) {
+		if err := g.writeTemplateWithData("ai/prompts/add-entity.md.tmpl", ".claude/rules/add-entity.md", claudeData); err != nil {
+			return err
+		}
+	}
+
+	if g.config.HasModule(config.ModuleAPI) {
+		if err := g.writeTemplateWithData("ai/prompts/add-endpoint.md.tmpl", ".claude/rules/add-endpoint.md", claudeData); err != nil {
+			return err
+		}
+	}
+
+	if g.config.HasModule(config.ModuleWorker) {
+		if err := g.writeTemplateWithData("ai/prompts/add-job.md.tmpl", ".claude/rules/add-job.md", claudeData); err != nil {
+			return err
+		}
+	}
+
+	if g.config.HasModule(config.ModuleEventConsumer) {
+		if err := g.writeTemplateWithData("ai/prompts/add-event.md.tmpl", ".claude/rules/add-event.md", claudeData); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -240,8 +315,8 @@ func (g *Generator) generateCursorFiles() error {
 
 // generateCopilotFiles generates GitHub Copilot specific configuration files
 func (g *Generator) generateCopilotFiles() error {
-	// Generate .github/copilot-setup-steps.yml for cloud coding agent
-	if err := g.writeTemplate("copilot/copilot-setup-steps.yml.tmpl", ".github/copilot-setup-steps.yml"); err != nil {
+	// Generate .github/workflows/copilot-setup-steps.yml for cloud coding agent
+	if err := g.writeTemplate("copilot/copilot-setup-steps.yml.tmpl", ".github/workflows/copilot-setup-steps.yml"); err != nil {
 		return err
 	}
 

@@ -1,15 +1,18 @@
+{{- if .Frontmatter -}}
+---
+{{.Frontmatter}}---
+{{end -}}
 # {{.ProjectName}}
 
 Java multi-module Maven project using Spring Boot{{if .HasModule "SQLDatastore"}} with {{if eq .Database "postgresql"}}PostgreSQL{{else if eq .Database "mysql"}}MySQL{{end}}{{end}}{{if .HasModule "NoSQLDatastore"}}{{if .HasModule "SQLDatastore"}} and{{else}} with{{end}} {{if eq .NoSQLDatabase "mongodb"}}MongoDB{{else if eq .NoSQLDatabase "redis"}}Redis{{end}}{{end}}{{if .HasModule "Worker"}} and JobRunr for background jobs{{end}}{{if .HasModule "EventConsumer"}} and {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}} for event-driven processing{{end}}.
 
-<!-- AI:QUALITY:START -->
 ## Code Quality (IMPORTANT)
 
-**Before writing any Java code, read:** `.ai/prompts/JAVA_CODE_QUALITY.md`
+**Code quality specification:** `{{.PromptsDir}}/JAVA_CODE_QUALITY.md`
 
 This project enforces strict code quality standards. You MUST:
 
-1. **Read the specification** before generating code
+1. **Follow the specification** when generating code
 2. **Self-review** generated code against the specification
 3. **Refactor** any violations immediately
 4. **Verify** the code compiles and tests pass
@@ -27,10 +30,6 @@ This project enforces strict code quality standards. You MUST:
 | Null handling | `Objects.requireNonNull` in constructors, Bean Validation on DTOs |
 | Injection | Constructor injection only, all fields `private final` |
 
-**Full specification:** `.ai/prompts/JAVA_CODE_QUALITY.md`
-<!-- AI:QUALITY:END -->
-
-<!-- AI:COMMANDS:START -->
 ## Build & Test Commands
 
 | Command | Description |
@@ -53,7 +52,6 @@ This project enforces strict code quality standards. You MUST:
 {{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
 | `docker-compose up -d` | Start infrastructure services |
 {{- end}}
-<!-- AI:COMMANDS:END -->
 {{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
 
 **Docker:**
@@ -70,7 +68,38 @@ docker build -f EventConsumer/Dockerfile -t {{.ProjectName}}-eventconsumer .
 ```
 {{- end}}
 
-<!-- AI:PATTERNS:START -->
+## Module Dependencies
+
+Dependency direction — modules may only import from modules they depend on:
+
+```
+{{- if .HasModule "Model"}}
+Model              → (none)
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+SQLDatastore       → Model
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+NoSQLDatastore     → Model
+{{- end}}
+{{- if .HasModule "Shared"}}
+Shared             → Model{{if .HasModule "SQLDatastore"}}, SQLDatastore{{end}}{{if .HasModule "NoSQLDatastore"}}, NoSQLDatastore{{end}}
+{{- end}}
+{{- if .HasModule "API"}}
+API                → Model{{if .HasModule "Shared"}}, Shared{{end}}
+{{- end}}
+{{- if .HasModule "Worker"}}
+Worker             → Model{{if .HasModule "Shared"}}, Shared{{end}}
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+EventConsumer      → Model{{if .HasModule "Shared"}}, Shared{{end}}
+{{- end}}
+```
+{{- if or (.HasModule "API") (or (.HasModule "Worker") (.HasModule "EventConsumer"))}}
+
+Never import from API in Worker/EventConsumer or vice versa.
+{{- end}}
+
 ## Code Patterns
 
 | Pattern | Description |
@@ -96,44 +125,43 @@ docker build -f EventConsumer/Dockerfile -t {{.ProjectName}}-eventconsumer .
 {{- if .HasModule "EventConsumer"}}
 | Event Listeners | Use sealed interfaces for event contracts, handle DLT for failures |
 {{- end}}
-<!-- AI:PATTERNS:END -->
 
-<!-- AI:FILES:START -->
 ## File Locations
+
+Paths below use `{{.PackagePath}}/` as the package directory.
 
 | Purpose | Location |
 |---------|----------|
 {{- if .HasModule "Model"}}
-| Entities | `Model/src/main/java/.../model/entities/` |
-| DTOs | `Model/src/main/java/.../model/dto/` |
-| Events (schemas) | `Model/src/main/java/.../model/events/` |
-| Jobs (schemas) | `Model/src/main/java/.../model/jobs/` |
+| Entities | `Model/src/main/java/{{.PackagePath}}/model/entities/` |
+| DTOs | `Model/src/main/java/{{.PackagePath}}/model/dto/` |
+| Events (schemas) | `Model/src/main/java/{{.PackagePath}}/model/events/` |
+| Jobs (schemas) | `Model/src/main/java/{{.PackagePath}}/model/jobs/` |
 {{- end}}
 {{- if .HasModule "SQLDatastore"}}
-| SQL Repositories | `SQLDatastore/src/main/java/.../sqldatastore/repository/` |
+| SQL Repositories | `SQLDatastore/src/main/java/{{.PackagePath}}/sqldatastore/repository/` |
 | SQL Migrations | `SQLDatastore/src/main/resources/db/migration/` |
 {{- end}}
 {{- if .HasModule "NoSQLDatastore"}}
-| NoSQL Repositories | `NoSQLDatastore/src/main/java/.../nosqldatastore/repository/` |
+| NoSQL Repositories | `NoSQLDatastore/src/main/java/{{.PackagePath}}/nosqldatastore/repository/` |
 {{- end}}
 {{- if .HasModule "Shared"}}
-| Services | `Shared/src/main/java/.../shared/service/` |
+| Services | `Shared/src/main/java/{{.PackagePath}}/shared/service/` |
 {{- end}}
 {{- if .HasModule "API"}}
-| Controllers | `API/src/main/java/.../api/controller/` |
-| API Config | `API/src/main/java/.../api/config/` |
+| Controllers | `API/src/main/java/{{.PackagePath}}/api/controller/` |
+| API Config | `API/src/main/java/{{.PackagePath}}/api/config/` |
 {{- end}}
 {{- if .HasModule "Worker"}}
-| Job Handlers | `Worker/src/main/java/.../worker/handler/` |
+| Job Handlers | `Worker/src/main/java/{{.PackagePath}}/worker/handler/` |
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-| Event Listeners | `EventConsumer/src/main/java/.../eventconsumer/listener/` |
+| Event Listeners | `EventConsumer/src/main/java/{{.PackagePath}}/eventconsumer/listener/` |
 {{- end}}
-<!-- AI:FILES:END -->
 
 ## Immutables
 
-This project uses [Immutables](https://immutables.github.io/) for all DTOs and entities. This is a critical pattern — Claude must follow it.
+This project uses [Immutables](https://immutables.github.io/) for all DTOs and entities. This is a critical pattern that must always be followed.
 
 **Rules:**
 - Always use `ImmutableX` concrete types in method signatures, not interface types
@@ -201,6 +229,7 @@ public Placeholder create(PlaceholderRequest request) {  // interface type
 **Test Coverage:**
 - JaCoCo reports at `<module>/target/site/jacoco/index.html` after `mvn test`
 {{- end}}
+
 ## Testing
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 
@@ -217,45 +246,35 @@ Repository tests use Testcontainers — Docker must be running.
 | Test behavior | Test through public interfaces, not private methods or internals |
 | Naming | `should_ExpectedBehavior_When_Condition` with Given/When/Then comments |
 
-**Full testing standards**: `.ai/prompts/JAVA_CODE_QUALITY.md` (Section 7)
-**Comprehensive testing guide**: `.ai/prompts/testing-guide.md`
+**Full testing standards**: `{{.PromptsDir}}/JAVA_CODE_QUALITY.md` (Section 7)
+**Comprehensive testing guide**: `{{.PromptsDir}}/testing-guide.md`
 
 ## Task Guides
 
-For complex tasks, read the corresponding guide in `.ai/prompts/`:
+For complex tasks, follow the corresponding guide in `{{.PromptsDir}}/`:
 
 | Task | Guide | When to Use |
 |------|-------|-------------|
-| **Code quality** | `.ai/prompts/JAVA_CODE_QUALITY.md` | Before/after writing ANY Java code |
-| Add new entity | `.ai/prompts/add-entity.md` | Creating a new domain object |
+| **Code quality** | `{{.PromptsDir}}/JAVA_CODE_QUALITY.md` | Before/after writing ANY Java code |
+| Add new entity | `{{.PromptsDir}}/add-entity.md` | Creating a new domain object |
 {{- if .HasModule "API"}}
-| Add REST endpoint | `.ai/prompts/add-endpoint.md` | Exposing new API functionality |
+| Add REST endpoint | `{{.PromptsDir}}/add-endpoint.md` | Exposing new API functionality |
 {{- end}}
 {{- if .HasModule "Worker"}}
-| Add background job | `.ai/prompts/add-job.md` | Async processing tasks |
+| Add background job | `{{.PromptsDir}}/add-job.md` | Async processing tasks |
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-| Add event type | `.ai/prompts/add-event.md` | Event-driven features |
+| Add event type | `{{.PromptsDir}}/add-event.md` | Event-driven features |
 {{- end}}
-| Extend project | `.ai/prompts/extending-the-project.md` | Adding auth, caching, pagination, etc. |
-| **Testing guide** | `.ai/prompts/testing-guide.md` | Writing tests for any module |
+| Extend project | `{{.PromptsDir}}/extending-the-project.md` | Adding auth, caching, pagination, etc. |
+| **Testing guide** | `{{.PromptsDir}}/testing-guide.md` | Writing tests for any module |
 
 ## Boundaries
 
-This project does NOT include: authentication/authorization, frontend/UI, GraphQL, gRPC, WebSockets, Kubernetes manifests, or production database schemas. Placeholder entities should be replaced with real domain objects. For guidance on adding missing capabilities, see `.ai/prompts/extending-the-project.md`.
-
-<!-- AI:CHECKPOINT:START -->
-## Session Status
-
-**Branch**: (not tracked yet)
-**Working on**: (no active task)
-**Tests**: (not run yet)
-
-_Update `.ai/checkpoint.json` to track progress across sessions._
-<!-- AI:CHECKPOINT:END -->
+This project does NOT include: authentication/authorization, frontend/UI, GraphQL, gRPC, WebSockets, Kubernetes manifests, or production database schemas. Placeholder entities should be replaced with real domain objects. For guidance on adding missing capabilities, see `{{.PromptsDir}}/extending-the-project.md`.
 
 ## Git
 
 These files are local and already in `.gitignore`:
-- `CLAUDE.local.md`, `.claude/settings.local.json` — personal Claude Code settings
-- `*PLAN.md` — plan mode scratch files
+- Agent-specific local settings (e.g. `CLAUDE.local.md`, `.claude/settings.local.json`)
+- Plan mode scratch files (`*PLAN.md`)

@@ -1111,7 +1111,7 @@ Trabuco generates context files, coding rules, and quality hooks for popular AI 
 |-------|----------------|-------------|
 | Claude Code | `CLAUDE.md`, `.claude/settings.json`, `.claude/skills/review.md` | Project context, permissions, auto-formatting hooks, code review skill |
 | Cursor | `.cursor/rules/java.mdc`, `.cursor/hooks.json` | Java coding rules with auto-formatting hooks |
-| GitHub Copilot | `.github/instructions/java.instructions.md`, `.github/copilot-setup-steps.yml` | Java coding instructions and cloud agent setup |
+| GitHub Copilot | `.github/instructions/java.instructions.md`, `.github/workflows/copilot-setup-steps.yml` | Java coding instructions and cloud agent setup |
 | Windsurf | `.windsurf/rules/java.md` | Java coding rules with glob-scoped triggers |
 | Cline | `.clinerules/java.md` | Java coding rules and conventions |
 

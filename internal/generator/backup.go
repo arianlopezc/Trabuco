@@ -248,7 +248,7 @@ func GetFilesToBackup(module string) []string {
 		"AGENTS.md",
 		// AI agent context files (backup handles nonexistent files gracefully)
 		"CLAUDE.md",
-		".cursorrules",
+		".cursor/rules/project.mdc",
 		".github/copilot-instructions.md",
 		".windsurf/rules/project.md",
 		".clinerules/project.md",
@@ -256,7 +256,7 @@ func GetFilesToBackup(module string) []string {
 		".claude/settings.json",
 		".cursor/rules/java.mdc",
 		".cursor/hooks.json",
-		".github/copilot-setup-steps.yml",
+		".github/workflows/copilot-setup-steps.yml",
 		".github/instructions/java.instructions.md",
 		".windsurf/rules/java.md",
 		".clinerules/java.md",

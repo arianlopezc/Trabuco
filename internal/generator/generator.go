@@ -309,6 +309,14 @@ func (g *Generator) writeFile(path string, content string) error {
 	return nil
 }
 
+// templateData wraps ProjectConfig with additional per-render context.
+// Embedding ProjectConfig ensures all existing template calls (e.g. {{.HasModule "API"}}) still work.
+type templateData struct {
+	*config.ProjectConfig
+	PromptsDir  string // ".claude/rules" for Claude Code, ".ai/prompts" for other agents
+	Frontmatter string // Optional YAML frontmatter body (without --- delimiters) to prepend for agents like Cursor/Windsurf
+}
+
 // renderTemplate renders a template with the project config
 func (g *Generator) renderTemplate(templatePath string) (string, error) {
 	return g.engine.Execute(templatePath, g.config)
@@ -317,6 +325,17 @@ func (g *Generator) renderTemplate(templatePath string) (string, error) {
 // writeTemplate renders a template and writes it to a file
 func (g *Generator) writeTemplate(templatePath, outputPath string) error {
 	content, err := g.renderTemplate(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to render template %s: %w", templatePath, err)
+	}
+
+	fullPath := filepath.Join(g.outDir, outputPath)
+	return g.writeFile(fullPath, content)
+}
+
+// writeTemplateWithData renders a template with custom data and writes it to a file
+func (g *Generator) writeTemplateWithData(templatePath, outputPath string, data interface{}) error {
+	content, err := g.engine.Execute(templatePath, data)
 	if err != nil {
 		return fmt.Errorf("failed to render template %s: %w", templatePath, err)
 	}

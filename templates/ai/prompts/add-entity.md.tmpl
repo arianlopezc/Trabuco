@@ -412,7 +412,7 @@ class {EntityName}ServiceTest {
 {{- end}}
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 
-**Repository integration tests**: See `.ai/prompts/testing-guide.md` for full Testcontainers examples.
+**Repository integration tests**: See `{{.PromptsDir}}/testing-guide.md` for full Testcontainers examples.
 {{- end}}
 
 ### 6. Compile and Test

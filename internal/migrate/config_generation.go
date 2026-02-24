@@ -271,8 +271,13 @@ cd API && mvn spring-boot:run
 		return err
 	}
 
-	// Generate .cursorrules
-	cursorContent := fmt.Sprintf(`# Cursor Rules for %s
+	// Generate .cursor/rules/project.mdc (Cursor project rules with frontmatter)
+	cursorContent := fmt.Sprintf(`---
+description: Project architecture and coding standards
+alwaysApply: true
+---
+
+# Cursor Rules for %s
 
 This is a Trabuco-generated multi-module Spring Boot project.
 
@@ -299,7 +304,11 @@ This is a Trabuco-generated multi-module Spring Boot project.
 - Each service should have corresponding test class
 `, m.projectInfo.Name, m.getDatastoreModule())
 
-	return os.WriteFile(filepath.Join(m.config.OutputPath, ".cursorrules"), []byte(cursorContent), 0644)
+	cursorDir := filepath.Join(m.config.OutputPath, ".cursor", "rules")
+	if err := os.MkdirAll(cursorDir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(cursorDir, "project.mdc"), []byte(cursorContent), 0644)
 }
 
 // generateParentPOM creates the parent pom.xml file using the template

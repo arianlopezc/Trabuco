@@ -242,7 +242,7 @@ func (c *ProjectConfig) EventConsumerNeedsDockerCompose() bool {
 type AIAgentInfo struct {
 	ID          string // Internal identifier (e.g., "claude", "cursor")
 	Name        string // Display name (e.g., "Claude Code", "Cursor")
-	FilePath    string // Output file path (e.g., "CLAUDE.md", ".cursorrules")
+	FilePath    string // Output file path (e.g., "CLAUDE.md", ".cursor/rules/project.mdc")
 	Description string // Short description for prompts
 }
 
@@ -250,7 +250,7 @@ type AIAgentInfo struct {
 func GetAvailableAIAgents() []AIAgentInfo {
 	return []AIAgentInfo{
 		{ID: "claude", Name: "Claude Code", FilePath: "CLAUDE.md", Description: "Anthropic's Claude Code CLI"},
-		{ID: "cursor", Name: "Cursor", FilePath: ".cursorrules", Description: "AI-first code editor"},
+		{ID: "cursor", Name: "Cursor", FilePath: ".cursor/rules/project.mdc", Description: "AI-first code editor"},
 		{ID: "copilot", Name: "GitHub Copilot", FilePath: ".github/copilot-instructions.md", Description: "GitHub's AI pair programmer"},
 		{ID: "windsurf", Name: "Windsurf", FilePath: ".windsurf/rules/project.md", Description: "Codeium's agentic IDE"},
 		{ID: "cline", Name: "Cline", FilePath: ".clinerules/project.md", Description: "VS Code autonomous agent"},

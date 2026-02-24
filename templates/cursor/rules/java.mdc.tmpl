@@ -1,7 +1,7 @@
 ---
 description: Java coding standards for {{.ProjectName}}
 globs: ["**/*.java"]
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Java Coding Rules for {{.ProjectName}}
@@ -50,7 +50,7 @@ public User createUser(CreateUserRequest request) {
 }
 ```
 
-## Modern Java (17+)
+## Modern Java ({{.JavaVersion}}+)
 
 ### Streams over loops
 ```java

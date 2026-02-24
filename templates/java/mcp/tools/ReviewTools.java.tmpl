@@ -25,7 +25,8 @@ public class ReviewTools {
 
   private static final Logger log = LoggerFactory.getLogger(ReviewTools.class);
   private static final String PROJECT_DIR = System.getProperty("user.dir");
-  private static final String QUALITY_SPEC_PATH = ".ai/prompts/JAVA_CODE_QUALITY.md";
+  private static final String QUALITY_SPEC_PATH_CLAUDE = ".claude/rules/JAVA_CODE_QUALITY.md";
+  private static final String QUALITY_SPEC_PATH_AI = ".ai/prompts/JAVA_CODE_QUALITY.md";
   private static final String REVIEW_LOG_PATH = ".ai/review-log.jsonl";
   private static final long MAX_LOG_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
@@ -147,11 +148,15 @@ public class ReviewTools {
 
   private static CallToolResult getReviewContext(List<String> files) {
     try {
-      Path specPath = Paths.get(PROJECT_DIR, QUALITY_SPEC_PATH);
+      // Check Claude Code location first, then fall back to cross-agent location
+      Path specPath = Paths.get(PROJECT_DIR, QUALITY_SPEC_PATH_CLAUDE);
+      if (!Files.exists(specPath)) {
+        specPath = Paths.get(PROJECT_DIR, QUALITY_SPEC_PATH_AI);
+      }
       if (!Files.exists(specPath)) {
         return new CallToolResult(
-          List.of(new TextContent("Quality spec not found at " + QUALITY_SPEC_PATH
-            + ". Ensure .ai/prompts/JAVA_CODE_QUALITY.md exists.")),
+          List.of(new TextContent("Quality spec not found. Ensure "
+            + QUALITY_SPEC_PATH_CLAUDE + " or " + QUALITY_SPEC_PATH_AI + " exists.")),
           true
         );
       }

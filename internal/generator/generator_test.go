@@ -389,6 +389,36 @@ func TestGenerator_Generate_WithCLAUDEMD(t *testing.T) {
 	if !contains(contentStr, "GlobalExceptionHandler") {
 		t.Error("CLAUDE.md should contain GlobalExceptionHandler when API is selected")
 	}
+	// CLAUDE.md should reference .claude/rules/ (not .ai/prompts/) for Claude Code
+	if !contains(contentStr, ".claude/rules/") {
+		t.Error("CLAUDE.md should reference .claude/rules/ for Claude Code agent")
+	}
+	if contains(contentStr, ".ai/prompts/") {
+		t.Error("CLAUDE.md should NOT reference .ai/prompts/ for Claude Code agent")
+	}
+
+	// Verify .claude/rules/ files are generated
+	rulesDir := filepath.Join("claude-test", ".claude", "rules")
+	expectedRules := []string{
+		"JAVA_CODE_QUALITY.md",
+		"code-review.md",
+		"testing-guide.md",
+		"extending-the-project.md",
+		"add-entity.md",
+		"add-endpoint.md",
+	}
+	for _, rule := range expectedRules {
+		rulePath := filepath.Join(rulesDir, rule)
+		if _, err := os.Stat(rulePath); os.IsNotExist(err) {
+			t.Errorf(".claude/rules/%s should exist when Claude Code is selected", rule)
+		}
+	}
+
+	// Verify .claude/settings.json exists
+	settingsPath := filepath.Join("claude-test", ".claude", "settings.json")
+	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
+		t.Error(".claude/settings.json should exist when Claude Code is selected")
+	}
 }
 
 func TestGenerator_Generate_DatabaseSpecificContent(t *testing.T) {
