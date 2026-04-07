@@ -1095,17 +1095,11 @@ func (a *ModuleAdder) regenerateDocs() error {
 			return fmt.Errorf("failed to regenerate Copilot files: %w", err)
 		}
 	}
-	if a.config.HasAIAgent("windsurf") {
-		if err := gen.generateWindsurfFiles(); err != nil {
-			return fmt.Errorf("failed to regenerate Windsurf files: %w", err)
+	if a.config.HasAIAgent("codex") {
+		if err := gen.generateCodexFiles(); err != nil {
+			return fmt.Errorf("failed to regenerate Codex files: %w", err)
 		}
 	}
-	if a.config.HasAIAgent("cline") {
-		if err := gen.generateClineFiles(); err != nil {
-			return fmt.Errorf("failed to regenerate Cline files: %w", err)
-		}
-	}
-
 	return nil
 }
 

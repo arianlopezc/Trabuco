@@ -26,7 +26,7 @@ type ProjectConfig struct {
 	MessageBroker string // "kafka" or "rabbitmq"
 
 	// AI Coding Agents
-	AIAgents []string // Selected agents: "claude", "cursor", "copilot", "windsurf", "cline"
+	AIAgents []string // Selected agents: "claude", "cursor", "copilot", "codex"
 
 	// CI/CD Provider
 	CIProvider string // "github" or "" (empty = none)
@@ -252,8 +252,7 @@ func GetAvailableAIAgents() []AIAgentInfo {
 		{ID: "claude", Name: "Claude Code", FilePath: "CLAUDE.md", Description: "Anthropic's Claude Code CLI"},
 		{ID: "cursor", Name: "Cursor", FilePath: ".cursor/rules/project.mdc", Description: "AI-first code editor"},
 		{ID: "copilot", Name: "GitHub Copilot", FilePath: ".github/copilot-instructions.md", Description: "GitHub's AI pair programmer"},
-		{ID: "windsurf", Name: "Windsurf", FilePath: ".windsurf/rules/project.md", Description: "Codeium's agentic IDE"},
-		{ID: "cline", Name: "Cline", FilePath: ".clinerules/project.md", Description: "VS Code autonomous agent"},
+		{ID: "codex", Name: "Codex", FilePath: "AGENTS.md", Description: "OpenAI's software engineering agent"},
 	}
 }
 

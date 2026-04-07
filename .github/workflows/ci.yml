@@ -465,7 +465,7 @@ jobs:
             --modules=Model,Shared,API,Worker,EventConsumer,SQLDatastore \
             --database=postgresql \
             --message-broker=kafka \
-            --ai-agents=claude,cursor,copilot,windsurf,cline \
+            --ai-agents=claude,cursor,copilot,codex \
             --skip-build
 
       - name: Verify all AI agent files exist
@@ -475,9 +475,21 @@ jobs:
 
           # Check agent instruction files
           echo "Checking AI agent instruction files..."
-          for file in "CLAUDE.md" ".cursor/rules/project.mdc" ".github/copilot-instructions.md" ".windsurf/rules/project.md" ".clinerules/project.md"; do
+          for file in "CLAUDE.md" ".cursor/rules/project.mdc" ".github/copilot-instructions.md" "AGENTS.md"; do
             if [ -f "$file" ]; then
               echo "  ✓ $file exists ($(wc -l < "$file") lines)"
+            else
+              echo "  ✗ $file MISSING"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          # Check Codex specific files
+          echo ""
+          echo "Checking Codex configuration files..."
+          for file in ".codex/hooks.json" ".codex/config.toml"; do
+            if [ -f "$file" ]; then
+              echo "  ✓ $file exists"
             else
               echo "  ✗ $file MISSING"
               ERRORS=$((ERRORS + 1))
@@ -524,7 +536,7 @@ jobs:
           ERRORS=0
           CORE_PATTERNS=("Module Dependencies" "mvn clean compile" "Constructor injection")
 
-          for file in "CLAUDE.md" ".cursor/rules/project.mdc" ".github/copilot-instructions.md" ".windsurf/rules/project.md" ".clinerules/project.md"; do
+          for file in "CLAUDE.md" ".cursor/rules/project.mdc" ".github/copilot-instructions.md" "AGENTS.md"; do
             for pattern in "${CORE_PATTERNS[@]}"; do
               if ! grep -q "$pattern" "$file"; then
                 echo "  ✗ $file missing core content: '$pattern'"

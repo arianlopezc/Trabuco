@@ -250,16 +250,14 @@ func GetFilesToBackup(module string) []string {
 		"CLAUDE.md",
 		".cursor/rules/project.mdc",
 		".github/copilot-instructions.md",
-		".windsurf/rules/project.md",
-		".clinerules/project.md",
 		// Agent-specific config files
 		".claude/settings.json",
 		".cursor/rules/java.mdc",
 		".cursor/hooks.json",
 		".github/workflows/copilot-setup-steps.yml",
 		".github/instructions/java.instructions.md",
-		".windsurf/rules/java.md",
-		".clinerules/java.md",
+		".codex/hooks.json",
+		".codex/config.toml",
 		// CI workflow
 		".github/workflows/ci.yml",
 	}

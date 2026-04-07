@@ -1,0 +1,7 @@
+[features]
+codex_hooks = true
+{{if .HasModule "MCP"}}
+[mcp_servers.{{.ProjectName}}]
+command = "java"
+args = ["-jar", "MCP/target/MCP-1.0-SNAPSHOT.jar"]
+{{end}}
