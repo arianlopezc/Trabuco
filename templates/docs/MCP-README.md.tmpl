@@ -65,45 +65,13 @@ On first use, you'll be prompted to approve the server for security reasons.
 3. Click the **Start** button that appears at the top
 4. The MCP tools will be available in Copilot Chat
 
-### Manual Setup (Global Configs)
+#### Codex
 
-The following agents require manual configuration in their global settings files.
+**Config:** `.codex/config.toml` - ✅ Auto-loaded from project config
 
-#### Windsurf (Codeium)
+The MCP server is pre-configured in `.codex/config.toml`. Codex will discover it automatically when the project is trusted.
 
-Add to `~/.codeium/windsurf/mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "{{.ProjectName}}": {
-      "command": "java",
-      "args": ["-jar", "/full/path/to/{{.ProjectName}}/MCP/target/MCP-1.0-SNAPSHOT.jar"],
-      "cwd": "/full/path/to/{{.ProjectName}}"
-    }
-  }
-}
-```
-
-Then restart Windsurf or reload MCP servers from the Cascade panel.
-
-#### Cline (VS Code Extension)
-
-Add to your Cline MCP settings (`cline_mcp_settings.json`):
-
-```json
-{
-  "mcpServers": {
-    "{{.ProjectName}}": {
-      "command": "java",
-      "args": ["-jar", "/full/path/to/{{.ProjectName}}/MCP/target/MCP-1.0-SNAPSHOT.jar"],
-      "cwd": "/full/path/to/{{.ProjectName}}"
-    }
-  }
-}
-```
-
-Then click the MCP Servers icon in Cline and enable the server.
+To verify, run `/mcp` in the Codex TUI to check active servers.
 
 ## Troubleshooting
 

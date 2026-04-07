@@ -19,7 +19,7 @@ But Trabuco isn't just for greenfield projects. The `trabuco migrate` command us
 
 The generated projects come batteries-included with production-proven technologies: Spring Boot for the application framework, Spring Data JDBC for straightforward database access, Flyway for version-controlled migrations, Testcontainers for realistic integration tests, and Resilience4j for fault tolerance. Everything is pre-configured and working together out of the box. Need PostgreSQL instead of MySQL? Just pick it during setup. Want the latest Java 25 instead of 21? One flag changes everything. The architecture is designed to be solid by default yet flexible when you need it.
 
-The real power lies in the modular structure. Instead of a monolithic source tree where everything depends on everything, Trabuco generates clean, separated modules: Model for your data structures, SQLDatastore or NoSQLDatastore for persistence, Shared for business logic and services, and API for your REST endpoints. Each module has a clear responsibility and well-defined dependencies. This isn't just organization for organization's sake — it enforces good architecture, makes testing straightforward, helps new team members understand the codebase faster, and scales gracefully as your project grows from prototype to production. This clear structure also makes your codebase ideal for AI coding assistants. Tools like Claude Code, Cursor, GitHub Copilot, Windsurf, and Cline thrive when they can understand where things belong, and Trabuco's organized layout removes the guesswork. The CLI can generate context files for your preferred AI coding agents with project-specific conventions, patterns, and commands — giving them the context they need to write code that fits naturally into your project.
+The real power lies in the modular structure. Instead of a monolithic source tree where everything depends on everything, Trabuco generates clean, separated modules: Model for your data structures, SQLDatastore or NoSQLDatastore for persistence, Shared for business logic and services, and API for your REST endpoints. Each module has a clear responsibility and well-defined dependencies. This isn't just organization for organization's sake — it enforces good architecture, makes testing straightforward, helps new team members understand the codebase faster, and scales gracefully as your project grows from prototype to production. This clear structure also makes your codebase ideal for AI coding assistants. Tools like Claude Code, Cursor, GitHub Copilot, and Codex thrive when they can understand where things belong, and Trabuco's organized layout removes the guesswork. The CLI can generate context files for your preferred AI coding agents with project-specific conventions, patterns, and commands — giving them the context they need to write code that fits naturally into your project.
 
 ## Table of Contents
 
@@ -98,7 +98,7 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - **GitHub Actions CI** — Opt-in CI workflow that adapts to your modules with `--ci github`
 - **Code quality enforcement** — Google Java Format (Spotless), Maven Enforcer, and auto-formatting hooks
 - **Architecture tests** — ArchUnit rules enforce constructor injection, layer boundaries, and no cyclic dependencies
-- **AI-friendly** — Generates context files, coding rules, quality specs, and task prompts for Claude, Cursor, GitHub Copilot, Windsurf, and Cline
+- **AI-friendly** — Generates context files, coding rules, quality specs, and task prompts for Claude, Cursor, GitHub Copilot, and Codex
 - **MCP server** — Optional Model Context Protocol server with build, test, quality, and code review tools
 - **CLI MCP server** — `trabuco mcp` exposes all CLI functionality as structured tools for AI coding agents
 
@@ -516,17 +516,12 @@ Or add to `.mcp.json` in your project root (shared with your team):
 }
 ```
 
-**Windsurf** — add to `~/.codeium/windsurf/mcp_config.json`:
+**Codex** — add to `.codex/config.toml`:
 
-```json
-{
-  "mcpServers": {
-    "trabuco": {
-      "command": "npx",
-      "args": ["-y", "trabuco-mcp"]
-    }
-  }
-}
+```toml
+[mcp_servers.trabuco]
+command = "npx"
+args = ["-y", "trabuco-mcp"]
 ```
 
 <details>
@@ -874,10 +869,9 @@ When you select the MCP module, Trabuco generates configuration files for all ma
 | Claude Code | `.mcp.json` | ✅ Yes — approve on first use |
 | Cursor | `.cursor/mcp.json` | ✅ Yes — approve on first use |
 | VS Code / GitHub Copilot | `.vscode/mcp.json` | ✅ Yes — click "Start" on first use |
-| Windsurf | See `MCP/README.md` | ❌ Manual setup required |
-| Cline | See `MCP/README.md` | ❌ Manual setup required |
+| Codex | `.codex/config.toml` | ✅ Yes — auto-loaded from project config |
 
-For agents with project-local configs (Claude Code, Cursor, VS Code), just open the project and approve the server when prompted. For detailed setup instructions for all agents, see `MCP/README.md`.
+For agents with project-local configs (Claude Code, Cursor, VS Code, Codex), just open the project and approve the server when prompted. For detailed setup instructions, see `MCP/README.md`.
 
 **Available MCP tools:**
 
@@ -1057,7 +1051,7 @@ mvn test
 | `--nosql-database` | NoSQL database type: `mongodb`, `redis` | `mongodb` |
 | `--message-broker` | Message broker: `kafka`, `rabbitmq`, `sqs`, `pubsub` | `kafka` |
 | `--java-version` | Java version: `17`, `21`, or `25` | `21` |
-| `--ai-agents` | AI coding agents (comma-separated): `claude`, `cursor`, `copilot`, `windsurf`, `cline` | — |
+| `--ai-agents` | AI coding agents (comma-separated): `claude`, `cursor`, `copilot`, `codex` | — |
 | `--ci` | CI/CD provider: `github` | — |
 | `--skip-build` | Skip running `mvn clean install` after generation | `false` |
 | `--strict` | Fail if specified Java version is not detected | `false` |
@@ -1080,7 +1074,7 @@ mvn test
 - Worker uses your datastore for job persistence (defaults to PostgreSQL if none selected)
 - Jobs module is auto-included when Worker is selected (not shown in CLI)
 - Events module is auto-included when EventConsumer is selected (not shown in CLI)
-- MCP generates configuration files for Claude Code, Cursor, VS Code, Windsurf, and Cline
+- MCP generates configuration files for Claude Code, Cursor, VS Code, and Codex
 - MCP includes quality tools (format, check) and review tools (context, findings, stats)
 
 ### Java Version Detection
@@ -1112,10 +1106,9 @@ Trabuco generates context files, coding rules, and quality hooks for popular AI 
 | Claude Code | `CLAUDE.md`, `.claude/settings.json`, `.claude/skills/review.md` | Project context, permissions, auto-formatting hooks, code review skill |
 | Cursor | `.cursor/rules/java.mdc`, `.cursor/hooks.json` | Java coding rules with auto-formatting hooks |
 | GitHub Copilot | `.github/instructions/java.instructions.md`, `.github/workflows/copilot-setup-steps.yml` | Java coding instructions and cloud agent setup |
-| Windsurf | `.windsurf/rules/java.md` | Java coding rules with glob-scoped triggers |
-| Cline | `.clinerules/java.md` | Java coding rules and conventions |
+| Codex | `AGENTS.md`, `.codex/config.toml`, `.codex/hooks.json` | Full project context in AGENTS.md, MCP config, auto-formatting hooks |
 
-Every agent also gets `AGENTS.md` — a cross-tool baseline with the project's structure, build commands, module dependencies, and coding patterns.
+Every agent also gets `AGENTS.md` — a cross-tool baseline with the project's structure, build commands, module dependencies, and coding patterns. Codex uses `AGENTS.md` as its primary context file, so when selected it receives the full project architecture and coding standards.
 
 In interactive mode, you'll be prompted to select which agents you want context files for. In non-interactive mode:
 
@@ -1124,7 +1117,7 @@ In interactive mode, you'll be prompted to select which agents you want context 
 trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents=claude,cursor
 
 # Generate for all agents
-trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents=claude,cursor,copilot,windsurf,cline
+trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents=claude,cursor,copilot,codex
 ```
 
 All agents also get the `.ai/` directory with task prompts, quality specifications, and a review log. See [Code Quality & Architecture](#code-quality--architecture) for details.

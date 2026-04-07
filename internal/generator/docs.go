@@ -16,6 +16,15 @@ func (g *Generator) generateDocs() error {
 		return err
 	}
 
+	// Generate AGENTS.md cross-tool baseline first (when any AI agent is selected).
+	// This is written before per-agent files so that Codex (which uses AGENTS.md as its
+	// primary context file) can overwrite it with the full content from CLAUDE.md.tmpl.
+	if g.config.HasAnyAIAgent() {
+		if err := g.writeTemplate("docs/AGENTS.md.tmpl", "AGENTS.md"); err != nil {
+			return err
+		}
+	}
+
 	// Generate AI agent context files for each selected agent.
 	// All agents use the same template content (CLAUDE.md.tmpl), just different file paths,
 	// prompts directories, and optional frontmatter per agent conventions.
@@ -29,9 +38,6 @@ func (g *Generator) generateDocs() error {
 		case "cursor":
 			// Cursor .mdc files require YAML frontmatter with alwaysApply
 			frontmatter = "description: Project architecture and coding standards\nalwaysApply: true\n"
-		case "windsurf":
-			// Windsurf rules require a trigger field
-			frontmatter = "trigger: always_on\n"
 		}
 
 		data := &templateData{
@@ -40,13 +46,6 @@ func (g *Generator) generateDocs() error {
 			Frontmatter:   frontmatter,
 		}
 		if err := g.writeTemplateWithData("docs/CLAUDE.md.tmpl", agent.FilePath, data); err != nil {
-			return err
-		}
-	}
-
-	// Generate AGENTS.md cross-tool baseline (when any AI agent is selected)
-	if g.config.HasAnyAIAgent() {
-		if err := g.writeTemplate("docs/AGENTS.md.tmpl", "AGENTS.md"); err != nil {
 			return err
 		}
 	}
@@ -133,16 +132,9 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
-	// Generate Windsurf specific files when Windsurf is selected
-	if g.config.HasAIAgent("windsurf") {
-		if err := g.generateWindsurfFiles(); err != nil {
-			return err
-		}
-	}
-
-	// Generate Cline specific files when Cline is selected
-	if g.config.HasAIAgent("cline") {
-		if err := g.generateClineFiles(); err != nil {
+	// Generate Codex specific files when Codex is selected
+	if g.config.HasAIAgent("codex") {
+		if err := g.generateCodexFiles(); err != nil {
 			return err
 		}
 	}
@@ -328,20 +320,15 @@ func (g *Generator) generateCopilotFiles() error {
 	return nil
 }
 
-// generateWindsurfFiles generates Windsurf specific configuration files
-func (g *Generator) generateWindsurfFiles() error {
-	// Generate .windsurf/rules/java.md with glob-scoped Java rules
-	if err := g.writeTemplate("windsurf/rules/java.md.tmpl", ".windsurf/rules/java.md"); err != nil {
+// generateCodexFiles generates Codex specific configuration files
+func (g *Generator) generateCodexFiles() error {
+	// Generate .codex/hooks.json with auto-formatting hooks
+	if err := g.writeTemplate("codex/hooks.json.tmpl", ".codex/hooks.json"); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-// generateClineFiles generates Cline specific configuration files
-func (g *Generator) generateClineFiles() error {
-	// Generate .clinerules/java.md with Java coding rules
-	if err := g.writeTemplate("cline/rules/java.md.tmpl", ".clinerules/java.md"); err != nil {
+	// Generate .codex/config.toml with hooks feature flag and MCP config
+	if err := g.writeTemplate("codex/config.toml.tmpl", ".codex/config.toml"); err != nil {
 		return err
 	}
 

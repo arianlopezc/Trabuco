@@ -53,19 +53,14 @@ Add to `.vscode/mcp.json`:
 }
 ```
 
-### Windsurf
+### Codex
 
-Add to `~/.codeium/windsurf/mcp_config.json`:
+Add to `.codex/config.toml`:
 
-```json
-{
-  "mcpServers": {
-    "trabuco": {
-      "command": "npx",
-      "args": ["-y", "trabuco-mcp"]
-    }
-  }
-}
+```toml
+[mcp_servers.trabuco]
+command = "npx"
+args = ["-y", "trabuco-mcp"]
 ```
 
 ## Available Tools

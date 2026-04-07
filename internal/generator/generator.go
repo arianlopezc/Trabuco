@@ -314,7 +314,7 @@ func (g *Generator) writeFile(path string, content string) error {
 type templateData struct {
 	*config.ProjectConfig
 	PromptsDir  string // ".claude/rules" for Claude Code, ".ai/prompts" for other agents
-	Frontmatter string // Optional YAML frontmatter body (without --- delimiters) to prepend for agents like Cursor/Windsurf
+	Frontmatter string // Optional YAML frontmatter body (without --- delimiters) to prepend for agents like Cursor
 }
 
 // renderTemplate renders a template with the project config

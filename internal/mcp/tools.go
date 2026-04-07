@@ -86,7 +86,7 @@ func registerInitProject(s *server.MCPServer, version string) {
 			mcp.Description("Java version: 17, 21, or 25 (default: 21)"),
 		),
 		mcp.WithString("ai_agents",
-			mcp.Description("Comma-separated AI agent configs to include: claude, cursor, windsurf, copilot"),
+			mcp.Description("Comma-separated AI agent configs to include: claude, cursor, copilot, codex"),
 		),
 		mcp.WithString("output_dir",
 			mcp.Description("Directory to create the project in (default: current directory)"),
