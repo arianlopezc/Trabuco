@@ -1,3 +1,9 @@
+{{- if .RulePaths}}
+---
+paths:
+{{.RulePaths}}
+---
+{{end -}}
 # Java Code Quality Specification
 
 This document defines the code quality standards for testing. AI coding assistants MUST read this specification before generating code and self-review against it after generation.

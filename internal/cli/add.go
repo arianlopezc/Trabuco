@@ -272,9 +272,18 @@ func runAdd(cmd *cobra.Command, args []string) {
 		fmt.Println("  JAR: MCP/target/MCP-1.0-SNAPSHOT.jar")
 		fmt.Println()
 		fmt.Println("  Pre-configured for:")
-		fmt.Println("    • Claude Code  → .mcp.json")
-		fmt.Println("    • Cursor       → .cursor/mcp.json")
-		fmt.Println("    • VS Code      → .vscode/mcp.json")
+		if adder.GetConfig().HasAIAgent("claude") {
+			fmt.Println("    • Claude Code  → .mcp.json")
+		}
+		if adder.GetConfig().HasAIAgent("cursor") {
+			fmt.Println("    • Cursor       → .cursor/mcp.json")
+		}
+		if adder.GetConfig().HasAIAgent("copilot") {
+			fmt.Println("    • VS Code      → .vscode/mcp.json")
+		}
+		if adder.GetConfig().HasAIAgent("codex") {
+			fmt.Println("    • Codex        → .codex/config.toml")
+		}
 		fmt.Println()
 		fmt.Println("  See MCP/README.md for setup instructions.")
 	}

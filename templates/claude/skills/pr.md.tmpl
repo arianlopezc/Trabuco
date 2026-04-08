@@ -1,33 +1,36 @@
 ---
 name: pr
-description: Generate a pull request title and description
+description: Generate a pull request title and description from branch changes
+user-invocable: true
+allowed-tools: Bash Read Grep Glob
+argument-hint: "[base-branch]"
 ---
 
 # Pull Request Generator
 
 Generate a comprehensive pull request title and description.
 
+## Current Branch
+
+!`git branch --show-current`
+
+## Commits Since Main
+
+!`git log main..HEAD --oneline`
+
+## Changed Files
+
+!`git diff main..HEAD --stat`
+
 ## Process
 
-1. **Gather context:**
-   ```bash
-   # Get current branch
-   git branch --show-current
-
-   # Get commits since branching from main
-   git log main..HEAD --oneline
-
-   # Get all changes
-   git diff main..HEAD --stat
-   ```
-
-2. **Analyze the changes:**
+1. **Analyze the changes above:**
    - What is the overall purpose of this PR?
    - What modules are affected?
    - Are there breaking changes?
    - What testing was done?
 
-3. **Generate PR content**
+2. **Generate PR content**
 
 ## PR Template
 
@@ -97,11 +100,6 @@ Examples:
 ## Execute
 
 After generating, offer to create the PR:
-```bash
-gh pr create --title "<title>" --body "<body>"
-```
-
-Or if pushing first is needed:
 ```bash
 git push -u origin $(git branch --show-current)
 gh pr create --title "<title>" --body "<body>"

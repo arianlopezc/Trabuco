@@ -1,3 +1,9 @@
+{{- if .RulePaths}}
+---
+paths:
+{{.RulePaths}}
+---
+{{end -}}
 # Testing Guide
 
 Comprehensive testing reference for {{.ProjectName}}. Use this guide when writing tests for any module.

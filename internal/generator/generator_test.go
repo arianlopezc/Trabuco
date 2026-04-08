@@ -397,20 +397,32 @@ func TestGenerator_Generate_WithCLAUDEMD(t *testing.T) {
 		t.Error("CLAUDE.md should NOT reference .ai/prompts/ for Claude Code agent")
 	}
 
-	// Verify .claude/rules/ files are generated
+	// Verify .claude/rules/ files are generated (only path-scoped rules, not task playbooks)
 	rulesDir := filepath.Join("claude-test", ".claude", "rules")
 	expectedRules := []string{
 		"JAVA_CODE_QUALITY.md",
 		"code-review.md",
 		"testing-guide.md",
-		"extending-the-project.md",
-		"add-entity.md",
-		"add-endpoint.md",
 	}
 	for _, rule := range expectedRules {
 		rulePath := filepath.Join(rulesDir, rule)
 		if _, err := os.Stat(rulePath); os.IsNotExist(err) {
 			t.Errorf(".claude/rules/%s should exist when Claude Code is selected", rule)
+		}
+	}
+
+	// Verify task playbooks are NOT in .claude/rules/ (they belong only in .ai/prompts/)
+	unexpectedRules := []string{
+		"extending-the-project.md",
+		"add-entity.md",
+		"add-endpoint.md",
+		"add-job.md",
+		"add-event.md",
+	}
+	for _, rule := range unexpectedRules {
+		rulePath := filepath.Join(rulesDir, rule)
+		if _, err := os.Stat(rulePath); err == nil {
+			t.Errorf(".claude/rules/%s should NOT exist (task playbooks belong in .ai/prompts/ only)", rule)
 		}
 	}
 

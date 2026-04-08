@@ -1,16 +1,15 @@
 {
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "mvn spotless:apply -q 2>/dev/null || true",
-            "timeout": 30
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": [
+    {
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "handlers": [
+        {
+          "type": "command",
+          "command": "mvn spotless:apply -q 2>/dev/null || true",
+          "timeout": 30
+        }
+      ]
+    }
+  ]
 }
