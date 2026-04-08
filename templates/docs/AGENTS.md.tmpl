@@ -49,6 +49,18 @@ mvn spotless:check         # Check formatting without modifying (CI)
 mvn enforcer:enforce       # Check dependency and version rules
 ```
 
+## Verification (MANDATORY after every change)
+
+Run these commands after every code change. All must succeed before considering work complete:
+
+```bash
+mvn clean compile          # Zero compilation errors
+mvn test                   # All tests green
+mvn spotless:check         # Formatting correct
+```
+
+If any command fails, fix the issue before proceeding.
+
 ## Module Dependency Rules
 
 ```

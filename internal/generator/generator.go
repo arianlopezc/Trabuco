@@ -315,6 +315,7 @@ type templateData struct {
 	*config.ProjectConfig
 	PromptsDir  string // ".claude/rules" for Claude Code, ".ai/prompts" for other agents
 	Frontmatter string // Optional YAML frontmatter body (without --- delimiters) to prepend for agents like Cursor
+	RulePaths   string // Optional YAML paths list for Claude Code rules (e.g., '  - "**/*.java"')
 }
 
 // renderTemplate renders a template with the project config

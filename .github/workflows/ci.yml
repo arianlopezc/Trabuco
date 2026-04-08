@@ -286,6 +286,7 @@ jobs:
             --name=mcp-project \
             --group-id=com.test.mcp \
             --modules=Model,MCP \
+            --ai-agents=claude,cursor,copilot,codex \
             --skip-build
 
       - name: Display MCP module structure
@@ -302,6 +303,9 @@ jobs:
           echo ""
           echo "VS Code (.vscode/mcp.json):"
           cat test-mcp/mcp-project/.vscode/mcp.json
+          echo ""
+          echo "Codex (.codex/config.toml):"
+          cat test-mcp/mcp-project/.codex/config.toml
           echo ""
           echo "MCP README exists:"
           ls -la test-mcp/mcp-project/MCP/README.md
@@ -532,17 +536,25 @@ jobs:
       - name: Verify AI agent files share core content
         working-directory: test-ai/ai-project
         run: |
-          # Each agent file has different frontmatter/paths but must share core content
+          # Each verbose agent file must share core content (AGENTS.md is concise baseline — different checks)
           ERRORS=0
           CORE_PATTERNS=("Module Dependencies" "mvn clean compile" "Constructor injection")
 
-          for file in "CLAUDE.md" ".cursor/rules/project.mdc" ".github/copilot-instructions.md" "AGENTS.md"; do
+          for file in "CLAUDE.md" ".cursor/rules/project.mdc" ".github/copilot-instructions.md"; do
             for pattern in "${CORE_PATTERNS[@]}"; do
               if ! grep -q "$pattern" "$file"; then
                 echo "  ✗ $file missing core content: '$pattern'"
                 ERRORS=$((ERRORS + 1))
               fi
             done
+          done
+
+          # AGENTS.md is a concise baseline — check for its specific content
+          for pattern in "Module Dependency Rules" "mvn clean compile" "Key Patterns"; do
+            if ! grep -q "$pattern" "AGENTS.md"; then
+              echo "  ✗ AGENTS.md missing baseline content: '$pattern'"
+              ERRORS=$((ERRORS + 1))
+            fi
           done
 
           if [ $ERRORS -gt 0 ]; then
@@ -553,27 +565,89 @@ jobs:
 
           echo "All AI agent files contain core content ✓"
 
-      - name: Verify Claude Code dual-location files
+      - name: Verify Claude Code path-scoped rules
         working-directory: test-ai/ai-project
         run: |
-          # Claude Code auto-discovers .claude/rules/*.md — prompts should be copied there
+          # Claude rules must have paths: frontmatter for context-efficient loading.
+          # Task playbooks (add-entity, add-endpoint, etc.) should NOT be in .claude/rules/.
           ERRORS=0
-          for file in ".claude/rules/JAVA_CODE_QUALITY.md" ".claude/rules/testing-guide.md" ".claude/rules/add-entity.md" ".claude/rules/add-endpoint.md"; do
+
+          # These 3 rules should exist with paths frontmatter
+          for file in ".claude/rules/JAVA_CODE_QUALITY.md" ".claude/rules/code-review.md" ".claude/rules/testing-guide.md"; do
             if [ -f "$file" ]; then
               echo "  ✓ $file exists"
+              if grep -q "^paths:" "$file"; then
+                echo "    ✓ has paths: frontmatter"
+              else
+                echo "    ✗ MISSING paths: frontmatter"
+                ERRORS=$((ERRORS + 1))
+              fi
             else
               echo "  ✗ $file MISSING"
               ERRORS=$((ERRORS + 1))
             fi
           done
 
+          # Task playbooks should NOT be in .claude/rules/
+          for file in ".claude/rules/add-entity.md" ".claude/rules/add-endpoint.md" ".claude/rules/add-job.md" ".claude/rules/add-event.md" ".claude/rules/extending-the-project.md"; do
+            if [ -f "$file" ]; then
+              echo "  ✗ $file should NOT exist in rules (belongs in .ai/prompts/ only)"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
           if [ $ERRORS -gt 0 ]; then
             echo ""
-            echo "ERROR: $ERRORS Claude rules files missing"
+            echo "ERROR: $ERRORS Claude rules checks failed"
             exit 1
           fi
 
-          echo "All Claude Code dual-location files verified ✓"
+          echo "All Claude Code path-scoped rules verified ✓"
+
+      - name: Verify Codex hooks.json uses correct schema
+        working-directory: test-ai/ai-project
+        run: |
+          # Codex hooks must use array format with event/handlers (not Claude's object format)
+          if grep -q '"event"' .codex/hooks.json && grep -q '"handlers"' .codex/hooks.json; then
+            echo "  ✓ .codex/hooks.json uses correct Codex schema (event/handlers)"
+          else
+            echo "  ✗ .codex/hooks.json does NOT use correct Codex schema"
+            cat .codex/hooks.json
+            exit 1
+          fi
+
+      - name: Verify Claude skills have required frontmatter
+        working-directory: test-ai/ai-project
+        run: |
+          ERRORS=0
+          for skill in ".claude/skills/commit/SKILL.md" ".claude/skills/pr/SKILL.md" ".claude/skills/review/SKILL.md"; do
+            if [ -f "$skill" ]; then
+              echo "  ✓ $skill exists"
+              if grep -q "user-invocable: true" "$skill"; then
+                echo "    ✓ has user-invocable: true"
+              else
+                echo "    ✗ MISSING user-invocable: true"
+                ERRORS=$((ERRORS + 1))
+              fi
+              if grep -q "allowed-tools:" "$skill"; then
+                echo "    ✓ has allowed-tools"
+              else
+                echo "    ✗ MISSING allowed-tools"
+                ERRORS=$((ERRORS + 1))
+              fi
+            else
+              echo "  ✗ $skill MISSING"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          if [ $ERRORS -gt 0 ]; then
+            echo ""
+            echo "ERROR: $ERRORS skill frontmatter checks failed"
+            exit 1
+          fi
+
+          echo "All Claude skills have required frontmatter ✓"
 
       - name: Verify prompts contain module-specific content
         working-directory: test-ai/ai-project

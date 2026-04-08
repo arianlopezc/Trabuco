@@ -1,26 +1,35 @@
 ---
 name: commit
-description: Generate a semantic commit message from staged changes
+description: Generate a semantic commit message from staged changes following Conventional Commits format
+user-invocable: true
+allowed-tools: Bash Read Grep
+argument-hint: "[--amend]"
 ---
 
 # Commit Message Generator
 
 Generate a semantic commit message following Conventional Commits format.
 
+## Current Staged Changes
+
+!`git diff --cached --stat`
+
+## Detailed Diff
+
+!`git diff --cached`
+
+## Recent Commits (for style reference)
+
+!`git log --oneline -5`
+
 ## Process
 
-1. **Check staged changes:**
-   ```bash
-   git diff --cached --stat
-   git diff --cached
-   ```
-
-2. **Analyze the changes:**
+1. **Analyze the staged changes above**
    - What type of change? (feat, fix, refactor, docs, test, chore, style, perf)
    - What module/scope is affected?
    - What is the primary purpose?
 
-3. **Generate commit message:**
+2. **Generate commit message:**
    ```
    <type>(<scope>): <description>
 

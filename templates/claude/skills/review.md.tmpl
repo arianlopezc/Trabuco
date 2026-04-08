@@ -1,11 +1,20 @@
 ---
 name: review
-description: Review code changes for quality, security, and best practices
+description: Review code changes for quality, security, and best practices against project standards
+user-invocable: true
+allowed-tools: Read Grep Glob Bash
+argument-hint: "[file-or-branch]"
+paths:
+  - "**/*.java"
 ---
 
 # Code Review
 
 Perform a comprehensive code review following project standards.
+
+## Changes to Review
+
+!`git diff --cached --stat 2>/dev/null || git diff main..HEAD --stat 2>/dev/null || echo "No staged or branch changes found"`
 
 ## Process
 
@@ -114,7 +123,7 @@ After completing the review:
 - Use `record-review-finding` for each issue found (category, severity, file, message, rule)
 - Use `get-review-stats` to check if this is a recurring pattern across reviews
 
-## Quick Commands
+## Verification
 
 ```bash
 # Run tests before approving
@@ -123,6 +132,6 @@ mvn test
 # Check for compilation issues
 mvn clean compile
 
-# View coverage
-open API/target/site/jacoco/index.html
+# Check formatting
+mvn spotless:check
 ```

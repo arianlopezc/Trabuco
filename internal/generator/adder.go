@@ -54,6 +54,11 @@ func NewModuleAdder(projectPath string, metadata *config.ProjectMetadata, versio
 	}
 }
 
+// GetConfig returns the project configuration
+func (a *ModuleAdder) GetConfig() *config.ProjectConfig {
+	return a.config
+}
+
 // Add adds a module and its dependencies to the project
 func (a *ModuleAdder) Add(module string, database, nosqlDatabase, messageBroker string) error {
 	green := color.New(color.FgGreen)
@@ -1027,18 +1032,36 @@ func (a *ModuleAdder) regenerateDocs() error {
 		return fmt.Errorf("failed to regenerate README.md: %w", err)
 	}
 
-	// Regenerate AI agent context files for each selected agent
-	// All agents use the same template content (CLAUDE.md.tmpl), just different file paths
-	for _, agent := range a.config.GetSelectedAIAgents() {
-		if err := gen.writeTemplate("docs/CLAUDE.md.tmpl", agent.FilePath); err != nil {
-			return fmt.Errorf("failed to regenerate %s: %w", agent.FilePath, err)
-		}
-	}
-
-	// Regenerate AGENTS.md cross-tool baseline
+	// Regenerate AGENTS.md cross-tool baseline first (Codex uses this as-is)
 	if a.config.HasAnyAIAgent() {
 		if err := gen.writeTemplate("docs/AGENTS.md.tmpl", "AGENTS.md"); err != nil {
 			return fmt.Errorf("failed to regenerate AGENTS.md: %w", err)
+		}
+	}
+
+	// Regenerate AI agent context files for each selected agent.
+	// Codex is skipped — it uses the concise baseline AGENTS.md written above.
+	for _, agent := range a.config.GetSelectedAIAgents() {
+		if agent.ID == "codex" {
+			continue
+		}
+
+		promptsDir := ".ai/prompts"
+		frontmatter := ""
+		switch agent.ID {
+		case "claude":
+			promptsDir = ".claude/rules"
+		case "cursor":
+			frontmatter = "description: Project architecture and coding standards\nalwaysApply: true\n"
+		}
+
+		data := &templateData{
+			ProjectConfig: a.config,
+			PromptsDir:    promptsDir,
+			Frontmatter:   frontmatter,
+		}
+		if err := gen.writeTemplateWithData("docs/CLAUDE.md.tmpl", agent.FilePath, data); err != nil {
+			return fmt.Errorf("failed to regenerate %s: %w", agent.FilePath, err)
 		}
 	}
 
@@ -1049,24 +1072,24 @@ func (a *ModuleAdder) regenerateDocs() error {
 		}
 	}
 
-	// Generate MCP configuration files when MCP module is selected
+	// Generate MCP configuration files when MCP module is selected — only for selected agents
 	if a.config.HasModule(config.ModuleMCP) {
-		// Claude Code: .mcp.json (project root)
-		if err := gen.writeTemplate("docs/mcp.json.tmpl", ".mcp.json"); err != nil {
-			return fmt.Errorf("failed to generate .mcp.json: %w", err)
+		if a.config.HasAIAgent("claude") {
+			if err := gen.writeTemplate("docs/mcp.json.tmpl", ".mcp.json"); err != nil {
+				return fmt.Errorf("failed to generate .mcp.json: %w", err)
+			}
 		}
-
-		// Cursor: .cursor/mcp.json
-		if err := gen.writeTemplate("docs/cursor-mcp.json.tmpl", ".cursor/mcp.json"); err != nil {
-			return fmt.Errorf("failed to generate .cursor/mcp.json: %w", err)
+		if a.config.HasAIAgent("cursor") {
+			if err := gen.writeTemplate("docs/cursor-mcp.json.tmpl", ".cursor/mcp.json"); err != nil {
+				return fmt.Errorf("failed to generate .cursor/mcp.json: %w", err)
+			}
 		}
-
-		// VS Code / GitHub Copilot: .vscode/mcp.json
-		if err := gen.writeTemplate("docs/vscode-mcp.json.tmpl", ".vscode/mcp.json"); err != nil {
-			return fmt.Errorf("failed to generate .vscode/mcp.json: %w", err)
+		if a.config.HasAIAgent("copilot") {
+			if err := gen.writeTemplate("docs/vscode-mcp.json.tmpl", ".vscode/mcp.json"); err != nil {
+				return fmt.Errorf("failed to generate .vscode/mcp.json: %w", err)
+			}
 		}
-
-		// MCP README with setup instructions for all agents
+		// MCP README is always generated (covers setup for all agents)
 		if err := gen.writeTemplate("docs/MCP-README.md.tmpl", "MCP/README.md"); err != nil {
 			return fmt.Errorf("failed to generate MCP/README.md: %w", err)
 		}

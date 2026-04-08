@@ -28,7 +28,13 @@ func (g *Generator) generateDocs() error {
 	// Generate AI agent context files for each selected agent.
 	// All agents use the same template content (CLAUDE.md.tmpl), just different file paths,
 	// prompts directories, and optional frontmatter per agent conventions.
+	// Codex is skipped here — it uses the concise baseline AGENTS.md (written above) because
+	// Codex's official guidance recommends short, focused AGENTS.md files (20-30 core lines).
 	for _, agent := range g.config.GetSelectedAIAgents() {
+		if agent.ID == "codex" {
+			continue // Codex uses the baseline AGENTS.md, not the verbose CLAUDE.md
+		}
+
 		promptsDir := ".ai/prompts"
 		frontmatter := ""
 
@@ -81,24 +87,33 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
-	// Generate MCP configuration files when MCP module is selected
+	// Generate MCP configuration files when MCP module is selected — only for selected agents.
+	// Each agent has its own MCP config format and location.
 	if g.config.HasModule(config.ModuleMCP) {
 		// Claude Code: .mcp.json (project root)
-		if err := g.writeTemplate("docs/mcp.json.tmpl", ".mcp.json"); err != nil {
-			return err
+		if g.config.HasAIAgent("claude") {
+			if err := g.writeTemplate("docs/mcp.json.tmpl", ".mcp.json"); err != nil {
+				return err
+			}
 		}
 
 		// Cursor: .cursor/mcp.json
-		if err := g.writeTemplate("docs/cursor-mcp.json.tmpl", ".cursor/mcp.json"); err != nil {
-			return err
+		if g.config.HasAIAgent("cursor") {
+			if err := g.writeTemplate("docs/cursor-mcp.json.tmpl", ".cursor/mcp.json"); err != nil {
+				return err
+			}
 		}
 
 		// VS Code / GitHub Copilot: .vscode/mcp.json
-		if err := g.writeTemplate("docs/vscode-mcp.json.tmpl", ".vscode/mcp.json"); err != nil {
-			return err
+		if g.config.HasAIAgent("copilot") {
+			if err := g.writeTemplate("docs/vscode-mcp.json.tmpl", ".vscode/mcp.json"); err != nil {
+				return err
+			}
 		}
 
-		// MCP README with setup instructions for all agents
+		// Codex MCP config is handled by generateCodexFiles() via config.toml
+
+		// MCP README is always generated (covers setup for all agents)
 		if err := g.writeTemplate("docs/MCP-README.md.tmpl", "MCP/README.md"); err != nil {
 			return err
 		}
@@ -238,53 +253,33 @@ func (g *Generator) generateClaudeCodeFiles() error {
 		return err
 	}
 
-	// Generate prompt files to .claude/rules/ (Claude Code's official auto-discovery location).
-	// These use the same templates as .ai/prompts/ but with PromptsDir=".claude/rules" so that
-	// internal cross-references point to .claude/rules/ (not .ai/prompts/).
-	claudeData := &templateData{
+	// Generate path-scoped rules to .claude/rules/ (Claude Code's official auto-discovery location).
+	// Rules include `paths:` frontmatter so they only load when matching files are accessed,
+	// keeping context budget efficient instead of loading 1000+ lines at every session start.
+	// Task playbooks (add-entity, add-endpoint, etc.) are NOT placed in rules — they live
+	// only in .ai/prompts/ and are referenced from the main CLAUDE.md file.
+	javaRuleData := &templateData{
 		ProjectConfig: g.config,
 		PromptsDir:    ".claude/rules",
+		RulePaths:     `  - "**/*.java"`,
 	}
 
-	if err := g.writeTemplateWithData("ai/prompts/JAVA_CODE_QUALITY.md.tmpl", ".claude/rules/JAVA_CODE_QUALITY.md", claudeData); err != nil {
+	if err := g.writeTemplateWithData("ai/prompts/JAVA_CODE_QUALITY.md.tmpl", ".claude/rules/JAVA_CODE_QUALITY.md", javaRuleData); err != nil {
 		return err
 	}
 
-	if err := g.writeTemplateWithData("ai/prompts/code-review.md.tmpl", ".claude/rules/code-review.md", claudeData); err != nil {
+	if err := g.writeTemplateWithData("ai/prompts/code-review.md.tmpl", ".claude/rules/code-review.md", javaRuleData); err != nil {
 		return err
 	}
 
-	if err := g.writeTemplateWithData("ai/prompts/testing-guide.md.tmpl", ".claude/rules/testing-guide.md", claudeData); err != nil {
+	testRuleData := &templateData{
+		ProjectConfig: g.config,
+		PromptsDir:    ".claude/rules",
+		RulePaths:     "  - \"**/*Test.java\"\n  - \"**/*Tests.java\"\n  - \"**/*IT.java\"",
+	}
+
+	if err := g.writeTemplateWithData("ai/prompts/testing-guide.md.tmpl", ".claude/rules/testing-guide.md", testRuleData); err != nil {
 		return err
-	}
-
-	if err := g.writeTemplateWithData("ai/prompts/extending-the-project.md.tmpl", ".claude/rules/extending-the-project.md", claudeData); err != nil {
-		return err
-	}
-
-	// Conditionally generate task playbooks
-	if g.config.HasModule(config.ModuleModel) {
-		if err := g.writeTemplateWithData("ai/prompts/add-entity.md.tmpl", ".claude/rules/add-entity.md", claudeData); err != nil {
-			return err
-		}
-	}
-
-	if g.config.HasModule(config.ModuleAPI) {
-		if err := g.writeTemplateWithData("ai/prompts/add-endpoint.md.tmpl", ".claude/rules/add-endpoint.md", claudeData); err != nil {
-			return err
-		}
-	}
-
-	if g.config.HasModule(config.ModuleWorker) {
-		if err := g.writeTemplateWithData("ai/prompts/add-job.md.tmpl", ".claude/rules/add-job.md", claudeData); err != nil {
-			return err
-		}
-	}
-
-	if g.config.HasModule(config.ModuleEventConsumer) {
-		if err := g.writeTemplateWithData("ai/prompts/add-event.md.tmpl", ".claude/rules/add-event.md", claudeData); err != nil {
-			return err
-		}
 	}
 
 	return nil

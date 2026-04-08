@@ -15,7 +15,12 @@ This project enforces strict code quality standards. You MUST:
 1. **Follow the specification** when generating code
 2. **Self-review** generated code against the specification
 3. **Refactor** any violations immediately
-4. **Verify** the code compiles and tests pass
+4. **Verify** by running these commands after every change:
+   ```bash
+   mvn clean compile    # Must succeed — zero compilation errors
+   mvn test             # Must succeed — all tests green
+   mvn spotless:check   # Must succeed — formatting is correct
+   ```
 
 ### Quick Quality Checks
 
