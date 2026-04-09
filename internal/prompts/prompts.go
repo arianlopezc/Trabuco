@@ -3,7 +3,6 @@ package prompts
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -300,150 +299,64 @@ func normalizeMessageBrokerChoice(choice string) string {
 	}
 }
 
-// promptJavaVersion prompts for Java version with detection status
+// promptJavaVersion prompts for Java version showing only detected supported versions.
+// If no supported version is detected, returns an error asking the user to install one.
 func promptJavaVersion(detection *java.DetectionResult) (version string, detected bool, err error) {
-	// Build options with detection status
 	options := buildJavaOptions(detection)
+	if len(options) == 0 {
+		red := color.New(color.FgRed)
+		red.Println("\nNo supported Java version detected on your system.")
+		fmt.Println()
+		fmt.Printf("Trabuco requires Java %d or later. Supported versions: %s\n",
+			java.MinSupportedVersion, java.FormatDetectedVersions(java.SupportedVersions))
+		fmt.Println()
+		fmt.Println("Install one of the supported versions and try again:")
+		fmt.Println("  • SDKMAN:  sdk install java 21-tem")
+		fmt.Println("  • Homebrew: brew install openjdk@21")
+		fmt.Println("  • Manual:  https://adoptium.net/")
+		return "", false, fmt.Errorf("no supported Java version detected (minimum: %d)", java.MinSupportedVersion)
+	}
 
 	var selected string
 	if err := survey.AskOne(&survey.Select{
 		Message: "Java version:",
 		Options: options,
-		Default: options[0], // First option is recommended
+		Default: options[0],
 	}, &selected); err != nil {
 		return "", false, err
 	}
 
-	// Extract version number from selection
 	version = strings.Split(selected, " ")[0]
-	versionInt, _ := strconv.Atoi(version)
-	detected = detection.IsVersionDetected(versionInt)
-
-	// If version not detected, show confirmation prompt
-	if !detected {
-		confirmed, err := confirmUndetectedVersion(version, detection)
-		if err != nil {
-			return "", false, err
-		}
-		if !confirmed {
-			// User chose not to proceed, re-prompt with detected versions only
-			return promptJavaVersionDetectedOnly(detection)
-		}
-	}
-
-	return version, detected, nil
+	return version, true, nil
 }
 
-// buildJavaOptions creates the Java version options with detection status
+// buildJavaOptions creates Java version options from detected supported versions only.
+// Returns options sorted by preference: 21 (recommended) first, then others descending.
 func buildJavaOptions(detection *java.DetectionResult) []string {
-	type versionOption struct {
-		version     int
-		label       string
-		recommended bool
+	// Labels for known versions
+	labels := map[int]string{
+		21: "LTS until 2031 — Recommended",
+		25: "LTS",
+		26: "Latest",
 	}
 
-	// Define available versions with descriptions
-	allVersions := []versionOption{
-		{21, "21 (LTS until 2031 - Recommended)", true},
-		{25, "25 (Latest LTS)", false},
-		{17, "17 (LTS - Minimum supported)", false},
+	// Collect detected versions that are in our supported list
+	var detected []int
+	for _, v := range java.SupportedVersions {
+		if detection.IsVersionDetected(v) {
+			detected = append(detected, v)
+		}
 	}
 
+	// Build options — put 21 first if present (recommended), then others descending
 	var options []string
-	var hasRecommended bool
-
-	// Add versions with detection status
-	for _, v := range allVersions {
-		// Only show 17 if it's detected and 21/25 are not detected
-		if v.version == 17 {
-			if !detection.IsVersionDetected(17) {
-				continue
-			}
-			if detection.IsVersionDetected(21) || detection.IsVersionDetected(25) {
-				continue
-			}
+	for _, v := range detected {
+		label := labels[v]
+		if label == "" {
+			label = "Supported"
 		}
-
-		status := "[not detected]"
-		if detection.IsVersionDetected(v.version) {
-			status = "[detected]"
-		}
-		option := fmt.Sprintf("%d %s %s", v.version, strings.TrimPrefix(v.label, fmt.Sprintf("%d ", v.version)), status)
-		options = append(options, option)
-
-		if v.recommended && detection.IsVersionDetected(v.version) {
-			hasRecommended = true
-		}
-	}
-
-	// If recommended version (21) is not detected but another is, reorder to put detected first
-	if !hasRecommended && len(options) > 0 {
-		// Find first detected version and move to front
-		for i, opt := range options {
-			if strings.Contains(opt, "[detected]") {
-				// Move to front
-				options = append([]string{opt}, append(options[:i], options[i+1:]...)...)
-				break
-			}
-		}
+		options = append(options, fmt.Sprintf("%d (%s)", v, label))
 	}
 
 	return options
-}
-
-// confirmUndetectedVersion asks user to confirm using an undetected Java version
-func confirmUndetectedVersion(version string, detection *java.DetectionResult) (bool, error) {
-	yellow := color.New(color.FgYellow)
-	yellow.Printf("\n\u26a0 Java %s was not detected on your system.\n\n", version)
-
-	detectedVersions := detection.GetDetectedVersions()
-	if len(detectedVersions) > 0 {
-		fmt.Printf("Detected compatible versions: %s\n\n", java.FormatDetectedVersions(detectedVersions))
-	} else {
-		fmt.Println("No compatible Java versions detected.")
-	}
-
-	var confirmed bool
-	if err := survey.AskOne(&survey.Confirm{
-		Message: fmt.Sprintf("Continue with Java %s anyway?", version),
-		Default: false,
-	}, &confirmed); err != nil {
-		return false, err
-	}
-
-	return confirmed, nil
-}
-
-// promptJavaVersionDetectedOnly prompts for Java version showing only detected versions
-func promptJavaVersionDetectedOnly(detection *java.DetectionResult) (string, bool, error) {
-	detectedVersions := detection.GetDetectedVersions()
-	if len(detectedVersions) == 0 {
-		// No detected versions, fall back to 21
-		return "21", false, nil
-	}
-
-	var options []string
-	for _, v := range detectedVersions {
-		label := strconv.Itoa(v)
-		switch v {
-		case 21:
-			label = "21 (LTS until 2031 - Recommended)"
-		case 25:
-			label = "25 (Latest LTS)"
-		case 17:
-			label = "17 (LTS - Minimum supported)"
-		}
-		options = append(options, label)
-	}
-
-	var selected string
-	if err := survey.AskOne(&survey.Select{
-		Message: "Select a detected Java version:",
-		Options: options,
-	}, &selected); err != nil {
-		return "", false, err
-	}
-
-	version := strings.Split(selected, " ")[0]
-	return version, true, nil
 }

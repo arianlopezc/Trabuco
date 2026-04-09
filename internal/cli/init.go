@@ -66,7 +66,7 @@ func init() {
 	initCmd.Flags().StringVar(&flagDatabase, "database", "postgresql", "SQL database type: postgresql, mysql, none (non-interactive)")
 	initCmd.Flags().StringVar(&flagNoSQLDatabase, "nosql-database", "mongodb", "NoSQL database type: mongodb, redis (non-interactive)")
 	initCmd.Flags().StringVar(&flagMessageBroker, "message-broker", "kafka", "Message broker type: kafka, rabbitmq, sqs, pubsub (non-interactive, only used when EventConsumer is selected)")
-	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 17, 21, or 25 (non-interactive)")
+	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 21, 25, or 26 (non-interactive)")
 	initCmd.Flags().StringVar(&flagAIAgents, "ai-agents", "", "Comma-separated AI agents: claude,cursor,copilot,codex (non-interactive)")
 	initCmd.Flags().StringVar(&flagCI, "ci", "", "CI provider to generate (github)")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", false, "Deprecated: use --ai-agents=claude instead")
@@ -120,15 +120,16 @@ func runInit(cmd *cobra.Command, args []string) {
 		}
 
 		// Validate Java version
-		if flagJavaVersion != "17" && flagJavaVersion != "21" && flagJavaVersion != "25" {
-			color.Red("\nError: Invalid Java version '%s'. Must be 17, 21, or 25.\n", flagJavaVersion)
+		javaVersionNum, _ := strconv.Atoi(flagJavaVersion)
+		if !java.IsSupportedVersion(javaVersionNum) {
+			color.Red("\nError: Invalid Java version '%s'. Supported versions: %s\n",
+				flagJavaVersion, java.FormatDetectedVersions(java.SupportedVersions))
 			return
 		}
 
 		// Java version detection for non-interactive mode
 		javaDetection := java.Detect()
-		javaVersionInt, _ := strconv.Atoi(flagJavaVersion)
-		javaVersionDetected := javaDetection.IsVersionDetected(javaVersionInt)
+		javaVersionDetected := javaDetection.IsVersionDetected(javaVersionNum)
 
 		if !javaVersionDetected {
 			detectedVersions := javaDetection.GetDetectedVersions()
@@ -137,7 +138,7 @@ func runInit(cmd *cobra.Command, args []string) {
 				if len(detectedVersions) > 0 {
 					fmt.Fprintf(os.Stderr, "Detected versions: [%s]\n", java.FormatDetectedVersions(detectedVersions))
 				} else {
-					fmt.Fprintln(os.Stderr, "No compatible Java versions detected.")
+					fmt.Fprintf(os.Stderr, "No supported Java versions detected. Install Java %d or later.\n", java.MinSupportedVersion)
 				}
 				os.Exit(1)
 			}

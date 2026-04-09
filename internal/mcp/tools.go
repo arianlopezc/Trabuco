@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/arianlopezc/Trabuco/internal/ai"
@@ -14,6 +15,7 @@ import (
 	"github.com/arianlopezc/Trabuco/internal/config"
 	"github.com/arianlopezc/Trabuco/internal/doctor"
 	"github.com/arianlopezc/Trabuco/internal/generator"
+	"github.com/arianlopezc/Trabuco/internal/java"
 	"github.com/arianlopezc/Trabuco/internal/migrate"
 	"github.com/arianlopezc/Trabuco/internal/utils"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -83,7 +85,7 @@ func registerInitProject(s *server.MCPServer, version string) {
 			mcp.Description("Message broker: kafka, rabbitmq, sqs, pubsub (required if EventConsumer selected)"),
 		),
 		mcp.WithString("java_version",
-			mcp.Description("Java version: 17, 21, or 25 (default: 21)"),
+			mcp.Description("Java version: 21, 25, or 26 (default: 21)"),
 		),
 		mcp.WithString("ai_agents",
 			mcp.Description("Comma-separated AI agent configs to include: claude, cursor, copilot, codex"),
@@ -119,8 +121,9 @@ func registerInitProject(s *server.MCPServer, version string) {
 		}
 
 		// Validate Java version
-		if javaVersion != "17" && javaVersion != "21" && javaVersion != "25" {
-			return toolError(fmt.Sprintf("Invalid Java version '%s'. Must be 17, 21, or 25.", javaVersion)), nil
+		jvInt, _ := strconv.Atoi(javaVersion)
+		if !java.IsSupportedVersion(jvInt) {
+			return toolError(fmt.Sprintf("Invalid Java version '%s'. Supported: %s", javaVersion, java.FormatDetectedVersions(java.SupportedVersions))), nil
 		}
 
 		// Parse modules

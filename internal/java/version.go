@@ -6,11 +6,11 @@ import (
 	"strings"
 )
 
-// MinSupportedVersion is the minimum Java version supported by Spring Boot 3.x
-const MinSupportedVersion = 17
+// MinSupportedVersion is the minimum Java version supported by Trabuco
+const MinSupportedVersion = 21
 
 // SupportedVersions lists all Java versions supported by this tool
-var SupportedVersions = []int{17, 21, 25}
+var SupportedVersions = []int{21, 25, 26}
 
 // ParseVersion extracts the major version and full version string from various formats.
 // Handles formats like:

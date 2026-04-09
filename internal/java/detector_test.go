@@ -102,11 +102,11 @@ func TestIsVersionCompatible(t *testing.T) {
 		{8, false},
 		{11, false},
 		{14, false},
-		{16, false},
-		{17, true},
-		{18, true},
+		{17, false},
+		{20, false},
 		{21, true},
 		{25, true},
+		{26, true},
 	}
 
 	for _, tt := range tests {
@@ -124,9 +124,10 @@ func TestIsSupportedVersion(t *testing.T) {
 		version   int
 		supported bool
 	}{
-		{17, true},
+		{17, false},
 		{21, true},
 		{25, true},
+		{26, true},
 		{18, false},
 		{19, false},
 		{11, false},
@@ -196,9 +197,9 @@ func TestDetectionResult_GetDetectedVersions(t *testing.T) {
 func TestDetectionResult_GetCompatibleVersions(t *testing.T) {
 	result := &DetectionResult{
 		Installations: []JavaInstallation{
+			{Version: 25},
 			{Version: 21},
-			{Version: 17},
-			{Version: 11}, // Not compatible
+			{Version: 17}, // Not compatible (min is 21 now)
 		},
 	}
 
@@ -207,10 +208,10 @@ func TestDetectionResult_GetCompatibleVersions(t *testing.T) {
 		t.Errorf("GetCompatibleVersions() returned %d versions, want 2", len(versions))
 	}
 
-	// Should only contain 21 and 17, not 11
+	// Should only contain 25 and 21, not 17
 	for _, v := range versions {
-		if v == 11 {
-			t.Error("GetCompatibleVersions() should not contain version 11")
+		if v == 17 {
+			t.Error("GetCompatibleVersions() should not contain version 17 (below minimum)")
 		}
 	}
 }

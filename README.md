@@ -975,7 +975,7 @@ mvn test
 | `--database` | SQL database type: `postgresql`, `mysql`, `none` | `postgresql` |
 | `--nosql-database` | NoSQL database type: `mongodb`, `redis` | `mongodb` |
 | `--message-broker` | Message broker: `kafka`, `rabbitmq`, `sqs`, `pubsub` | `kafka` |
-| `--java-version` | Java version: `17`, `21`, or `25` | `21` |
+| `--java-version` | Java version: `21`, `25`, or `26` | `21` |
 | `--ai-agents` | AI coding agents (comma-separated): `claude`, `cursor`, `copilot`, `codex` | — |
 | `--ci` | CI/CD provider: `github` | — |
 | `--skip-build` | Skip running `mvn clean install` after generation | `false` |
@@ -1066,7 +1066,7 @@ See [CI/CD](#cicd) for details on what the workflow includes.
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Java | 17, 21, or 25 | Runtime |
+| Java | 21, 25, or 26 | Runtime |
 | Spring Boot | 3.4.2 | Application framework |
 | Spring Data JDBC | — | SQL database access |
 | Spring Data MongoDB | — | MongoDB access |
@@ -1116,7 +1116,7 @@ mvn test -pl Model      # Single module
 
 ## Requirements
 
-- **Java 17+** (17, 21, or 25 — Trabuco auto-detects installed versions)
+- **Java 21+** (21, 25, or 26 — Trabuco auto-detects installed versions)
 - **Maven 3.8+**
 - **Docker** (for Testcontainers and local development)
 
