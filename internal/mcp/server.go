@@ -52,7 +52,7 @@ RESOURCES (stable reference data):
 - trabuco://limitations: Complete list of what Trabuco does NOT generate
 
 WHAT TRABUCO GENERATES:
-- Multi-module Maven project (Model, Datastore, Shared, API, Worker, EventConsumer, MCP)
+- Multi-module Maven project (Model, Datastore, Shared, API, Worker, EventConsumer)
 - Spring Boot 3.4 with Spring Data JDBC (not JPA), Immutables, Testcontainers
 - Docker Compose, CI workflow, AI context files, code quality enforcement
 - Working placeholder code that serves as patterns for real implementation
