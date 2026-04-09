@@ -590,6 +590,57 @@ public UserRecord findById(Long id) {  // Don't expose Record
 - [ ] `*Record` and `*Document` types never exposed outside service layer
 - [ ] Conversion to `Immutable*` happens immediately after repository call
 - [ ] Repository methods return records, service methods return Immutables
+{{- if .HasModule "SQLDatastore"}}
+
+### 5.3 Database Relationships (No Foreign Keys)
+
+**Never use `FOREIGN KEY` constraints.** Store parent IDs as regular indexed columns.
+
+```sql
+-- CORRECT: Indexed column, no foreign key
+CREATE TABLE order_item (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    product_name VARCHAR(255) NOT NULL
+);
+
+CREATE INDEX idx_order_item_order_id ON order_item (order_id);
+
+-- WRONG: Foreign key constraint
+CREATE TABLE order_item (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES "order"(id) ON DELETE CASCADE,
+    product_name VARCHAR(255) NOT NULL
+);
+```
+
+**Why:** Avoids cascade surprises, enables independent module evolution, eliminates migration ordering issues across modules. Referential integrity is enforced in the service layer.
+
+**Checklist:**
+- [ ] No `FOREIGN KEY`, `REFERENCES`, or `ON DELETE CASCADE` in migrations
+- [ ] Parent ID columns have an index (`CREATE INDEX idx_...`)
+- [ ] Referential integrity enforced in service layer (check parent exists before insert)
+
+### 5.4 Pagination (Keyset by ID)
+
+**Never use offset pagination** (`OFFSET`, `Pageable`). Use keyset pagination with `WHERE id > :afterId`.
+
+```java
+// CORRECT: Keyset pagination — constant performance
+@Query("SELECT * FROM users WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+List<UserRecord> findPage(@Param("afterId") Long afterId, @Param("limit") int limit);
+
+// WRONG: Offset pagination — degrades with large offsets
+Page<UserRecord> findAll(Pageable pageable);
+```
+
+**Why:** Offset pagination scans and discards rows (`OFFSET 10000` reads 10,000 rows to skip them). Keyset pagination uses an index seek — constant performance at any depth.
+
+**Checklist:**
+- [ ] No `Pageable` or `OFFSET` in repository methods
+- [ ] List queries use `WHERE id > :afterId ORDER BY id ASC LIMIT :limit`
+- [ ] Controller caps `limit` to a maximum (e.g., 100)
+{{- end}}
 
 ---
 
@@ -804,6 +855,10 @@ Before submitting any code, verify:
 - [ ] Repository records converted at service boundary
 - [ ] Services use constructor injection
 - [ ] DTOs are Immutables in Model module
+{{- if .HasModule "SQLDatastore"}}
+- [ ] No `FOREIGN KEY` or `REFERENCES` in SQL migrations — indexed columns only
+- [ ] List queries use keyset pagination (`WHERE id > :afterId`), not `OFFSET`/`Pageable`
+{{- end}}
 
 ### Testing
 - [ ] Tests written before implementation (TDD)

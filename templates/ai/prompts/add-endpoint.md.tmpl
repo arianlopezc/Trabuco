@@ -296,19 +296,76 @@ After starting the API:
 - **Manual exception handling**: Let `GlobalExceptionHandler` handle common cases
 - **Hardcoded paths**: Use `@PathVariable` and `@RequestParam` appropriately
 
-## Advanced: Pagination
+## Pagination (Keyset / Cursor-Based)
 
-For list endpoints with many records:
+**Never use offset pagination** (`Pageable`, `OFFSET`). Use keyset pagination by ID — it performs consistently regardless of dataset size.
+
+The client passes the last-seen ID (`afterId`) and a page size (`limit`). The query uses `WHERE id > :afterId ORDER BY id ASC LIMIT :limit`.
+
+### Repository
+
+Add a custom query method to the repository interface:
 
 ```java
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+@Repository
+public interface {EntityName}Repository extends CrudRepository<{EntityName}Record, Long> {
 
-@GetMapping
-public Page<Immutable{EntityName}Response> getAll(Pageable pageable) {
-    return service.findAll(pageable)
-        .map(Immutable{EntityName}Response::from);
+    @Query("SELECT * FROM {entity_name_snake} WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+    List<{EntityName}Record> findPage(@Param("afterId") Long afterId, @Param("limit") int limit);
 }
 ```
 
-Requires updating repository and service to support `Pageable`.
+### Service
+
+```java
+public List<Immutable{EntityName}> findPage(Long afterId, int limit) {
+    return repository.findPage(afterId, limit).stream()
+        .map({EntityName}Record::toEntity)
+        .toList();
+}
+```
+
+### Controller
+
+```java
+@GetMapping
+public List<Immutable{EntityName}Response> list(
+        @RequestParam(defaultValue = "0") Long afterId,
+        @RequestParam(defaultValue = "20") int limit) {
+    return service.findPage(afterId, Math.min(limit, 100)).stream()
+        .map(Immutable{EntityName}Response::from)
+        .toList();
+}
+```
+
+- `afterId=0` returns the first page (all IDs are > 0)
+- Cap `limit` to a maximum (e.g., 100) to prevent abuse
+- The client uses the last item's ID as `afterId` for the next page
+
+### Test
+
+```java
+@Test
+void should_ReturnPageOfEntities_When_AfterIdProvided() throws Exception {
+    // Given
+    var entities = List.of(
+        Immutable{EntityName}.builder().id("5").name("Fifth").build(),
+        Immutable{EntityName}.builder().id("6").name("Sixth").build()
+    );
+    when(service.findPage(4L, 20)).thenReturn(entities);
+
+    // When/Then
+    mockMvc.perform(get("/api/{entities}?afterId=4&limit=20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(2))
+        .andExpect(jsonPath("$[0].id").value("5"));
+}
+```
+
+### Why Keyset Over Offset
+
+| Aspect | Offset (`OFFSET N`) | Keyset (`WHERE id > N`) |
+|--------|---------------------|------------------------|
+| Performance | Degrades linearly with offset | Constant — uses index seek |
+| Consistency | Skips/duplicates rows on concurrent inserts | Stable — cursor is immutable |
+| Complexity | Simple but misleading | Slightly more client logic |

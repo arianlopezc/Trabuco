@@ -18,11 +18,7 @@ Perform a comprehensive code review following project standards.
 
 ## Process
 
-1. **Get contextual quality rules** (if MCP tools available):
-   - Use the `get-review-context` tool with the files being reviewed
-   - This returns only the relevant quality sections for the file types
-
-2. **Get changes to review:**
+1. **Get changes to review:**
    ```bash
    # For staged changes
    git diff --cached
@@ -34,11 +30,11 @@ Perform a comprehensive code review following project standards.
    git diff <file>
    ```
 
-3. **Review against quality standards:**
-   - If MCP tools are not available, read `.claude/rules/JAVA_CODE_QUALITY.md`
+2. **Review against quality standards:**
+   - Read `.claude/rules/JAVA_CODE_QUALITY.md`
    - Check each category below
 
-4. **Report findings with severity**
+3. **Report findings with severity**
 
 ## Review Categories
 
@@ -116,12 +112,6 @@ Perform a comprehensive code review following project standards.
 - [ ] Approved with suggestions
 - [ ] Changes requested
 ```
-
-## Log Findings (if MCP tools available)
-
-After completing the review:
-- Use `record-review-finding` for each issue found (category, severity, file, message, rule)
-- Use `get-review-stats` to check if this is a recurring pattern across reviews
 
 ## Verification
 

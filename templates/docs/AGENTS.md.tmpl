@@ -29,9 +29,6 @@ Java {{.JavaVersion}}+ multi-module Maven project (Spring Boot):
 {{- if .HasModule "EventConsumer"}}
 | **EventConsumer** | {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}SQS{{else}}Pub/Sub{{end}} listeners |
 {{- end}}
-{{- if .HasModule "MCP"}}
-| **MCP** | AI tool server (Model Context Protocol) |
-{{- end}}
 
 ## Build Commands
 
@@ -93,6 +90,10 @@ Never import from API in Worker/EventConsumer or vice versa.
 - **Constructor injection**: All fields `private final`, no `@Autowired` on fields
 - **Modern Java**: Streams over loops, pattern matching, `Optional.map()`/`orElse()`
 - **Method size**: Max 30 lines, extract helpers for complex logic
+{{- if .HasModule "SQLDatastore"}}
+- **Pagination**: Keyset by ID (`WHERE id > :afterId ORDER BY id ASC LIMIT :limit`), never offset/`Pageable`
+- **No foreign keys**: Parent IDs are indexed columns only — no `REFERENCES`, no `ON DELETE CASCADE`
+{{- end}}
 
 ## Testing
 
@@ -155,18 +156,3 @@ This project was scaffolded by Trabuco. It includes production-ready infrastruct
 - **Kubernetes/deployment** — Docker Compose for local dev only
 
 For guidance on adding these capabilities, see `.ai/prompts/extending-the-project.md`.
-{{- if .HasModule "MCP"}}
-
-## Review Tools (MCP)
-
-When the MCP server is running, use these tools for efficient code reviews:
-
-| Tool | Description |
-|------|-------------|
-| `get-review-context` | Get only the relevant quality rules for files being reviewed |
-| `record-review-finding` | Log a finding to `.ai/review-log.jsonl` (append-only) |
-| `get-review-stats` | View aggregate stats and recurring patterns |
-
-Review findings are stored in `.ai/review-log.jsonl` (JSON Lines, append-only).
-Use `get-review-stats` to identify recurring issues across reviews.
-{{- end}}

@@ -34,6 +34,10 @@ This project enforces strict code quality standards. You MUST:
 | Collections | Use `List.of()`, `.toList()`, no `Arrays.asList()` |
 | Null handling | `Objects.requireNonNull` in constructors, Bean Validation on DTOs |
 | Injection | Constructor injection only, all fields `private final` |
+{{- if .HasModule "SQLDatastore"}}
+| Pagination | Keyset by ID (`WHERE id > :afterId`), never `OFFSET`/`Pageable` |
+| Foreign keys | Never — use indexed columns for parent IDs, enforce in service layer |
+{{- end}}
 
 ## Build & Test Commands
 

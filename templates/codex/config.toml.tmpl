@@ -1,10 +1,2 @@
 [features]
 codex_hooks = true
-{{if .HasModule "MCP"}}
-[mcp_servers.{{.ProjectName}}]
-command = "java"
-args = ["-jar", "MCP/target/MCP-1.0-SNAPSHOT.jar"]
-enabled = true
-startup_timeout_sec = 30
-tool_timeout_sec = 60
-{{end}}

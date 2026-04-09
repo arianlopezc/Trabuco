@@ -31,8 +31,6 @@ func (g *Generator) generateModulePOM(module string) error {
 		templateName = "pom/events.xml.tmpl"
 	case config.ModuleEventConsumer:
 		templateName = "pom/eventconsumer.xml.tmpl"
-	case config.ModuleMCP:
-		templateName = "pom/mcp.xml.tmpl"
 	default:
 		return nil
 	}

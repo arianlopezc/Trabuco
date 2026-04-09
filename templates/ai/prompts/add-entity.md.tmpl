@@ -94,6 +94,48 @@ CREATE TABLE {entity_name_snake} (
 - Never modify existing migration files
 - Use snake_case for table and column names
 
+#### Child Tables (Relationships)
+
+When an entity belongs to another entity (e.g., `OrderItem` belongs to `Order`), **never use foreign keys**. Store the parent ID as a regular indexed column:
+
+```sql
+CREATE TABLE order_item (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    product_name VARCHAR(255) NOT NULL,
+    quantity INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_order_item_order_id ON order_item (order_id);
+```
+
+**Rules:**
+- **No `FOREIGN KEY` constraints** — no `REFERENCES`, no `ON DELETE CASCADE`
+- **Always add an index** on the parent ID column — queries filtering by parent need it
+- The parent ID column is just a `BIGINT` (or `VARCHAR` for string IDs) with `NOT NULL`
+- Referential integrity is enforced in the service layer, not the database
+
+**Why no foreign keys:**
+- Avoids cascade surprises (accidental deletes propagating across tables)
+- Enables independent module evolution and future service decomposition
+- Eliminates migration ordering issues when tables are in different modules
+- Queries using the indexed column perform identically to FK-backed queries
+
+**Record with parent reference:**
+
+```java
+@Table("order_item")
+public record OrderItemRecord(
+    @Id Long id,
+    Long orderId,
+    String productName,
+    int quantity
+) {
+    // Conversion methods as usual
+}
+```
+
 ### 2c. Create SQL Repository
 
 **File**: `SQLDatastore/src/main/java/{{.PackagePath}}/sqldatastore/repository/{EntityName}Repository.java`
@@ -428,6 +470,7 @@ mvn test
 {{- if .HasModule "SQLDatastore"}}
 - [ ] SQL Record created with conversion methods
 - [ ] Flyway migration added (new version, not modified existing)
+- [ ] No `FOREIGN KEY` constraints — parent IDs are indexed columns only
 - [ ] SQL Repository interface created
 {{- end}}
 {{- if .HasModule "NoSQLDatastore"}}
@@ -451,4 +494,5 @@ mvn test
 - **Interface types in signatures**: Use `ImmutableX` not `X` interface
 - **Missing JSON annotations**: Always add both `@JsonSerialize` and `@JsonDeserialize`
 - **Modifying existing migrations**: Create new migration file instead
+- **Using foreign keys**: Never add `FOREIGN KEY` or `REFERENCES` — use indexed columns instead
 - **Exposing Record/Document types**: Convert at repository boundary, return Immutables

@@ -10,8 +10,7 @@ const (
 	ModuleAPI            = "API"
 	ModuleWorker         = "Worker"
 	ModuleEvents         = "Events"
-	ModuleEventConsumer  = "EventConsumer"
-	ModuleMCP            = "MCP"
+	ModuleEventConsumer = "EventConsumer"
 )
 
 // Database type constants
@@ -146,17 +145,6 @@ var ModuleRegistry = []Module{
 		Required:       false,
 		Internal:       false,
 		Dependencies:   []string{ModuleModel, ModuleEvents},
-		ConflictsWith:  []string{},
-	},
-	{
-		Name:           ModuleMCP,
-		Description:    "MCP server for AI tool integration (build, test, introspection)",
-		UseCase:        "Adds an MCP (Model Context Protocol) server that exposes project build, test, and code review tools to AI coding assistants.",
-		WhenToUse:      "User mentions: MCP, AI tools, AI integration, coding assistant tooling",
-		DoesNotInclude: "Does not include custom MCP tools — provides build, test, format, and review tools only",
-		Required:       false,
-		Internal:       false,
-		Dependencies:   []string{ModuleModel},
 		ConflictsWith:  []string{},
 	},
 }

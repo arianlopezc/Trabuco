@@ -135,19 +135,16 @@ func TestPatternMatching_HeadlessProcessor(t *testing.T) {
 	requireTopPattern(t, patterns, "worker-only")
 }
 
-func TestPatternMatching_MCPServer(t *testing.T) {
-	// "MCP server for AI tool integration"
-	// Expected: mcp-server (hits: mcp, ai tool, ai integration)
+func TestPatternMatching_MCPServerRemoved(t *testing.T) {
+	// MCP server pattern was removed — AI tool requests should no longer match it
 	patterns := scorePatterns("MCP server for AI tool integration")
-	requireTopPattern(t, patterns, "mcp-server")
-	requireModules(t, patterns[0], "Model", "Shared", "MCP")
-}
-
-func TestPatternMatching_CodingAssistantTools(t *testing.T) {
-	// "Build a coding assistant with MCP tools"
-	// Expected: mcp-server (hits: coding assistant, mcp)
-	patterns := scorePatterns("Build a coding assistant with MCP tools")
-	requireTopPattern(t, patterns, "mcp-server")
+	if len(patterns) > 0 {
+		for _, p := range patterns {
+			if p.Name == "mcp-server" {
+				t.Error("mcp-server pattern should not exist after MCP module removal")
+			}
+		}
+	}
 }
 
 // =============================================================================
@@ -640,23 +637,13 @@ func TestE2E_KafkaOrderProcessing(t *testing.T) {
 	}
 }
 
-func TestE2E_AIToolServer(t *testing.T) {
-	// "I want to build an MCP server so coding assistants can use my AI tools"
+func TestE2E_AIToolServerRemoved(t *testing.T) {
+	// MCP server pattern was removed — AI tool server requests should not match mcp-server
 	advisory := buildAdvisory("I want to build an MCP server so coding assistants can use my AI tools")
-	requireTopPattern(t, advisory.Patterns, "mcp-server")
-	rec := advisory.RecommendedConfig
-	if rec == nil {
-		t.Fatal("Expected recommended config")
-	}
-	if !strings.Contains(rec.Modules, "MCP") {
-		t.Error("MCP server request should include MCP module")
-	}
-	// Should NOT include database or broker
-	if rec.Database != "" {
-		t.Errorf("MCP server shouldn't recommend database, got '%s'", rec.Database)
-	}
-	if rec.MessageBroker != "" {
-		t.Errorf("MCP server shouldn't recommend broker, got '%s'", rec.MessageBroker)
+	for _, p := range advisory.Patterns {
+		if p.Name == "mcp-server" {
+			t.Error("mcp-server pattern should not exist after MCP module removal")
+		}
 	}
 }
 
@@ -694,7 +681,7 @@ func TestE2E_MixedUnsupported(t *testing.T) {
 
 func TestFindPattern_AllPatternsExist(t *testing.T) {
 	names := []string{"rest-api", "rest-api-nosql", "event-driven", "background-processing",
-		"full-stack-backend", "microservice-light", "worker-only", "mcp-server"}
+		"full-stack-backend", "microservice-light", "worker-only"}
 	for _, name := range names {
 		p := findPattern(name)
 		if p == nil {
@@ -787,23 +774,6 @@ func TestPatternMatching_ImplicitComboShowsMultiplePatterns(t *testing.T) {
 	if !hasEvent || !hasBackground {
 		t.Errorf("Expected both event-driven and background-processing, got %v", names)
 	}
-}
-
-func TestPatternMatching_MCPViaLLMTool(t *testing.T) {
-	// "build an LLM tool server" should now hit mcp-server
-	patterns := scorePatterns("Build an LLM tool server")
-	requireTopPattern(t, patterns, "mcp-server")
-}
-
-func TestPatternMatching_MCPViaAIServer(t *testing.T) {
-	// "AI server for tools" should match mcp-server
-	patterns := scorePatterns("AI server for exposing tools")
-	requireTopPattern(t, patterns, "mcp-server")
-}
-
-func TestPatternMatching_MCPViaToolServer(t *testing.T) {
-	patterns := scorePatterns("Build a tool server for coding")
-	requireTopPattern(t, patterns, "mcp-server")
 }
 
 func TestPatternMatching_AggregationLayer(t *testing.T) {

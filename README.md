@@ -49,7 +49,6 @@ The real power lies in the modular structure. Instead of a monolithic source tre
   - [Worker](#worker)
   - [Events](#events)
   - [EventConsumer](#eventconsumer)
-  - [MCP](#mcp)
 - [Code Quality & Architecture](#code-quality--architecture)
   - [Auto-Formatting](#auto-formatting)
   - [Architecture Tests](#architecture-tests)
@@ -99,7 +98,6 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - **Code quality enforcement** — Google Java Format (Spotless), Maven Enforcer, and auto-formatting hooks
 - **Architecture tests** — ArchUnit rules enforce constructor injection, layer boundaries, and no cyclic dependencies
 - **AI-friendly** — Generates context files, coding rules, quality specs, and task prompts for Claude, Cursor, GitHub Copilot, and Codex
-- **MCP server** — Optional Model Context Protocol server with build, test, quality, and code review tools
 - **CLI MCP server** — `trabuco mcp` exposes all CLI functionality as structured tools for AI coding agents
 
 ## Installation
@@ -155,13 +153,9 @@ trabuco init --name=myapp --group-id=com.company.myapp \
 trabuco init --name=myapp --group-id=com.company.myapp \
   --modules=Model,API,EventConsumer --message-broker=kafka
 
-# Add MCP server for AI tool integration
-trabuco init --name=myapp --group-id=com.company.myapp \
-  --modules=Model,SQLDatastore,Shared,API,MCP --database=postgresql
-
 # Full setup with CI, AI agents, and all modules
 trabuco init --name=myapp --group-id=com.company.myapp \
-  --modules=Model,SQLDatastore,Shared,API,Worker,EventConsumer,MCP \
+  --modules=Model,SQLDatastore,Shared,API,Worker,EventConsumer \
   --database=postgresql --message-broker=kafka --ai-agents=claude,cursor --ci github
 ```
 
@@ -615,13 +609,6 @@ myapp/
 │       │   └── listener/            # Event listener implementations
 │       └── resources/
 │           └── application.yml      # Consumer configuration
-├── MCP/                             # MCP server (if selected)
-│   └── src/main/
-│       ├── java/.../mcp/
-│       │   ├── McpServerApplication.java  # MCP server entry point
-│       │   └── tools/               # Build, test, quality, and review tools
-│       └── resources/
-│           └── logback.xml          # MCP logging configuration
 ├── .ai/                             # AI context directory
 │   ├── prompts/                     # Task guides and quality specs
 │   │   ├── JAVA_CODE_QUALITY.md     # Code quality specification
@@ -630,17 +617,13 @@ myapp/
 │   │   ├── add-endpoint.md          # How to add a REST endpoint
 │   │   ├── add-job.md               # How to add a background job
 │   │   └── add-event.md             # How to add an event type
-│   ├── checkpoint.json              # Session state for AI continuity
-│   └── review-log.jsonl             # Append-only review findings log
+│   └── checkpoint.json              # Session state for AI continuity
 ├── .github/workflows/ci.yml         # GitHub Actions CI (if --ci github)
 ├── docker-compose.yml               # Local dev stack (database, message broker)
 ├── .run/                            # IntelliJ run configurations
-├── .mcp.json                        # MCP config for Claude Code (if MCP selected)
 ├── .cursor/                         # Cursor IDE configuration
-│   ├── mcp.json                     # MCP config (if MCP selected)
 │   ├── rules/java.mdc               # Java coding rules
 │   └── hooks.json                   # Auto-formatting hooks
-├── .vscode/mcp.json                 # MCP config for VS Code/Copilot (if MCP selected)
 ├── CLAUDE.md                        # AI assistant context (Claude Code)
 ├── AGENTS.md                        # Cross-tool AI agent baseline
 └── README.md                        # Project documentation
@@ -838,60 +821,6 @@ public void handleEvent(PlaceholderEvent event, Acknowledgement ack) { ... }
 public void handleEvent(PlaceholderEvent event, BasicAcknowledgeablePubsubMessage msg) { ... }
 ```
 
-### MCP
-
-Model Context Protocol server — provides AI coding assistants with tools for building, testing, quality checking, and reviewing the project.
-
-| What | Description |
-|------|-------------|
-| **Build tools** | `build`, `package`, `clean` — Maven build operations |
-| **Test tools** | `test`, `test-single` — Run tests or specific test classes |
-| **Project tools** | `list-modules`, `list-entities`, `get-config`, `project-info` — Project introspection |
-| **Quality tools** | `format`, `check-quality` — Auto-format and enforce dependency rules |
-| **Review tools** | `get-review-context`, `record-review-finding`, `get-review-stats` — Structured code review |
-
-The MCP server is a standalone Java application that communicates via STDIO with AI coding assistants that support the Model Context Protocol.
-
-**Building the MCP server:**
-
-```bash
-mvn package -pl MCP -am -DskipTests
-```
-
-The executable JAR is created at `MCP/target/MCP-1.0-SNAPSHOT.jar`.
-
-**Auto-configured for multiple agents:**
-
-When you select the MCP module, Trabuco generates configuration files for all major AI coding assistants:
-
-| Agent | Config File | Auto-Detected |
-|-------|-------------|---------------|
-| Claude Code | `.mcp.json` | ✅ Yes — approve on first use |
-| Cursor | `.cursor/mcp.json` | ✅ Yes — approve on first use |
-| VS Code / GitHub Copilot | `.vscode/mcp.json` | ✅ Yes — click "Start" on first use |
-| Codex | `.codex/config.toml` | ✅ Yes — auto-loaded from project config |
-
-For agents with project-local configs (Claude Code, Cursor, VS Code, Codex), just open the project and approve the server when prompted. For detailed setup instructions, see `MCP/README.md`.
-
-**Available MCP tools:**
-
-| Tool | Description |
-|------|-------------|
-| `build` | Compile the project or a specific module |
-| `package` | Package all modules into JAR files |
-| `clean` | Clean all build artifacts |
-| `test` | Run all tests or tests for a specific module |
-| `test-single` | Run a specific test class or method |
-| `list-modules` | List all Maven modules in the project |
-| `list-entities` | List all entity classes in the Model module |
-| `get-config` | Get the application.yml for a module |
-| `project-info` | Get project metadata from .trabuco.json |
-| `format` | Auto-format all Java files using Google Java Format (Spotless) |
-| `check-quality` | Run formatting check and dependency enforcement rules |
-| `get-review-context` | Get relevant quality rules filtered by file type |
-| `record-review-finding` | Log a code review finding to `.ai/review-log.jsonl` |
-| `get-review-stats` | Get aggregate review statistics by category, severity, and rule |
-
 ## Code Quality & Architecture
 
 Generated projects come with strict code quality enforcement out of the box. Every project includes Google Java Format via Spotless, Maven Enforcer for dependency rules, and ArchUnit for architecture tests. These run as part of the normal build — violations fail the build, not just a linter warning.
@@ -944,18 +873,14 @@ The `checkpoint.json` file tracks session state (current work, completed steps, 
 
 ### Code Review Workflow
 
-When the MCP module is selected, the generated project includes structured code review tools. Claude Code gets a `/review` skill that uses MCP tools to review code against the project's quality specification.
+The generated project includes AI task prompts and quality specifications that support structured code review. Claude Code gets a `/review` skill that reviews code against the project's quality specification.
 
 **How it works:**
 1. The AI reads `.ai/prompts/JAVA_CODE_QUALITY.md` for the project's quality rules
-2. `get-review-context` filters rules by file type (controller, service, model, etc.)
-3. The AI reviews code against relevant rules
-4. `record-review-finding` logs findings to `.ai/review-log.jsonl` (append-only)
-5. `get-review-stats` shows aggregate statistics — top violated rules, most affected files, trends over time
+2. Claude Code loads path-scoped rules from `.claude/rules/` when Java files are accessed
+3. The AI reviews code against relevant rules and reports findings by severity
 
-**Review findings are categorized by:**
-- **Category:** code-quality, modern-java, architecture, security, testing
-- **Severity:** critical, warning, suggestion
+**Review categories:** code-quality, modern-java, architecture, security, testing
 
 ## CI/CD
 
@@ -1067,15 +992,12 @@ mvn test
 | `API` | REST endpoints | Model |
 | `Worker` | Background jobs (JobRunr) | Model, Jobs (auto) |
 | `EventConsumer` | Event listeners (Kafka/RabbitMQ/SQS/Pub/Sub) | Model, Events (auto) |
-| `MCP` | Model Context Protocol server for AI tools | Model |
 
 **Notes:**
 - SQLDatastore and NoSQLDatastore are mutually exclusive
 - Worker uses your datastore for job persistence (defaults to PostgreSQL if none selected)
 - Jobs module is auto-included when Worker is selected (not shown in CLI)
 - Events module is auto-included when EventConsumer is selected (not shown in CLI)
-- MCP generates configuration files for Claude Code, Cursor, VS Code, and Codex
-- MCP includes quality tools (format, check) and review tools (context, findings, stats)
 
 ### Java Version Detection
 
@@ -1106,7 +1028,7 @@ Trabuco generates context files, coding rules, and quality hooks for popular AI 
 | Claude Code | `CLAUDE.md`, `.claude/settings.json`, `.claude/skills/review.md` | Project context, permissions, auto-formatting hooks, code review skill |
 | Cursor | `.cursor/rules/java.mdc`, `.cursor/hooks.json` | Java coding rules with auto-formatting hooks |
 | GitHub Copilot | `.github/instructions/java.instructions.md`, `.github/workflows/copilot-setup-steps.yml` | Java coding instructions and cloud agent setup |
-| Codex | `AGENTS.md`, `.codex/config.toml`, `.codex/hooks.json` | Full project context in AGENTS.md, MCP config, auto-formatting hooks |
+| Codex | `AGENTS.md`, `.codex/hooks.json` | Full project context in AGENTS.md, auto-formatting hooks |
 
 Every agent also gets `AGENTS.md` — a cross-tool baseline with the project's structure, build commands, module dependencies, and coding patterns. Codex uses `AGENTS.md` as its primary context file, so when selected it receives the full project architecture and coding standards.
 
@@ -1120,7 +1042,7 @@ trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents
 trabuco init --name=myapp --group-id=com.example --modules=Model,API --ai-agents=claude,cursor,copilot,codex
 ```
 
-All agents also get the `.ai/` directory with task prompts, quality specifications, and a review log. See [Code Quality & Architecture](#code-quality--architecture) for details.
+All agents also get the `.ai/` directory with task prompts and quality specifications. See [Code Quality & Architecture](#code-quality--architecture) for details.
 
 ### CI/CD Provider
 

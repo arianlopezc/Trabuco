@@ -87,38 +87,6 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
-	// Generate MCP configuration files when MCP module is selected — only for selected agents.
-	// Each agent has its own MCP config format and location.
-	if g.config.HasModule(config.ModuleMCP) {
-		// Claude Code: .mcp.json (project root)
-		if g.config.HasAIAgent("claude") {
-			if err := g.writeTemplate("docs/mcp.json.tmpl", ".mcp.json"); err != nil {
-				return err
-			}
-		}
-
-		// Cursor: .cursor/mcp.json
-		if g.config.HasAIAgent("cursor") {
-			if err := g.writeTemplate("docs/cursor-mcp.json.tmpl", ".cursor/mcp.json"); err != nil {
-				return err
-			}
-		}
-
-		// VS Code / GitHub Copilot: .vscode/mcp.json
-		if g.config.HasAIAgent("copilot") {
-			if err := g.writeTemplate("docs/vscode-mcp.json.tmpl", ".vscode/mcp.json"); err != nil {
-				return err
-			}
-		}
-
-		// Codex MCP config is handled by generateCodexFiles() via config.toml
-
-		// MCP README is always generated (covers setup for all agents)
-		if err := g.writeTemplate("docs/MCP-README.md.tmpl", "MCP/README.md"); err != nil {
-			return err
-		}
-	}
-
 	// Generate CI workflow when a CI provider is configured
 	if g.config.HasCIProvider("github") {
 		if err := g.writeTemplate("github/workflows/ci.yml.tmpl", ".github/workflows/ci.yml"); err != nil {
@@ -183,11 +151,6 @@ func (g *Generator) generateAIDirectory() error {
 
 	// Generate code review guide (always - for proactive self-review)
 	if err := g.writeTemplateWithData("ai/prompts/code-review.md.tmpl", ".ai/prompts/code-review.md", aiData); err != nil {
-		return err
-	}
-
-	// Generate .ai/review-log.jsonl (append-only review findings log)
-	if err := g.writeTemplate("ai/review-log.jsonl.tmpl", ".ai/review-log.jsonl"); err != nil {
 		return err
 	}
 

@@ -37,7 +37,6 @@ TRABUCO MODULE DECISION TREE:
 4. Does the user need business logic orchestration? → Add Shared
 5. Does the user need background jobs? → Add Worker (uses SQL database for job storage)
 6. Does the user need message broker consumers? → Add EventConsumer (pick kafka, rabbitmq, sqs, or pubsub)
-7. Does the user need AI tool integration? → Add MCP
 
 COMMON PITFALLS TO AVOID:
 - Do NOT select both SQLDatastore and NoSQLDatastore — they conflict
@@ -219,7 +218,6 @@ STEP-BY-STEP EXTENSION GUIDE:
    - NoSQL persistence → NoSQLDatastore module (needs nosql_database: mongodb or redis)
    - REST endpoints → API module
    - Business logic → Shared module
-   - AI tooling → MCP module
 
 3. ADD THE MODULE
    - First preview: call add_module with dry_run=true to see what will change

@@ -115,14 +115,6 @@ var patternCatalog = []ArchitecturePattern{
 		Constraints:   []string{"No HTTP endpoints — add API module if REST access is needed"},
 		keywords:      []string{"headless", "processor", "etl", "pipeline", "batch", "data processing", "worker only", "no api", "data import", "ingestion"},
 	},
-	{
-		Name:        "mcp-server",
-		Description: "AI tool server exposing MCP (Model Context Protocol) tools",
-		UseCases:    []string{"AI tool integration", "coding assistant tooling", "AI-powered development tools"},
-		Modules:     []string{"Model", "Shared", "MCP"},
-		Constraints: []string{"Generates build/test/review MCP tools — custom tools must be added manually"},
-		keywords:    []string{"mcp", "ai tool", "coding assistant", "model context protocol", "ai integration", "llm tool", "ai server", "tool server"},
-	},
 }
 
 // scorePatterns scores all patterns against requirements and returns them sorted by score (descending).
