@@ -1,0 +1,203 @@
+# Add AI Agent Tool
+
+## Overview
+
+Create a new @Tool method that the AI agent can call during conversations. Tools are how the agent interacts with your domain — each tool exposes a specific capability (check stock, place order, get schedule) that the LLM decides when to invoke based on the tool's description.
+
+## Prerequisites
+
+- AIAgent module is included in the project
+- Project compiles successfully (`mvn clean compile`)
+
+## Architecture
+
+```
+AIAgent/
+├── aiagent/tool/
+│   └── {ToolClass}.java         # @Tool methods (you create this)
+├── aiagent/agent/
+│   └── PrimaryAgent.java        # Register tool in constructor
+└── aiagent/protocol/
+    └── DiscoveryController.java  # Update capabilities list
+
+Model/                            # If tool returns domain objects
+├── model/dto/
+│   └── {Response}Response.java   # Immutable response DTO
+```
+
+## Steps
+
+### 1. Create Tool Class
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/tool/{ToolClass}.java`
+
+```java
+package {{.GroupID}}.aiagent.tool;
+
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.stereotype.Component;
+
+@Component
+public class {ToolClass} {
+
+    @Tool(description = "Clear, specific description of what this tool does. "
+        + "Include when the agent should use it and what constraints apply. "
+        + "Example: 'Check the current inventory level for a product by SKU. "
+        + "Returns quantity available. Use when customer asks about stock.'")
+    public {ReturnType} {toolMethod}(
+            @ToolParam(description = "What this parameter is and expected format, "
+                + "e.g. 'Product SKU code such as PROD-001'") String param) {
+        // TODO: Implement domain logic
+        // Return typed result — Spring AI serializes to JSON for the LLM
+    }
+}
+```
+
+**Critical rules for tool descriptions (from Anthropic):**
+- Description is what the LLM reads to decide — make it unambiguous
+- Include WHEN to use this tool (not just what it does)
+- Include valid parameter values when constrained (e.g., valid SKUs)
+- Include what it does NOT do (boundaries)
+
+### 2. Create Response DTO (if returning domain objects)
+
+**File**: `Model/src/main/java/{{.PackagePath}}/model/dto/{ToolName}Response.java`
+
+```java
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.annotation.Nullable;
+import org.immutables.value.Value;
+
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = Immutable{ToolName}Response.class)
+@JsonDeserialize(as = Immutable{ToolName}Response.class)
+public interface {ToolName}Response {
+
+    String id();
+    String name();
+
+    @Nullable
+    String description();
+}
+```
+
+### 3. Register Tool in PrimaryAgent
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/agent/PrimaryAgent.java`
+
+Add tool to constructor parameters and `.defaultTools()`:
+
+```java
+public PrimaryAgent(ChatModel chatModel,
+                    PlaceholderTools placeholderTools,
+                    {ToolClass} {toolField},  // Add this
+                    KnowledgeTools knowledgeTools,
+                    SpecialistAgentTool specialistAgentTool) {
+    this.chatClient = ChatClient.builder(chatModel)
+        .defaultSystem(SYSTEM_PROMPT)
+        .defaultTools(placeholderTools, {toolField}, knowledgeTools, specialistAgentTool)
+        .build();
+}
+```
+{{- if .HasModule "Shared"}}
+
+### Injecting a Shared Service
+
+If your tool needs a service from the `Shared` module, inject it via constructor:
+
+```java
+import {{.GroupID}}.shared.service.PlaceholderService;
+
+@Component
+public class {ToolClass} {
+
+    private final PlaceholderService placeholderService;
+
+    public {ToolClass}(PlaceholderService placeholderService) {
+        this.placeholderService = placeholderService;
+    }
+
+    @Tool(description = "...")
+    public {ReturnType} {toolMethod}(@ToolParam(description = "...") String param) {
+        return placeholderService.findById(param).orElse(null);
+    }
+}
+```
+{{- end}}
+
+### 4. Update Capabilities
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/protocol/DiscoveryController.java`
+
+Add tool to the capabilities list.
+
+### 5. Write Tool Tests
+
+**File**: `AIAgent/src/test/java/{{.PackagePath}}/aiagent/tool/{ToolClass}Test.java`
+
+```java
+package {{.GroupID}}.aiagent.tool;
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.*;
+
+class {ToolClass}Test {
+
+    private final {ToolClass} tool = new {ToolClass}();
+
+    @Test
+    void should_ReturnResult_When_ValidInput() {
+        // Given
+        String input = "valid-input";
+
+        // When
+        var result = tool.{toolMethod}(input);
+
+        // Then
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    void should_HandleGracefully_When_InvalidInput() {
+        // Given
+        String input = "nonexistent";
+
+        // When/Then — return error info, don't throw
+        // (Anthropic: "return error information as a result so the LLM can reason")
+    }
+}
+```
+
+### 6. Compile and Test
+
+```bash
+mvn clean compile
+mvn test -pl AIAgent
+```
+
+## Checklist
+
+- [ ] Tool class created with `@Component` and `@Tool` annotations
+- [ ] Tool description is 2+ sentences: what it does, when to use it, constraints
+- [ ] Parameters have `@ToolParam` with format examples
+- [ ] Return type is specific (not Object or Map) — use Immutable DTO
+- [ ] Tool registered in PrimaryAgent constructor
+- [ ] Capabilities endpoint updated
+- [ ] Tests written (valid input, invalid input, edge cases)
+- [ ] Tests pass without API key
+- [ ] Code compiles
+
+## Common Mistakes
+
+- **Vague descriptions**: "Get data" — LLM can't decide when to use this. Write "Get the current order status by order ID. Returns status, items, and total."
+- **Returning raw Object/Map**: Use typed Immutable DTOs. The LLM gets cleaner JSON to reason about.
+- **Throwing exceptions**: Return error info in the result instead. Anthropic: "the LLM can reason about the failure and reformulate."
+- **Too many tools**: Each tool adds token overhead. Consolidate related operations. Fewer, well-described tools > many narrow ones.
+- **Missing @Component**: Spring won't discover the tool, MCP won't expose it.
+- **Not registering in PrimaryAgent**: Tool exists but agent can't call it.

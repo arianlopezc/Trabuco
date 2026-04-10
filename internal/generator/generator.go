@@ -327,9 +327,10 @@ func (g *Generator) writeFile(path string, content string) error {
 // Embedding ProjectConfig ensures all existing template calls (e.g. {{.HasModule "API"}}) still work.
 type templateData struct {
 	*config.ProjectConfig
-	PromptsDir  string // ".claude/rules" for Claude Code, ".ai/prompts" for other agents
-	Frontmatter string // Optional YAML frontmatter body (without --- delimiters) to prepend for agents like Cursor
-	RulePaths   string // Optional YAML paths list for Claude Code rules (e.g., '  - "**/*.java"')
+	PromptsDir    string // ".claude/rules" for Claude Code, ".ai/prompts" for other agents — used for always-loaded rules (quality, review, testing)
+	TaskGuidesDir string // Always ".ai/prompts" — task playbooks live here, not in .claude/rules/ (on-demand, not auto-loaded)
+	Frontmatter   string // Optional YAML frontmatter body (without --- delimiters) to prepend for agents like Cursor
+	RulePaths     string // Optional YAML paths list for Claude Code rules (e.g., '  - "**/*.java"')
 }
 
 // renderTemplate renders a template with the project config

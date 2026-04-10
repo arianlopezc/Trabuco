@@ -1,0 +1,149 @@
+# Add Database Migration
+
+## Overview
+
+Create a standalone Flyway migration for schema changes: adding columns, indexes, data transformations, or modifying existing tables.
+
+## Prerequisites
+
+- Project compiles successfully (`mvn clean compile`)
+- Docker running (for testing with Testcontainers)
+- Existing migration files in `SQLDatastore/src/main/resources/db/migration/`
+
+## Steps
+
+### 1. Determine Version Number
+
+```bash
+ls SQLDatastore/src/main/resources/db/migration/
+```
+
+Find the highest existing version number and use the next sequential number. If the last file is `V3__add_status_column.sql`, use `V4`.
+
+### 2. Create Migration File
+
+**File**: `SQLDatastore/src/main/resources/db/migration/V{N}__{description}.sql`
+
+**Naming rules:**
+- `V` followed by the version number (sequential, no gaps)
+- Double underscore `__` separating version from description
+- Description in snake_case (e.g., `add_status_column`, `create_index_on_email`)
+- Extension `.sql`
+
+### 3. Write the Migration SQL
+
+#### Add Column
+
+```sql
+{{- if eq .Database "postgresql"}}
+ALTER TABLE {entity_table} ADD COLUMN {column_name} VARCHAR(255);
+{{- else if eq .Database "mysql"}}
+ALTER TABLE {entity_table} ADD COLUMN {column_name} VARCHAR(255);
+{{- end}}
+```
+
+#### Add NOT NULL Column with Default (Safe for Existing Data)
+
+```sql
+ALTER TABLE {entity_table} ADD COLUMN {column_name} VARCHAR(50) NOT NULL DEFAULT 'pending';
+```
+
+**Important:** Always provide a `DEFAULT` when adding `NOT NULL` to a table with existing rows, otherwise the migration fails.
+
+#### Add Index (Always Do This for Filtered/Joined Columns)
+
+```sql
+CREATE INDEX idx_{entity_table}_{column} ON {entity_table} ({column});
+```
+
+#### Add Composite Index
+
+```sql
+CREATE INDEX idx_{entity_table}_{col1}_{col2} ON {entity_table} ({col1}, {col2});
+```
+
+#### Add Column with Index (Common Pattern)
+
+```sql
+ALTER TABLE {entity_table} ADD COLUMN {column_name} BIGINT NOT NULL;
+CREATE INDEX idx_{entity_table}_{column_name} ON {entity_table} ({column_name});
+```
+
+#### IMPORTANT -- No Foreign Keys (Trabuco Convention)
+
+```sql
+-- CORRECT: Indexed column, no FK constraint
+ALTER TABLE order_item ADD COLUMN order_id BIGINT NOT NULL;
+CREATE INDEX idx_order_item_order_id ON order_item (order_id);
+
+-- WRONG: Never add foreign key constraints
+-- ALTER TABLE order_item ADD CONSTRAINT fk_order FOREIGN KEY (order_id) REFERENCES "order"(id);
+```
+
+**Reasoning:** No foreign keys prevents cascade surprises, enables independent module scaling, and eliminates migration ordering issues. Referential integrity is enforced at the service layer.
+
+#### Rename Column
+
+```sql
+{{- if eq .Database "postgresql"}}
+ALTER TABLE {entity_table} RENAME COLUMN {old_name} TO {new_name};
+{{- else if eq .Database "mysql"}}
+ALTER TABLE {entity_table} CHANGE {old_name} {new_name} VARCHAR(255);
+{{- end}}
+```
+
+#### Data Migration (Backfill)
+
+```sql
+-- Backfill existing rows before adding NOT NULL constraint
+ALTER TABLE {entity_table} ADD COLUMN {column_name} VARCHAR(50);
+UPDATE {entity_table} SET {column_name} = 'default_value' WHERE {column_name} IS NULL;
+ALTER TABLE {entity_table} ALTER COLUMN {column_name} SET NOT NULL;
+```
+
+### 4. Update the Record Class (If Needed)
+
+If you added a column, update the corresponding record in `Model/`:
+
+**File**: `Model/src/main/java/{{.PackagePath}}/model/entities/{EntityName}Record.java`
+
+```java
+@Table("{entity_table}")
+public record {EntityName}Record(
+    @Id Long id,
+    String name,
+    String newColumn  // Add the new field
+) {
+    // Update fromEntity/toEntity conversion methods
+}
+```
+
+### 5. Compile and Test
+
+```bash
+mvn clean compile
+mvn test
+```
+
+## Checklist
+
+- [ ] Version number is sequential (no gaps: V1, V2, V3, ...)
+- [ ] File uses double underscore: `V{N}__{description}.sql`
+- [ ] `NOT NULL` columns have a `DEFAULT` value (or backfill first)
+- [ ] No `FOREIGN KEY` constraints — use indexed columns instead
+- [ ] Index added for any new column used in WHERE/JOIN/ORDER BY
+- [ ] Record class updated to include new column (if applicable)
+- [ ] Entity interface updated with new field (if applicable)
+- [ ] Existing migration files NOT modified
+- [ ] Code compiles (`mvn clean compile`)
+- [ ] Tests pass (`mvn test`)
+
+## Common Mistakes
+
+- **Non-sequential version numbers** — V1, V3 (gap) causes Flyway startup failure
+- **Single underscore separator** — `V1_description` is wrong; must be `V1__description` (double)
+- **Adding `NOT NULL` without `DEFAULT`** — fails if rows already exist in the table
+- **Adding foreign keys** — Trabuco convention: use indexed columns, enforce integrity in service layer
+- **Modifying existing migration files** — Flyway checksums will fail; always create a new file
+- **Destructive changes without data migration** — `DROP COLUMN` loses data; migrate data first
+- **Missing index on parent ID columns** — queries filtering by parent will do full table scans

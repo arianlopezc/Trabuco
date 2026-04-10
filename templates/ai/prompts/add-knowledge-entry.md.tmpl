@@ -1,0 +1,89 @@
+# Add Knowledge Base Entry
+
+## Overview
+
+Add a new entry to the keyword-based knowledge base. Entries answer FAQ-style questions without calling the LLM — saving tokens on high-volume, low-complexity queries. The agent's @Tool method `askQuestion` scores entries by keyword overlap with the user's question and returns the top 3 matches.
+
+## Architecture
+
+```
+User: "What are your hours?"
+        |
+        v
+KnowledgeTools.askQuestion("What are your hours?")
+        | tokenize -> ["what", "are", "your", "hours"]
+        | score each entry by keyword overlap
+        | topic match gets 3x boost
+        v
+Returns top 3 entries (no LLM call, no tokens spent)
+```
+
+## Steps
+
+### 1. Add Entry to KnowledgeBase
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/knowledge/KnowledgeBase.java`
+
+Add to the `ENTRIES` list:
+
+```java
+Map.of(
+    "topic", "{topic_keyword}",
+    "content", "{Complete answer to the question. Include specific details: "
+        + "prices, times, policies. The content IS the response — make it "
+        + "self-contained and helpful.}"
+),
+```
+
+### 2. Optimize for Retrieval
+
+The scoring algorithm matches user query tokens against entry content tokens, with a 3x boost for topic matches.
+
+**Good entry (high recall):**
+```java
+Map.of(
+    "topic", "shipping",
+    "content", "We offer free shipping on orders over $50. "
+        + "Standard shipping takes 3-5 business days. "
+        + "Express shipping (1-2 days) is available for $12.99. "
+        + "International shipping is not available."
+)
+```
+- Topic "shipping" matches queries about shipping, delivery, express
+- Content includes "free", "days", "express", "international" — broad keyword coverage
+
+**Bad entry (low recall):**
+```java
+Map.of(
+    "topic", "delivery",
+    "content", "Please check our website for details."
+)
+```
+- Generic content matches nothing specific
+- "Please check our website" is not a useful answer
+
+### 3. Test Retrieval
+
+```bash
+curl -X POST http://localhost:8080/ask \
+  -H "Authorization: Bearer public-read-key" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"How long does shipping take?"}'
+```
+
+Verify your entry appears in the response.
+
+## Checklist
+
+- [ ] Entry added with descriptive topic keyword
+- [ ] Content is self-contained (complete answer, not a redirect)
+- [ ] Content includes multiple keyword variations for broad matching
+- [ ] Tested with expected question (entry appears in response)
+- [ ] Tested with related questions (entry still matches)
+
+## Common Mistakes
+
+- **Vague topic**: "info" matches everything. Use specific: "shipping", "returns", "hours"
+- **Redirect content**: "See our website" — defeats the purpose. Include the actual answer.
+- **Missing keyword coverage**: If users ask "delivery" but content only says "shipping", add both terms to the content
+- **Too many entries on same topic**: Split or merge. Overlapping entries dilute scoring.

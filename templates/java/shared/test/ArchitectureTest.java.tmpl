@@ -1,5 +1,6 @@
 package {{.GroupID}}.shared;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
@@ -68,4 +69,83 @@ class ArchitectureTest {
 
     rule.check(classes);
   }
+
+  @Test
+  void dtosMustUseImmutables() {
+    ArchRule rule =
+        noClasses()
+            .that()
+            .resideInAPackage("..model.dto..")
+            .should()
+            .beRecords()
+            .because(
+                "DTOs must use @Value.Immutable interfaces, not Java records. "
+                    + "Records are only for database persistence objects (@Table, @Document)");
+
+    rule.check(classes);
+  }
+
+  @Test
+  void noOffsetPagination() {
+    ArchRule rule =
+        noClasses()
+            .should()
+            .dependOnClassesThat()
+            .haveFullyQualifiedName("org.springframework.data.domain.Pageable")
+            .because(
+                "Use keyset pagination (WHERE id > :afterId ORDER BY id LIMIT :limit) "
+                    + "instead of offset pagination. See .ai/prompts/add-repository-method.md")
+            .allowEmptyShould(true);
+
+    rule.check(classes);
+  }
+
+  @Test
+  void immutablesMustHaveJsonAnnotations() {
+    ArchRule rule =
+        classes()
+            .that()
+            .areAnnotatedWith("org.immutables.value.Value$Immutable")
+            .should()
+            .beAnnotatedWith("com.fasterxml.jackson.databind.annotation.JsonSerialize")
+            .because(
+                "All @Value.Immutable interfaces must have @JsonSerialize and "
+                    + "@JsonDeserialize for Jackson compatibility")
+            .allowEmptyShould(true);
+
+    rule.check(classes);
+  }
+{{- if .HasModule "SQLDatastore"}}
+
+  @Test
+  void noForeignKeysInMigrations() throws Exception {
+    java.nio.file.Path migrationsDir =
+        java.nio.file.Path.of("../SQLDatastore/src/main/resources/db/migration");
+    if (!java.nio.file.Files.exists(migrationsDir)) {
+      return; // No migrations directory yet
+    }
+    java.util.List<String> violations = new java.util.ArrayList<>();
+    try (var files = java.nio.file.Files.walk(migrationsDir)) {
+      files
+          .filter(p -> p.toString().endsWith(".sql"))
+          .forEach(
+              sqlFile -> {
+                try {
+                  String content = java.nio.file.Files.readString(sqlFile).toUpperCase();
+                  if (content.contains("FOREIGN KEY") || content.contains("REFERENCES")) {
+                    violations.add(sqlFile.getFileName().toString());
+                  }
+                } catch (Exception e) {
+                  throw new RuntimeException(e);
+                }
+              });
+    }
+    if (!violations.isEmpty()) {
+      org.junit.jupiter.api.Assertions.fail(
+          "Foreign keys found in migration files: "
+              + violations
+              + ". Use indexed columns instead. See .ai/prompts/add-migration.md");
+    }
+  }
+{{- end}}
 }

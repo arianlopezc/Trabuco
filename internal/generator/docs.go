@@ -1,6 +1,8 @@
 package generator
 
 import (
+	"fmt"
+
 	"github.com/arianlopezc/Trabuco/internal/config"
 )
 
@@ -49,6 +51,7 @@ func (g *Generator) generateDocs() error {
 		data := &templateData{
 			ProjectConfig: g.config,
 			PromptsDir:    promptsDir,
+			TaskGuidesDir: ".ai/prompts",
 			Frontmatter:   frontmatter,
 		}
 		if err := g.writeTemplateWithData("docs/CLAUDE.md.tmpl", agent.FilePath, data); err != nil {
@@ -179,6 +182,45 @@ func (g *Generator) generateAIDirectory() error {
 	if g.config.HasModule(config.ModuleEventConsumer) {
 		if err := g.writeTemplateWithData("ai/prompts/add-event.md.tmpl", ".ai/prompts/add-event.md", aiData); err != nil {
 			return err
+		}
+	}
+
+	// AI Agent prompts (only if AIAgent module exists)
+	if g.config.HasModule(config.ModuleAIAgent) {
+		aiAgentPrompts := []struct{ tmpl, out string }{
+			{"ai/prompts/add-tool.md.tmpl", ".ai/prompts/add-tool.md"},
+			{"ai/prompts/add-skill.md.tmpl", ".ai/prompts/add-skill.md"},
+			{"ai/prompts/add-guardrail-rule.md.tmpl", ".ai/prompts/add-guardrail-rule.md"},
+			{"ai/prompts/add-knowledge-entry.md.tmpl", ".ai/prompts/add-knowledge-entry.md"},
+		}
+		for _, p := range aiAgentPrompts {
+			if err := g.writeTemplateWithData(p.tmpl, p.out, aiData); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", p.out, err)
+			}
+		}
+	}
+
+	// Shared module prompts
+	if g.config.HasModule(config.ModuleShared) {
+		if err := g.writeTemplateWithData(
+			"ai/prompts/add-service.md.tmpl",
+			".ai/prompts/add-service.md",
+			aiData,
+		); err != nil {
+			return fmt.Errorf("failed to generate add-service.md: %w", err)
+		}
+	}
+
+	// SQLDatastore module prompts
+	if g.config.HasModule(config.ModuleSQLDatastore) {
+		sqlPrompts := []struct{ tmpl, out string }{
+			{"ai/prompts/add-repository-method.md.tmpl", ".ai/prompts/add-repository-method.md"},
+			{"ai/prompts/add-migration.md.tmpl", ".ai/prompts/add-migration.md"},
+		}
+		for _, p := range sqlPrompts {
+			if err := g.writeTemplateWithData(p.tmpl, p.out, aiData); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", p.out, err)
+			}
 		}
 	}
 

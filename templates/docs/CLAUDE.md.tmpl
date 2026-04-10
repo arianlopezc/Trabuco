@@ -260,20 +260,33 @@ Repository tests use Testcontainers — Docker must be running.
 
 ## Task Guides
 
-For complex tasks, follow the corresponding guide in `{{.PromptsDir}}/`:
+For complex tasks, read the corresponding guide in `.ai/prompts/` before implementing:
 
 | Task | Guide | When to Use |
 |------|-------|-------------|
 | **Code quality** | `{{.PromptsDir}}/JAVA_CODE_QUALITY.md` | Before/after writing ANY Java code |
-| Add new entity | `{{.PromptsDir}}/add-entity.md` | Creating a new domain object |
+| Add new entity | `{{.TaskGuidesDir}}/add-entity.md` | Creating a new domain object |
 {{- if .HasModule "API"}}
-| Add REST endpoint | `{{.PromptsDir}}/add-endpoint.md` | Exposing new API functionality |
+| Add REST endpoint | `{{.TaskGuidesDir}}/add-endpoint.md` | Exposing new API functionality |
 {{- end}}
 {{- if .HasModule "Worker"}}
-| Add background job | `{{.PromptsDir}}/add-job.md` | Async processing tasks |
+| Add background job | `{{.TaskGuidesDir}}/add-job.md` | Async processing tasks |
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-| Add event type | `{{.PromptsDir}}/add-event.md` | Event-driven features |
+| Add event type | `{{.TaskGuidesDir}}/add-event.md` | Event-driven features |
+{{- end}}
+{{- if .HasModule "Shared"}}
+| Add service | `{{.TaskGuidesDir}}/add-service.md` | Creating business logic services |
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+| Add repository method | `{{.TaskGuidesDir}}/add-repository-method.md` | Custom queries, pagination, batch ops |
+| Add migration | `{{.TaskGuidesDir}}/add-migration.md` | Schema changes, indexes, columns |
+{{- end}}
+{{- if .HasModule "AIAgent"}}
+| Add AI tool | `{{.TaskGuidesDir}}/add-tool.md` | Adding @Tool methods for the agent |
+| Add A2A skill | `{{.TaskGuidesDir}}/add-skill.md` | Exposing tools via A2A protocol |
+| Add guardrail rule | `{{.TaskGuidesDir}}/add-guardrail-rule.md` | Input classification rules |
+| Add knowledge entry | `{{.TaskGuidesDir}}/add-knowledge-entry.md` | Token-free FAQ answers |
 {{- end}}
 | Extend project | `{{.PromptsDir}}/extending-the-project.md` | Adding auth, caching, pagination, etc. |
 | **Testing guide** | `{{.PromptsDir}}/testing-guide.md` | Writing tests for any module |

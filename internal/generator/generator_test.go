@@ -389,12 +389,13 @@ func TestGenerator_Generate_WithCLAUDEMD(t *testing.T) {
 	if !contains(contentStr, "GlobalExceptionHandler") {
 		t.Error("CLAUDE.md should contain GlobalExceptionHandler when API is selected")
 	}
-	// CLAUDE.md should reference .claude/rules/ (not .ai/prompts/) for Claude Code
+	// CLAUDE.md should reference .claude/rules/ for always-loaded rules (quality, review, testing)
 	if !contains(contentStr, ".claude/rules/") {
-		t.Error("CLAUDE.md should reference .claude/rules/ for Claude Code agent")
+		t.Error("CLAUDE.md should reference .claude/rules/ for always-loaded rules")
 	}
-	if contains(contentStr, ".ai/prompts/") {
-		t.Error("CLAUDE.md should NOT reference .ai/prompts/ for Claude Code agent")
+	// CLAUDE.md should ALSO reference .ai/prompts/ for on-demand task guides (add-entity, add-tool, etc.)
+	if !contains(contentStr, ".ai/prompts/") {
+		t.Error("CLAUDE.md should reference .ai/prompts/ for on-demand task guides")
 	}
 
 	// Verify .claude/rules/ files are generated (only path-scoped rules, not task playbooks)

@@ -1,0 +1,87 @@
+# Add A2A Skill
+
+## Overview
+
+Expose a new capability as an A2A skill so other AI agents can invoke it via JSON-RPC 2.0. Skills are registered in the A2AController and run as async tasks.
+
+## Architecture
+
+```
+AIAgent/
+├── aiagent/protocol/
+│   └── A2AController.java       # Register skill in handleTasksSend switch
+├── aiagent/tool/
+│   └── {ToolClass}.java         # Existing tool to expose as skill
+└── resources/.well-known/
+    └── agent.json                # Update skill list for discovery
+```
+
+## Steps
+
+### 1. Add Skill to A2AController
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/protocol/A2AController.java`
+
+In the `handleTasksSend` method, add a case to the switch:
+
+```java
+case "{skill_name}" -> {
+    ScopeEnforcer.requireScope("{scope}", caller);
+    String param = (String) input.get("{param_name}");
+    String taskId = taskManager.submitTask(() ->
+        Map.of("result", toolClass.{method}(param)));
+    yield JsonRpcResponse.success(rpcId,
+        Map.of("task_id", taskId, "status", "submitted"));
+}
+```
+
+**Scope options:**
+- `"anonymous"` — no authentication required
+- `"public"` — requires public-read-key
+- `"partner"` — requires partner-secret-key
+
+### 2. Update Agent Card
+
+**File**: `AIAgent/src/main/resources/.well-known/agent.json`
+
+Add to the skills array:
+
+```json
+{"id": "{skill_name}", "description": "What this skill does"}
+```
+
+### 3. Update Capabilities
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/protocol/DiscoveryController.java`
+
+Add to DiscoveryController's capabilities list.
+
+### 4. Test via curl
+
+```bash
+# Submit task
+curl -X POST http://localhost:8080/a2a \
+  -H "Authorization: Bearer public-read-key" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tasks/send","params":{"skill":"{skill_name}","input":{"{param}":"value"}}}'
+
+# Poll result
+curl -X POST http://localhost:8080/a2a \
+  -H "Authorization: Bearer public-read-key" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"2","method":"tasks/get","params":{"task_id":"TASK-..."}}'
+```
+
+## Checklist
+
+- [ ] Skill added to A2AController switch with scope enforcement
+- [ ] Task result wrapped in `Map.of()` (TaskManager requires `Map<String, Object>`)
+- [ ] Agent card updated with new skill
+- [ ] Capabilities endpoint updated
+- [ ] Tested with curl (tasks/send + tasks/get)
+
+## Common Mistakes
+
+- **Forgetting scope enforcement**: Every skill MUST call `ScopeEnforcer.requireScope()` before executing
+- **Returning raw String**: Wrap in `Map.of("result", value)` — TaskManager expects `Callable<Map<String, Object>>`
+- **Mismatched skill name**: The name in A2AController switch must match the skill ID in agent.json

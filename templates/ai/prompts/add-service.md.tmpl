@@ -1,0 +1,251 @@
+# Add Service
+
+## Overview
+
+Create a new business logic service in the Shared module. Use this guide for services that are NOT auto-generated from entities (e.g., PaymentService, NotificationService, IntegrationService).
+
+## Prerequisites
+
+- Project compiles successfully (`mvn clean compile`)
+- Shared module exists in the project
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+- Docker running (for repository tests with Testcontainers)
+{{- end}}
+
+## Architecture
+
+```
+Shared/
+├── src/main/java/{{.PackagePath}}/shared/service/
+│   └── {ServiceName}Service.java       # Business logic service
+└── src/test/java/{{.PackagePath}}/shared/service/
+    └── {ServiceName}ServiceTest.java   # Unit tests with mocks
+```
+
+## Steps
+
+### 1. Create the Service Class
+
+**File**: `Shared/src/main/java/{{.PackagePath}}/shared/service/{ServiceName}Service.java`
+
+```java
+package {{.GroupID}}.shared.service;
+
+{{- if .HasModule "SQLDatastore"}}
+import {{.GroupID}}.sqldatastore.repository.{EntityName}Repository;
+{{- end}}
+import {{.GroupID}}.model.entities.Immutable{EntityName};
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.util.Objects;
+
+@Service
+public class {ServiceName}Service {
+
+    private static final Logger log = LoggerFactory.getLogger({ServiceName}Service.class);
+
+{{- if .HasModule "SQLDatastore"}}
+    private final {EntityName}Repository repository;
+
+    public {ServiceName}Service({EntityName}Repository repository) {
+        this.repository = Objects.requireNonNull(repository, "repository");
+    }
+{{- else}}
+    // TODO: Inject your dependencies here
+    public {ServiceName}Service() {}
+{{- end}}
+
+    @CircuitBreaker(name = "default")
+    public Immutable{EntityName} process({InputType} input) {
+        log.info("Processing: id={}", input.id());
+
+        // TODO: Implement business logic
+        // - Validate input
+        // - Call external service / repository
+        // - Transform result
+
+        return Immutable{EntityName}.builder()
+            .id(input.id())
+            .name(input.name())
+            .build();
+    }
+}
+```
+
+**Important:**
+- Replace `{ServiceName}` with the service name (e.g., `Payment`, `Notification`)
+- Replace `{EntityName}` with the entity it operates on
+- Replace `{InputType}` with the actual input type (usually an Immutable DTO)
+- Constructor injection with `private final` fields — never use `@Autowired`
+- `@CircuitBreaker(name = "default")` on methods calling external systems
+- Return Immutable types (`ImmutableX`), not records or raw objects
+- Log entry/exit for important operations, never log PII (passwords, tokens, emails)
+- Throw specific exceptions with context, not generic `RuntimeException`
+
+### 2. Create Service Tests
+
+**File**: `Shared/src/test/java/{{.PackagePath}}/shared/service/{ServiceName}ServiceTest.java`
+
+```java
+package {{.GroupID}}.shared.service;
+
+import {{.GroupID}}.model.entities.Immutable{EntityName};
+{{- if .HasModule "SQLDatastore"}}
+import {{.GroupID}}.model.entities.{EntityName}Record;
+import {{.GroupID}}.sqldatastore.repository.{EntityName}Repository;
+{{- end}}
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class {ServiceName}ServiceTest {
+
+{{- if .HasModule "SQLDatastore"}}
+    @Mock
+    private {EntityName}Repository repository;
+{{- end}}
+
+    @InjectMocks
+    private {ServiceName}Service service;
+
+    @Test
+    void should_ReturnResult_When_ValidInput() {
+        // Given
+        var input = Immutable{InputType}.builder()
+            .id("1")
+            .name("Test")
+            .build();
+{{- if .HasModule "SQLDatastore"}}
+        var record = new {EntityName}Record(1L, "Test");
+        when(repository.findById(1L)).thenReturn(Optional.of(record));
+{{- end}}
+
+        // When
+        Immutable{EntityName} result = service.process(input);
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.name()).isEqualTo("Test");
+    }
+
+    @Test
+    void should_ThrowException_When_InvalidInput() {
+        // Given
+        var input = Immutable{InputType}.builder()
+            .id("invalid")
+            .name("")
+            .build();
+
+        // When/Then
+        assertThatThrownBy(() -> service.process(input))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("invalid");
+    }
+
+    @Test
+    void should_HandleGracefully_When_DependencyFails() {
+        // Given
+        var input = Immutable{InputType}.builder()
+            .id("1")
+            .name("Test")
+            .build();
+{{- if .HasModule "SQLDatastore"}}
+        when(repository.findById(any())).thenThrow(new RuntimeException("DB unavailable"));
+{{- end}}
+
+        // When/Then
+        assertThatThrownBy(() -> service.process(input))
+            .isInstanceOf(RuntimeException.class);
+    }
+}
+```
+{{- if .HasModule "SQLDatastore"}}
+
+### 3. Repository Interaction
+
+When the service needs to interact with a repository, inject it via the constructor:
+
+```java
+private final {EntityName}Repository repository;
+
+public {ServiceName}Service({EntityName}Repository repository) {
+    this.repository = Objects.requireNonNull(repository, "repository");
+}
+
+public List<Immutable{EntityName}> findByStatus(String status) {
+    return repository.findAllByStatus(status).stream()
+        .map({EntityName}Record::toEntity)
+        .toList();
+}
+```
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+
+### 4. Publishing Events
+
+When the service needs to publish events after processing:
+
+```java
+private final ApplicationEventPublisher eventPublisher;
+
+public {ServiceName}Service(ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher");
+}
+
+public Immutable{EntityName} process({InputType} input) {
+    // ... business logic ...
+    Immutable{EntityName} result = Immutable{EntityName}.builder()
+        .id(input.id())
+        .name(input.name())
+        .build();
+
+    eventPublisher.publishEvent(new {EntityName}ProcessedEvent(result.id()));
+    return result;
+}
+```
+{{- end}}
+
+### 5. Compile and Test
+
+```bash
+mvn clean compile
+mvn test
+```
+
+## Checklist
+
+- [ ] Service class created in `Shared/src/main/java/.../shared/service/`
+- [ ] Constructor injection used (no `@Autowired`)
+- [ ] All fields are `private final`
+- [ ] Returns Immutable types (`ImmutableX`), not records or raw objects
+- [ ] `@CircuitBreaker(name = "default")` on methods calling external systems
+- [ ] Logging with structured context (no PII)
+- [ ] Specific exceptions with context messages (not generic `RuntimeException`)
+- [ ] Tests cover success path, error path, and edge cases
+- [ ] Tests use mocks for external dependencies (`@Mock` + `@InjectMocks`)
+- [ ] Test naming follows `should_ExpectedBehavior_When_Condition`
+- [ ] Code compiles (`mvn clean compile`)
+- [ ] Tests pass (`mvn test`)
+
+## Common Mistakes
+
+- **Using `@Autowired` field injection** — ArchUnit will reject it; use constructor injection
+- **Returning Record types from services** — use Immutables (`ImmutableX`)
+- **Swallowing exceptions in catch blocks** — always log or rethrow with context
+- **Logging sensitive data** — never log passwords, tokens, PII (emails, SSNs)
+- **Missing circuit breaker on external calls** — all external service/HTTP calls need `@CircuitBreaker`
+- **Testing implementation details instead of behavior** — test through public methods
+- **Using `new` for Immutables** — always use `ImmutableX.builder()...build()`

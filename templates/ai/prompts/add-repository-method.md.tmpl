@@ -1,0 +1,223 @@
+# Add Repository Method
+
+## Overview
+
+Add custom query methods to an existing Spring Data JDBC repository. This guide covers derived queries, custom `@Query` methods, keyset pagination, and batch operations.
+
+## Prerequisites
+
+- Entity and repository already exist (see `{{.PromptsDir}}/add-entity.md` if needed)
+- Project compiles successfully (`mvn clean compile`)
+- Docker running (for integration tests with Testcontainers)
+
+## Steps
+
+### 1. Add Method to Repository Interface
+
+**File**: `SQLDatastore/src/main/java/{{.PackagePath}}/sqldatastore/repository/{EntityName}Repository.java`
+
+#### Simple Derived Query
+
+```java
+List<{EntityName}Record> findAllByStatus(String status);
+
+Optional<{EntityName}Record> findByEmail(String email);
+
+boolean existsByName(String name);
+
+long countByStatus(String status);
+```
+
+#### Custom @Query with Keyset Pagination (CORRECT)
+
+```java
+@Query("SELECT * FROM {entity_table} WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+List<{EntityName}Record> findPage(@Param("afterId") Long afterId, @Param("limit") int limit);
+```
+
+#### Composite Filter with Keyset Pagination
+
+```java
+@Query("""
+    SELECT * FROM {entity_table}
+    WHERE status = :status
+    AND id > :afterId
+    ORDER BY id ASC
+    LIMIT :limit
+    """)
+List<{EntityName}Record> findByStatusPaged(
+    @Param("status") String status,
+    @Param("afterId") Long afterId,
+    @Param("limit") int limit);
+```
+
+#### WRONG -- Never Use Offset Pagination
+
+```java
+// WRONG: Offset pagination degrades linearly with data growth
+Page<{EntityName}Record> findAll(Pageable pageable);
+
+// WRONG: OFFSET skips rows by counting, O(n) on large tables
+@Query("SELECT * FROM {entity_table} ORDER BY id LIMIT :limit OFFSET :offset")
+List<{EntityName}Record> findPage(@Param("limit") int limit, @Param("offset") int offset);
+```
+
+#### Batch Operations
+
+```java
+@Modifying
+@Query("UPDATE {entity_table} SET status = :newStatus WHERE status = :oldStatus")
+int updateStatusBatch(@Param("oldStatus") String oldStatus, @Param("newStatus") String newStatus);
+
+@Modifying
+@Query("DELETE FROM {entity_table} WHERE status = :status AND created_at < :before")
+int deleteOlderThan(@Param("status") String status, @Param("before") Instant before);
+```
+
+**Replace placeholders:**
+- `{EntityName}` -> Actual entity name (PascalCase, e.g., `Product`)
+- `{entity_table}` -> Table name (snake_case, e.g., `product`)
+
+### 2. Add Index for New Query
+
+If the new query filters on a column that is not already indexed, add a Flyway migration:
+
+**File**: `SQLDatastore/src/main/resources/db/migration/V{N}__{description}.sql`
+
+```sql
+CREATE INDEX idx_{entity_table}_{field} ON {entity_table} ({field});
+```
+
+For composite queries, add a composite index:
+
+```sql
+CREATE INDEX idx_{entity_table}_{col1}_{col2} ON {entity_table} ({col1}, {col2});
+```
+
+**Important:**
+- Find the next version number by checking existing migrations
+- Never modify existing migration files
+
+### 3. Write Integration Tests
+
+**File**: `SQLDatastore/src/test/java/{{.PackagePath}}/sqldatastore/repository/{EntityName}RepositoryTest.java`
+
+```java
+package {{.GroupID}}.sqldatastore.repository;
+
+import {{.GroupID}}.model.entities.{EntityName}Record;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DataJdbcTest
+@Testcontainers
+class {EntityName}RepositoryTest {
+
+    @Container
+{{- if eq .Database "postgresql"}}
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+    }
+{{- else if eq .Database "mysql"}}
+    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", mysql::getJdbcUrl);
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
+{{- end}}
+
+    @Autowired
+    private {EntityName}Repository repository;
+
+    @Test
+    void should_ReturnFilteredResults_When_StatusProvided() {
+        // Given
+        repository.save(new {EntityName}Record(null, "Active Item", "active"));
+        repository.save(new {EntityName}Record(null, "Inactive Item", "inactive"));
+
+        // When
+        List<{EntityName}Record> results = repository.findAllByStatus("active");
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).name()).isEqualTo("Active Item");
+    }
+
+    @Test
+    void should_ReturnPage_When_KeysetPaginationUsed() {
+        // Given
+        for (int i = 1; i <= 5; i++) {
+            repository.save(new {EntityName}Record(null, "Item " + i));
+        }
+
+        // When — first page
+        List<{EntityName}Record> page1 = repository.findPage(0L, 2);
+
+        // Then
+        assertThat(page1).hasSize(2);
+
+        // When — next page using last ID as cursor
+        Long lastId = page1.get(page1.size() - 1).id();
+        List<{EntityName}Record> page2 = repository.findPage(lastId, 2);
+
+        // Then
+        assertThat(page2).hasSize(2);
+        assertThat(page2.get(0).id()).isGreaterThan(lastId);
+    }
+
+    @Test
+    void should_ReturnEmpty_When_NoMatchingResults() {
+        // When
+        List<{EntityName}Record> results = repository.findAllByStatus("nonexistent");
+
+        // Then
+        assertThat(results).isEmpty();
+    }
+}
+```
+
+### 4. Compile and Test
+
+```bash
+mvn clean compile
+mvn test
+```
+
+## Checklist
+
+- [ ] Method added to repository interface
+- [ ] Uses keyset pagination (`WHERE id > :afterId`), not offset (`Pageable`/`OFFSET`)
+- [ ] Custom `@Query` uses parameterized inputs (`:param`), not string concatenation
+- [ ] Index added for any new filtered/sorted column
+- [ ] Index migration uses correct version number (sequential, no gaps)
+- [ ] Integration test written with Testcontainers
+- [ ] Tests cover: expected results, empty results, pagination
+- [ ] Code compiles (`mvn clean compile`)
+- [ ] Tests pass (`mvn test`)
+
+## Common Mistakes
+
+- **Using offset pagination (`Pageable`)** — performance degrades linearly on large tables; use keyset
+- **Missing index for filtered columns** — causes full table scans; always index WHERE/JOIN columns
+- **`@Query` without parameterized inputs** — SQL injection risk; always use `@Param`
+- **`SELECT *` when only a few columns needed** — wastes memory on wide tables
+- **Not testing with Testcontainers** — SQL syntax differs between H2 and PostgreSQL/MySQL
+- **Modifying existing migration files** — Flyway checksums will fail; create a new migration

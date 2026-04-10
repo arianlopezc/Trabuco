@@ -1046,6 +1046,7 @@ func (a *ModuleAdder) regenerateDocs() error {
 		data := &templateData{
 			ProjectConfig: a.config,
 			PromptsDir:    promptsDir,
+			TaskGuidesDir: ".ai/prompts",
 			Frontmatter:   frontmatter,
 		}
 		if err := gen.writeTemplateWithData("docs/CLAUDE.md.tmpl", agent.FilePath, data); err != nil {
