@@ -1,0 +1,30 @@
+package {{.GroupID}}.aiagent.brain;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.annotation.Nullable;
+import org.immutables.value.Value;
+
+import java.time.Instant;
+
+/**
+ * A single step in the agent's reasoning trace.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableMemoryEntry.class)
+@JsonDeserialize(as = ImmutableMemoryEntry.class)
+public interface MemoryEntry {
+
+    int step();
+    String thought();
+    String action();
+    String params();
+    String observation();
+
+    @Value.Default
+    default Instant timestamp() {
+        return Instant.now();
+    }
+}

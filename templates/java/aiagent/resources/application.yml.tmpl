@@ -1,0 +1,157 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,application/javascript,text/css
+    min-response-size: 1024
+
+spring:
+  application:
+    name: {{.ProjectName}}-aiagent
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+  ai:
+    mcp:
+      server:
+        enabled: true
+        name: {{.ProjectNamePascal}} AI Agent
+        version: 1.0.0
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      chat:
+        options:
+          model: ${AI_MODEL:claude-sonnet-4-20250514}
+          max-tokens: ${AI_MAX_TOKENS:1024}
+    retry:
+      max-attempts: ${AI_RETRY_MAX_ATTEMPTS:2}
+{{- if .HasModule "SQLDatastore"}}
+
+  # Database configuration
+  datasource:
+{{- if eq .Database "postgresql"}}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:prefer}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+{{- else if eq .Database "mysql"}}
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectNameSnake}}}?useSSL=${DB_USE_SSL:true}&requireSSL=${DB_REQUIRE_SSL:false}&verifyServerCertificate=${DB_VERIFY_CERT:false}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+{{- else}}
+    url: jdbc:h2:mem:{{.ProjectName}};DB_CLOSE_DELAY=-1
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.h2.Driver
+{{- end}}
+    hikari:
+      pool-name: {{.ProjectNamePascal}}AgentPool
+      maximum-pool-size: ${DB_POOL_SIZE:5}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+{{- if eq .NoSQLDatabase "mongodb"}}
+
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
+      auto-index-creation: true
+{{- else if eq .NoSQLDatabase "redis"}}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+{{- end}}
+{{- end}}
+
+# Agent authentication
+agent:
+  auth:
+    keys:
+      public-read-key:
+        tier: public
+        label: public-read-key
+      partner-secret-key:
+        tier: partner
+        label: partner-secret-key
+  rate-limits:
+    anonymous: ${RATE_LIMIT_ANONYMOUS:10}
+    public: ${RATE_LIMIT_PUBLIC:60}
+    partner: ${RATE_LIMIT_PARTNER:200}
+  guardrails:
+    enabled: ${GUARDRAILS_ENABLED:true}
+
+# Resilience4j Circuit Breaker
+resilience4j:
+  circuitbreaker:
+    instances:
+      llm:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 3
+
+# CORS configuration
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080}
+  allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
+  allowed-headers: ${CORS_ALLOWED_HEADERS:Content-Type,Authorization,X-Correlation-ID}
+  allow-credentials: ${CORS_ALLOW_CREDENTIALS:false}
+  max-age: ${CORS_MAX_AGE:3600}
+
+# Actuator & Metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS:health,info,prometheus,metrics}
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_HEALTH_DETAILS:when_authorized}
+      show-components: ${MANAGEMENT_HEALTH_COMPONENTS:when_authorized}
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  health:
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+      threshold: 100MB
+
+# Logging
+logging:
+  level:
+    {{.GroupID}}: ${LOG_LEVEL:DEBUG}
+    org.springframework.web: INFO
+    org.springframework.ai: INFO
+    root: INFO

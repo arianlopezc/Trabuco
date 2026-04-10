@@ -644,3 +644,104 @@ func TestCompilation_EventConsumerWithPubSub(t *testing.T) {
 	runMavenCompile(t, projectDir)
 	t.Log("EventConsumer with GCP Pub/Sub compiled successfully")
 }
+
+func TestCompilation_AIAgentMinimal(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "ai-minimal",
+		GroupID:     "com.test.aiminimal",
+		ArtifactID:  "ai-minimal",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "AIAgent"},
+		Database:    "",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("Model + AIAgent (minimal) compiled successfully")
+}
+
+func TestCompilation_AIAgentWithShared(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "ai-shared",
+		GroupID:     "com.test.aishared",
+		ArtifactID:  "ai-shared",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Shared", "AIAgent"},
+		Database:    "",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("Model + Shared + AIAgent compiled successfully")
+}
+
+func TestCompilation_AIAgentFullStack(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "ai-full",
+		GroupID:     "com.test.aifull",
+		ArtifactID:  "ai-full",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "SQLDatastore", "Shared", "API", "AIAgent"},
+		Database:    "postgresql",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	runMavenCompile(t, projectDir)
+	t.Log("Full stack with AIAgent compiled successfully")
+}
+
+func TestCompilation_AIAgentWithTests(t *testing.T) {
+	checkMavenInstalled(t)
+
+	tempDir, err := os.MkdirTemp("", "trabuco-compile-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "ai-tests",
+		GroupID:     "com.test.aitests",
+		ArtifactID:  "ai-tests",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Shared", "AIAgent"},
+		Database:    "",
+	}
+
+	projectDir := generateProject(t, tempDir, cfg)
+	t.Logf("Generated project at: %s", projectDir)
+
+	// Run full install including tests — verifies generated tests pass
+	runMavenInstall(t, projectDir)
+	t.Log("AIAgent generated tests passed successfully")
+}

@@ -1,0 +1,22 @@
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import org.immutables.value.Value;
+
+/**
+ * Request DTO for the /chat endpoint.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableChatRequest.class)
+@JsonDeserialize(as = ImmutableChatRequest.class)
+public interface ChatRequest {
+
+    @NotBlank(message = "Message is required")
+    @Size(max = 10000, message = "Message must not exceed 10,000 characters")
+    String message();
+}

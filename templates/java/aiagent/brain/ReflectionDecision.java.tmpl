@@ -1,0 +1,40 @@
+package {{.GroupID}}.aiagent.brain;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.annotation.Nullable;
+import org.immutables.value.Value;
+
+/**
+ * Decision from the reflection service on how to recover from an error.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableReflectionDecision.class)
+@JsonDeserialize(as = ImmutableReflectionDecision.class)
+public interface ReflectionDecision {
+
+    String action();
+
+    @Value.Default
+    default String message() {
+        return "";
+    }
+
+    default boolean isRetry() { return "retry".equals(action()); }
+    default boolean isEscalate() { return "escalate".equals(action()); }
+    default boolean isGiveUp() { return "give_up".equals(action()); }
+
+    static ReflectionDecision retry() {
+        return ImmutableReflectionDecision.builder().action("retry").build();
+    }
+
+    static ReflectionDecision escalate(String msg) {
+        return ImmutableReflectionDecision.builder().action("escalate").message(msg).build();
+    }
+
+    static ReflectionDecision giveUp(String reason) {
+        return ImmutableReflectionDecision.builder().action("give_up").message(reason).build();
+    }
+}

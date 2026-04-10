@@ -22,11 +22,15 @@
 {{- if or (.HasModule "Jobs") (.HasModule "Worker")}}
         <jobrunr.version>8.4.0</jobrunr.version>
 {{- end}}
-{{- if or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")}}
+{{- if or (or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")) (.HasAIAgentModule)}}
         <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
 {{- end}}
 {{- if .HasModule "API"}}
         <springdoc.version>2.7.0</springdoc.version>
+{{- end}}
+{{- if .HasAIAgentModule}}
+        <spring-ai.version>1.0.5</spring-ai.version>
+        <resilience4j.version>2.2.0</resilience4j.version>
 {{- end}}
         <jacoco.version>0.8.12</jacoco.version>
         <maven-enforcer.version>3.5.0</maven-enforcer.version>
@@ -78,6 +82,15 @@
                 <groupId>com.google.cloud</groupId>
                 <artifactId>spring-cloud-gcp-dependencies</artifactId>
                 <version>5.8.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+{{- end}}
+{{- if .HasAIAgentModule}}
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

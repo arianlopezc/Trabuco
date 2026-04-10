@@ -1,0 +1,32 @@
+package {{.GroupID}}.aiagent.config;
+
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+@ConditionalOnBean(ChatModel.class)
+public class ChatClientConfig {
+
+    /**
+     * Specialist agent uses the same model but could be configured separately.
+     * In production, you might use a different model or different temperature settings.
+     */
+    @Bean
+    @Qualifier("specialistChatModel")
+    public ChatModel specialistChatModel(ChatModel chatModel) {
+        return chatModel; // Same model for simplicity; production would use separate config
+    }
+
+    /**
+     * Guardrail model — in production, use a faster/cheaper model for classification.
+     * For development, we reuse the same model.
+     */
+    @Bean
+    @Qualifier("guardrailChatModel")
+    public ChatModel guardrailChatModel(ChatModel chatModel) {
+        return chatModel;
+    }
+}

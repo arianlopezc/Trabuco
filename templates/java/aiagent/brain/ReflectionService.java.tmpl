@@ -1,0 +1,75 @@
+package {{.GroupID}}.aiagent.brain;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Component;
+
+@Component
+@ConditionalOnBean(ChatModel.class)
+public class ReflectionService {
+
+    private static final Logger log = LoggerFactory.getLogger(ReflectionService.class);
+
+    private static final String REFLECTION_PROMPT = """
+        You are an error recovery system for the {{.ProjectNamePascal}} AI agent.
+        A tool call failed. Decide what to do next.
+
+        Respond with ONLY one of these lines:
+        ACTION: RETRY
+        ACTION: ALTERNATIVE <tool_name> <params>
+        ACTION: ESCALATE <message for user>
+        ACTION: GIVE_UP <reason>
+
+        Rules:
+        - RETRY for transient errors (timeouts, temporary failures)
+        - ALTERNATIVE for availability issues (suggest a different approach)
+        - ESCALATE for ambiguous or unknown requests
+        - GIVE_UP for permanent failures (invalid operations)
+
+        Goal: %s
+        Failed action: %s
+        Error: %s
+        """;
+
+    private final ChatClient chatClient;
+
+    public ReflectionService(@Qualifier("guardrailChatModel") ChatModel chatModel) {
+        this.chatClient = ChatClient.create(chatModel);
+    }
+
+    public ReflectionDecision reflect(String goal, String failedAction, String error) {
+        try {
+            String response = chatClient.prompt()
+                .user(REFLECTION_PROMPT.formatted(goal, failedAction, error))
+                .call()
+                .content();
+
+            if (response == null) return ReflectionDecision.giveUp("No response from reflection model");
+
+            String upper = response.toUpperCase();
+            if (upper.contains("RETRY")) return ReflectionDecision.retry();
+            if (upper.contains("ESCALATE")) {
+                String message = extractAfter(response, "ESCALATE");
+                return ReflectionDecision.escalate(message.isBlank() ? "Could you clarify your request?" : message);
+            }
+            if (upper.contains("GIVE_UP")) {
+                String reason = extractAfter(response, "GIVE_UP");
+                return ReflectionDecision.giveUp(reason.isBlank() ? "Cannot recover from this error" : reason);
+            }
+            return ReflectionDecision.giveUp("Unrecognized reflection response");
+        } catch (Exception e) {
+            log.warn("Reflection failed: {}", e.getMessage());
+            return ReflectionDecision.giveUp("Reflection service unavailable: " + e.getMessage());
+        }
+    }
+
+    private String extractAfter(String response, String keyword) {
+        int idx = response.toUpperCase().indexOf(keyword);
+        if (idx < 0) return "";
+        return response.substring(idx + keyword.length()).trim();
+    }
+}

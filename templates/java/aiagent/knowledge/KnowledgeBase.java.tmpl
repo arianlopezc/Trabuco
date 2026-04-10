@@ -1,0 +1,20 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import java.util.List;
+import java.util.Map;
+
+public final class KnowledgeBase {
+
+    private KnowledgeBase() {}
+
+    // TODO: Replace these placeholder entries with domain-specific knowledge for {{.ProjectNamePascal}}.
+    // Each entry should have a "topic" key for matching and a "content" key with the answer text.
+    public static final List<Map<String, String>> ENTRIES = List.of(
+        Map.of("topic", "hours", "content", "TODO: Add your business hours here. Example: We are open Monday to Friday, 9am to 5pm."),
+        Map.of("topic", "services", "content", "TODO: Describe your main services or products here."),
+        Map.of("topic", "pricing", "content", "TODO: Add pricing information for your services or products."),
+        Map.of("topic", "contact", "content", "TODO: Add contact information and support channels."),
+        Map.of("topic", "policies", "content", "TODO: Add your return, refund, or service policies here."),
+        Map.of("topic", "faq", "content", "TODO: Add frequently asked questions and answers.")
+    );
+}

@@ -1,0 +1,89 @@
+package {{.GroupID}}.aiagent.event;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClient;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import {{.GroupID}}.aiagent.event.ImmutableWebhookRegistration;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Component
+public class WebhookManager {
+
+    private static final Logger log = LoggerFactory.getLogger(WebhookManager.class);
+    private final ConcurrentHashMap<String, WebhookRegistration> webhooks = new ConcurrentHashMap<>();
+    private final WebClient webClient = WebClient.create();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public WebhookRegistration register(String url, List<String> events, String apiKey) {
+        var reg = ImmutableWebhookRegistration.builder()
+            .webhookId("WH-" + UUID.randomUUID())
+            .url(url)
+            .events(events)
+            .apiKey(apiKey)
+            .build();
+        webhooks.put(reg.webhookId(), reg);
+        return reg;
+    }
+
+    public List<WebhookRegistration> listWebhooks() {
+        return List.copyOf(webhooks.values());
+    }
+
+    public void deregister(String webhookId) {
+        if (webhooks.remove(webhookId) == null) {
+            throw new IllegalArgumentException("Webhook not found: " + webhookId);
+        }
+    }
+
+    public void dispatch(String eventType, Map<String, Object> data) {
+        webhooks.values().stream()
+            .filter(wh -> wh.events().contains(eventType))
+            .forEach(wh -> {
+                try {
+                    var payload = objectMapper.writeValueAsString(Map.of(
+                        "event", eventType,
+                        "timestamp", Instant.now().toString(),
+                        "data", data
+                    ));
+                    String signature = hmacSha256(wh.apiKey(), payload);
+                    webClient.post()
+                        .uri(wh.url())
+                        .header("Content-Type", "application/json")
+                        .header("X-Webhook-Signature", "sha256=" + signature)
+                        .header("X-Webhook-ID", wh.webhookId())
+                        .bodyValue(payload)
+                        .retrieve()
+                        .toBodilessEntity()
+                        .subscribe(
+                            r -> log.info("Webhook delivered: {} -> {}", eventType, wh.url()),
+                            e -> log.warn("Webhook delivery failed: {} - {}", wh.url(), e.getMessage())
+                        );
+                } catch (Exception e) {
+                    log.warn("Webhook dispatch error: {}", e.getMessage());
+                }
+            });
+    }
+
+    private String hmacSha256(String key, String data) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception e) {
+            throw new RuntimeException("HMAC computation failed", e);
+        }
+    }
+
+    public void reset() {
+        webhooks.clear();
+    }
+}

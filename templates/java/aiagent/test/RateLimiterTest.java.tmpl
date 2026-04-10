@@ -1,0 +1,58 @@
+package {{.GroupID}}.aiagent.security;
+
+import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
+
+import static org.assertj.core.api.Assertions.*;
+
+class RateLimiterTest {
+
+    private RateLimiter limiter;
+
+    @BeforeEach
+    void setUp() {
+        limiter = new RateLimiter();
+    }
+
+    @Test
+    void underLimit_passes() {
+        var caller = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("test1").keyLabel("test").build();
+        for (int i = 0; i < 9; i++) {
+            limiter.checkRateLimit(caller);
+        }
+        // 9 requests for anonymous (limit 10) should pass
+    }
+
+    @Test
+    void atLimit_throws() {
+        var caller = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("test2").keyLabel("test").build();
+        for (int i = 0; i < 10; i++) {
+            limiter.checkRateLimit(caller);
+        }
+        assertThatThrownBy(() -> limiter.checkRateLimit(caller))
+            .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void partnerHasHigherLimit() {
+        var caller = ImmutableCallerIdentity.builder().tier("partner").keyHash("test3").keyLabel("test").build();
+        for (int i = 0; i < 200; i++) {
+            limiter.checkRateLimit(caller);
+        }
+        assertThatThrownBy(() -> limiter.checkRateLimit(caller))
+            .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void differentCallers_independent() {
+        var c1 = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("testA").keyLabel("test").build();
+        var c2 = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("testB").keyLabel("test").build();
+        for (int i = 0; i < 10; i++) {
+            limiter.checkRateLimit(c1);
+        }
+        // c2 should still be fine
+        assertThatCode(() -> limiter.checkRateLimit(c2)).doesNotThrowAnyException();
+    }
+}

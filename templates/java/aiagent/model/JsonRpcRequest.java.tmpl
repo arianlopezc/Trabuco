@@ -1,0 +1,31 @@
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.annotation.Nullable;
+import org.immutables.value.Value;
+
+import java.util.Map;
+
+/**
+ * A2A JSON-RPC 2.0 request envelope.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableJsonRpcRequest.class)
+@JsonDeserialize(as = ImmutableJsonRpcRequest.class)
+public interface JsonRpcRequest {
+
+    String jsonrpc();
+
+    @Nullable
+    String id();
+
+    String method();
+
+    @Value.Default
+    default Map<String, Object> params() {
+        return Map.of();
+    }
+}

@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>{{.GroupID}}</groupId>
+        <artifactId>{{.ArtifactID}}-parent</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>AIAgent</artifactId>
+
+    <name>{{.ProjectNamePascal}} AI Agent</name>
+    <description>AI agent module powered by Spring AI with tool calling, guardrails, and MCP support</description>
+
+    <properties>
+        <immutables.version>2.10.1</immutables.version>
+    </properties>
+
+    <dependencies>
+        <!-- Immutables (compile-time annotation processor) -->
+        <dependency>
+            <groupId>org.immutables</groupId>
+            <artifactId>value</artifactId>
+            <version>${immutables.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Model module dependency -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>Model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{if .HasModule "Shared"}}
+        <!-- Shared module dependency -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>Shared</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{end}}
+{{if .HasModule "SQLDatastore"}}
+        <!-- SQLDatastore module dependency -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>SQLDatastore</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{end}}
+{{if .HasModule "NoSQLDatastore"}}
+        <!-- NoSQLDatastore module dependency -->
+        <dependency>
+            <groupId>{{.GroupID}}</groupId>
+            <artifactId>NoSQLDatastore</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{end}}
+        <!-- Spring Boot Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Spring Boot WebFlux (for reactive WebClient) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
+        <!-- Spring Boot Actuator (for health checks) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Bean Validation (Hibernate Validator) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Spring AI - Anthropic (BOM managed, no version) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-anthropic</artifactId>
+        </dependency>
+
+        <!-- Spring AI - MCP Server WebMVC (BOM managed, no version) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+        </dependency>
+
+        <!-- Spring AI - RAG (BOM managed, no version) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-rag</artifactId>
+            <exclusions>
+                <!-- Exclude javax.validation (banned — use jakarta.validation instead) -->
+                <exclusion>
+                    <groupId>javax.validation</groupId>
+                    <artifactId>validation-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Resilience4j Circuit Breaker -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+
+        <!-- Micrometer Prometheus Registry (metrics export) -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Structured JSON logging (logback-spring.xml uses LogstashEncoder for non-local profiles) -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>${logstash-logback-encoder.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Jackson for JSON serialization -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jdk8</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.module</groupId>
+            <artifactId>jackson-module-parameter-names</artifactId>
+        </dependency>
+
+        <!-- Test Dependencies -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <parameters>true</parameters>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.immutables</groupId>
+                            <artifactId>value</artifactId>
+                            <version>${immutables.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <configuration>
+                    <mainClass>{{.GroupID}}.aiagent.{{.ProjectNamePascal}}AIAgentApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

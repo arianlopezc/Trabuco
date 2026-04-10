@@ -1,0 +1,34 @@
+package {{.GroupID}}.aiagent.task;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.annotation.Nullable;
+import org.immutables.value.Value;
+
+import java.time.Instant;
+import java.util.Map;
+
+/**
+ * Event emitted when an async task changes state.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableTaskEvent.class)
+@JsonDeserialize(as = ImmutableTaskEvent.class)
+public interface TaskEvent {
+
+    String taskId();
+    String status();
+
+    @Nullable
+    Map<String, Object> result();
+
+    @Nullable
+    String error();
+
+    @Value.Default
+    default Instant timestamp() {
+        return Instant.now();
+    }
+}

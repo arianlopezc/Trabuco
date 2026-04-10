@@ -115,6 +115,14 @@ var patternCatalog = []ArchitecturePattern{
 		Constraints:   []string{"No HTTP endpoints — add API module if REST access is needed"},
 		keywords:      []string{"headless", "processor", "etl", "pipeline", "batch", "data processing", "worker only", "no api", "data import", "ingestion"},
 	},
+	{
+		Name:        "ai-agent",
+		Description: "AI agent with Spring AI — tool calling, guardrails, multi-agent orchestration, MCP server, and A2A protocol",
+		UseCases:    []string{"intelligent assistant", "chatbot", "AI-powered service", "natural language interface", "agent-to-agent communication", "MCP tool server"},
+		Modules:     []string{"Model", "AIAgent"},
+		Constraints: []string{"Requires ANTHROPIC_API_KEY for LLM features", "LLM-dependent features gracefully degrade without API key"},
+		keywords:    []string{"ai", "agent", "llm", "claude", "chatbot", "intelligent", "natural language", "mcp", "tool calling", "guardrail", "multi-agent"},
+	},
 }
 
 // scorePatterns scores all patterns against requirements and returns them sorted by score (descending).

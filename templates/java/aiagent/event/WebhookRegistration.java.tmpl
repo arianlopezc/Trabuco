@@ -1,0 +1,28 @@
+package {{.GroupID}}.aiagent.event;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import org.immutables.value.Value;
+
+import java.util.List;
+
+/**
+ * Registration record for an outbound webhook.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableWebhookRegistration.class)
+@JsonDeserialize(as = ImmutableWebhookRegistration.class)
+public interface WebhookRegistration {
+
+    String webhookId();
+    String url();
+    List<String> events();
+    String apiKey();
+
+    @Value.Default
+    default String status() {
+        return "active";
+    }
+}

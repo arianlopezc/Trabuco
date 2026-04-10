@@ -498,3 +498,299 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+func TestGenerator_Generate_AIAgentModule(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(oldWd)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "ai-test",
+		GroupID:     "com.test.aitest",
+		ArtifactID:  "ai-test",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "Shared", "AIAgent"},
+		Database:    "",
+	}
+
+	gen, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("Failed to generate project: %v", err)
+	}
+
+	expectedFiles := []string{
+		// Root
+		"pom.xml",
+		// AIAgent POM
+		"AIAgent/pom.xml",
+		"AIAgent/Dockerfile",
+		// Application class
+		"AIAgent/src/main/java/com/test/aitest/aiagent/AiTestAIAgentApplication.java",
+		// Config
+		"AIAgent/src/main/java/com/test/aitest/aiagent/config/ChatClientConfig.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/config/McpServerConfig.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/config/WebConfig.java",
+		// Security
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/CallerIdentity.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/CallerContext.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/ApiKeyAuthFilter.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/ScopeEnforcer.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/RequireScope.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/ScopeInterceptor.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/RateLimiter.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/InputGuardrailAdvisor.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/OutputGuardrailAdvisor.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/security/CorrelationIdFilter.java",
+		// Tools
+		"AIAgent/src/main/java/com/test/aitest/aiagent/tool/PlaceholderTools.java",
+		// Agents
+		"AIAgent/src/main/java/com/test/aitest/aiagent/agent/PrimaryAgent.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/agent/SpecialistAgent.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/agent/SpecialistAgentTool.java",
+		// Brain
+		"AIAgent/src/main/java/com/test/aitest/aiagent/brain/MemoryEntry.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/brain/Scratchpad.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/brain/ReflectionDecision.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/brain/ReflectionService.java",
+		// Knowledge
+		"AIAgent/src/main/java/com/test/aitest/aiagent/knowledge/KnowledgeBase.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/knowledge/KnowledgeTools.java",
+		// Protocol
+		"AIAgent/src/main/java/com/test/aitest/aiagent/protocol/AgentRestController.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/protocol/A2AController.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/protocol/DiscoveryController.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/protocol/StreamingController.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/protocol/WebhookController.java",
+		// Task
+		"AIAgent/src/main/java/com/test/aitest/aiagent/task/TaskRecord.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/task/TaskEvent.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/task/TaskManager.java",
+		// Event
+		"AIAgent/src/main/java/com/test/aitest/aiagent/event/WebhookRegistration.java",
+		"AIAgent/src/main/java/com/test/aitest/aiagent/event/WebhookManager.java",
+		// Model DTOs (generated into Model module)
+		"Model/src/main/java/com/test/aitest/model/dto/JsonRpcRequest.java",
+		"Model/src/main/java/com/test/aitest/model/dto/JsonRpcResponse.java",
+		"Model/src/main/java/com/test/aitest/model/dto/ChatRequest.java",
+		"Model/src/main/java/com/test/aitest/model/dto/ChatResponse.java",
+		"Model/src/main/java/com/test/aitest/model/dto/AskRequest.java",
+		"Model/src/main/java/com/test/aitest/model/dto/AskResponse.java",
+		"Model/src/main/java/com/test/aitest/model/dto/WebhookRegisterRequest.java",
+		// Resources
+		"AIAgent/src/main/resources/application.yml",
+		"AIAgent/src/main/resources/logback-spring.xml",
+		"AIAgent/src/main/resources/.well-known/agent.json",
+		// Tests
+		"AIAgent/src/test/java/com/test/aitest/aiagent/security/CallerIdentityTest.java",
+		"AIAgent/src/test/java/com/test/aitest/aiagent/security/ScopeEnforcerTest.java",
+		"AIAgent/src/test/java/com/test/aitest/aiagent/security/RateLimiterTest.java",
+		"AIAgent/src/test/java/com/test/aitest/aiagent/security/OutputGuardrailTest.java",
+		"AIAgent/src/test/java/com/test/aitest/aiagent/security/CorrelationIdFilterTest.java",
+		"AIAgent/src/test/java/com/test/aitest/aiagent/brain/ScratchpadTest.java",
+		"AIAgent/src/test/java/com/test/aitest/aiagent/brain/ReflectionDecisionTest.java",
+		"AIAgent/src/test/java/com/test/aitest/aiagent/tool/PlaceholderToolsTest.java",
+		"AIAgent/src/test/java/com/test/aitest/aiagent/task/TaskManagerTest.java",
+		// IntelliJ run config
+		".run/AIAgent.run.xml",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join("ai-test", file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("Expected file %s to exist", path)
+		}
+	}
+}
+
+func TestGenerator_Generate_AIAgentOnly_NoShared(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(oldWd)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "ai-minimal",
+		GroupID:     "com.test.minimal",
+		ArtifactID:  "ai-minimal",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "AIAgent"},
+		Database:    "",
+	}
+
+	gen, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("Failed to generate project: %v", err)
+	}
+
+	// Verify AIAgent exists but Shared does not
+	aiPath := filepath.Join("ai-minimal", "AIAgent")
+	if _, err := os.Stat(aiPath); os.IsNotExist(err) {
+		t.Error("Expected AIAgent directory to exist")
+	}
+	sharedPath := filepath.Join("ai-minimal", "Shared")
+	if _, err := os.Stat(sharedPath); !os.IsNotExist(err) {
+		t.Error("Shared directory should NOT exist when not selected")
+	}
+
+	// Verify ComponentScan does NOT include shared package
+	appFile := filepath.Join("ai-minimal", "AIAgent", "src", "main", "java", "com", "test", "minimal", "aiagent", "AiMinimalAIAgentApplication.java")
+	content, err := os.ReadFile(appFile)
+	if err != nil {
+		t.Fatalf("Failed to read application file: %v", err)
+	}
+	if contains(string(content), "com.test.minimal.shared") {
+		t.Error("Application class should NOT reference shared package when Shared is not selected")
+	}
+}
+
+func TestGenerator_Generate_AIAgentModuleSelection(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(oldWd)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "ai-select",
+		GroupID:     "com.test.aiselect",
+		ArtifactID:  "ai-select",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "AIAgent"},
+		Database:    "",
+	}
+
+	gen, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("Failed to generate project: %v", err)
+	}
+
+	expectedDirs := []string{"Model", "AIAgent"}
+	notExpectedDirs := []string{"API", "Worker", "Jobs", "SQLDatastore", "NoSQLDatastore", "Shared", "EventConsumer", "Events"}
+
+	for _, dir := range expectedDirs {
+		path := filepath.Join("ai-select", dir)
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			t.Errorf("Expected directory %s to exist", dir)
+		} else if !info.IsDir() {
+			t.Errorf("Expected %s to be a directory", dir)
+		}
+	}
+
+	for _, dir := range notExpectedDirs {
+		path := filepath.Join("ai-select", dir)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("Directory %s should NOT exist when only Model+AIAgent selected", dir)
+		}
+	}
+}
+
+func TestGenerator_Generate_AIAgentParentPOM_SpringAI(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(oldWd)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "ai-pom",
+		GroupID:     "com.test.aipom",
+		ArtifactID:  "ai-pom",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "AIAgent"},
+		Database:    "",
+	}
+
+	gen, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("Failed to generate project: %v", err)
+	}
+
+	// Verify parent POM includes Spring AI BOM
+	parentPom, err := os.ReadFile(filepath.Join("ai-pom", "pom.xml"))
+	if err != nil {
+		t.Fatalf("Failed to read parent pom.xml: %v", err)
+	}
+	pomContent := string(parentPom)
+	if !contains(pomContent, "spring-ai.version") {
+		t.Error("Parent POM should include spring-ai.version property when AIAgent is selected")
+	}
+	if !contains(pomContent, "spring-ai-bom") {
+		t.Error("Parent POM should include spring-ai-bom dependency when AIAgent is selected")
+	}
+}
+
+func TestGenerator_Generate_NoAIAgent_NoSpringAI(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(oldWd)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "no-ai",
+		GroupID:     "com.test.noai",
+		ArtifactID:  "no-ai",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "API"},
+		Database:    "",
+	}
+
+	gen, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("Failed to generate project: %v", err)
+	}
+
+	// Verify parent POM does NOT include Spring AI when AIAgent is not selected
+	parentPom, err := os.ReadFile(filepath.Join("no-ai", "pom.xml"))
+	if err != nil {
+		t.Fatalf("Failed to read parent pom.xml: %v", err)
+	}
+	pomContent := string(parentPom)
+	if contains(pomContent, "spring-ai-bom") {
+		t.Error("Parent POM should NOT include spring-ai-bom when AIAgent is not selected")
+	}
+}

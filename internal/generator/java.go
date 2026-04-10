@@ -652,4 +652,208 @@ func (g *Generator) generateEventConsumerModule() error {
 	return nil
 }
 
+// generateAIAgentModule generates all files for the AI Agent module.
+// This includes: security (auth, scopes, guardrails), tools, agents (primary + specialist),
+// brain (scratchpad, reflection), knowledge, protocols (REST, A2A, discovery, streaming, webhooks),
+// task manager, webhook manager, config, and resources.
+func (g *Generator) generateAIAgentModule() error {
+	// Generate module POM
+	if err := g.generateModulePOM("AIAgent"); err != nil {
+		return err
+	}
 
+	// ─── Application Class ──────────────────────────────────────────────
+	applicationFile := fmt.Sprintf("%sAIAgentApplication.java", g.config.ProjectNamePascal())
+	if err := g.writeTemplate(
+		"java/aiagent/AIAgentApplication.java.tmpl",
+		g.javaPath("AIAgent", applicationFile),
+	); err != nil {
+		return fmt.Errorf("failed to generate AIAgentApplication.java: %w", err)
+	}
+
+	// ─── Config ─────────────────────────────────────────────────────────
+	configFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/config/ChatClientConfig.java.tmpl", filepath.Join("config", "ChatClientConfig.java")},
+		{"java/aiagent/config/McpServerConfig.java.tmpl", filepath.Join("config", "McpServerConfig.java")},
+		{"java/aiagent/config/WebConfig.java.tmpl", filepath.Join("config", "WebConfig.java")},
+	}
+	for _, f := range configFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Security ───────────────────────────────────────────────────────
+	securityFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/security/CallerIdentity.java.tmpl", filepath.Join("security", "CallerIdentity.java")},
+		{"java/aiagent/security/CallerContext.java.tmpl", filepath.Join("security", "CallerContext.java")},
+		{"java/aiagent/security/ApiKeyAuthFilter.java.tmpl", filepath.Join("security", "ApiKeyAuthFilter.java")},
+		{"java/aiagent/security/ScopeEnforcer.java.tmpl", filepath.Join("security", "ScopeEnforcer.java")},
+		{"java/aiagent/security/RequireScope.java.tmpl", filepath.Join("security", "RequireScope.java")},
+		{"java/aiagent/security/ScopeInterceptor.java.tmpl", filepath.Join("security", "ScopeInterceptor.java")},
+		{"java/aiagent/security/RateLimiter.java.tmpl", filepath.Join("security", "RateLimiter.java")},
+		{"java/aiagent/security/InputGuardrailAdvisor.java.tmpl", filepath.Join("security", "InputGuardrailAdvisor.java")},
+		{"java/aiagent/security/OutputGuardrailAdvisor.java.tmpl", filepath.Join("security", "OutputGuardrailAdvisor.java")},
+		{"java/aiagent/security/CorrelationIdFilter.java.tmpl", filepath.Join("security", "CorrelationIdFilter.java")},
+	}
+	for _, f := range securityFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Tools ──────────────────────────────────────────────────────────
+	if err := g.writeTemplate(
+		"java/aiagent/tool/PlaceholderTools.java.tmpl",
+		g.javaPath("AIAgent", filepath.Join("tool", "PlaceholderTools.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate PlaceholderTools.java: %w", err)
+	}
+
+	// ─── Agents ─────────────────────────────────────────────────────────
+	agentFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/agent/PrimaryAgent.java.tmpl", filepath.Join("agent", "PrimaryAgent.java")},
+		{"java/aiagent/agent/SpecialistAgent.java.tmpl", filepath.Join("agent", "SpecialistAgent.java")},
+		{"java/aiagent/agent/SpecialistAgentTool.java.tmpl", filepath.Join("agent", "SpecialistAgentTool.java")},
+	}
+	for _, f := range agentFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Brain ──────────────────────────────────────────────────────────
+	brainFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/brain/MemoryEntry.java.tmpl", filepath.Join("brain", "MemoryEntry.java")},
+		{"java/aiagent/brain/Scratchpad.java.tmpl", filepath.Join("brain", "Scratchpad.java")},
+		{"java/aiagent/brain/ReflectionDecision.java.tmpl", filepath.Join("brain", "ReflectionDecision.java")},
+		{"java/aiagent/brain/ReflectionService.java.tmpl", filepath.Join("brain", "ReflectionService.java")},
+	}
+	for _, f := range brainFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Knowledge ──────────────────────────────────────────────────────
+	knowledgeFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/knowledge/KnowledgeBase.java.tmpl", filepath.Join("knowledge", "KnowledgeBase.java")},
+		{"java/aiagent/knowledge/KnowledgeTools.java.tmpl", filepath.Join("knowledge", "KnowledgeTools.java")},
+	}
+	for _, f := range knowledgeFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Protocol (Controllers) ─────────────────────────────────────────
+	protocolFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/protocol/AgentRestController.java.tmpl", filepath.Join("protocol", "AgentRestController.java")},
+		{"java/aiagent/protocol/A2AController.java.tmpl", filepath.Join("protocol", "A2AController.java")},
+		{"java/aiagent/protocol/DiscoveryController.java.tmpl", filepath.Join("protocol", "DiscoveryController.java")},
+		{"java/aiagent/protocol/StreamingController.java.tmpl", filepath.Join("protocol", "StreamingController.java")},
+		{"java/aiagent/protocol/WebhookController.java.tmpl", filepath.Join("protocol", "WebhookController.java")},
+	}
+	for _, f := range protocolFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Task Manager ───────────────────────────────────────────────────
+	taskFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/task/TaskRecord.java.tmpl", filepath.Join("task", "TaskRecord.java")},
+		{"java/aiagent/task/TaskEvent.java.tmpl", filepath.Join("task", "TaskEvent.java")},
+		{"java/aiagent/task/TaskManager.java.tmpl", filepath.Join("task", "TaskManager.java")},
+	}
+	for _, f := range taskFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Event (Webhooks) ───────────────────────────────────────────────
+	eventFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/event/WebhookRegistration.java.tmpl", filepath.Join("event", "WebhookRegistration.java")},
+		{"java/aiagent/event/WebhookManager.java.tmpl", filepath.Join("event", "WebhookManager.java")},
+	}
+	for _, f := range eventFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Model DTOs (in Model module) ───────────────────────────────────
+	modelDtoFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/model/JsonRpcRequest.java.tmpl", filepath.Join("dto", "JsonRpcRequest.java")},
+		{"java/aiagent/model/JsonRpcResponse.java.tmpl", filepath.Join("dto", "JsonRpcResponse.java")},
+		{"java/aiagent/model/ChatRequest.java.tmpl", filepath.Join("dto", "ChatRequest.java")},
+		{"java/aiagent/model/ChatResponse.java.tmpl", filepath.Join("dto", "ChatResponse.java")},
+		{"java/aiagent/model/AskRequest.java.tmpl", filepath.Join("dto", "AskRequest.java")},
+		{"java/aiagent/model/AskResponse.java.tmpl", filepath.Join("dto", "AskResponse.java")},
+		{"java/aiagent/model/WebhookRegisterRequest.java.tmpl", filepath.Join("dto", "WebhookRegisterRequest.java")},
+	}
+	for _, f := range modelDtoFiles {
+		if err := g.writeTemplate(f.tmpl, g.javaPath("Model", f.out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Resources ──────────────────────────────────────────────────────
+	if err := g.writeTemplate(
+		"java/aiagent/resources/application.yml.tmpl",
+		g.resourcePath("AIAgent", "application.yml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate AIAgent application.yml: %w", err)
+	}
+
+	if err := g.writeTemplate(
+		"java/aiagent/resources/logback-spring.xml.tmpl",
+		g.resourcePath("AIAgent", "logback-spring.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate AIAgent logback-spring.xml: %w", err)
+	}
+
+	if err := g.writeTemplate(
+		"java/aiagent/resources/agent.json.tmpl",
+		filepath.Join("AIAgent", "src", "main", "resources", ".well-known", "agent.json"),
+	); err != nil {
+		return fmt.Errorf("failed to generate agent.json: %w", err)
+	}
+
+	// ─── Docker ─────────────────────────────────────────────────────────
+	if err := g.writeTemplate(
+		"docker/aiagent.Dockerfile.tmpl",
+		filepath.Join("AIAgent", "Dockerfile"),
+	); err != nil {
+		return fmt.Errorf("failed to generate AIAgent Dockerfile: %w", err)
+	}
+
+	// ─── Tests ──────────────────────────────────────────────────────────
+	testFiles := []struct{ tmpl, out string }{
+		{"java/aiagent/test/CallerIdentityTest.java.tmpl", filepath.Join("security", "CallerIdentityTest.java")},
+		{"java/aiagent/test/ScopeEnforcerTest.java.tmpl", filepath.Join("security", "ScopeEnforcerTest.java")},
+		{"java/aiagent/test/RateLimiterTest.java.tmpl", filepath.Join("security", "RateLimiterTest.java")},
+		{"java/aiagent/test/OutputGuardrailTest.java.tmpl", filepath.Join("security", "OutputGuardrailTest.java")},
+		{"java/aiagent/test/CorrelationIdFilterTest.java.tmpl", filepath.Join("security", "CorrelationIdFilterTest.java")},
+		{"java/aiagent/test/ScratchpadTest.java.tmpl", filepath.Join("brain", "ScratchpadTest.java")},
+		{"java/aiagent/test/ReflectionDecisionTest.java.tmpl", filepath.Join("brain", "ReflectionDecisionTest.java")},
+		{"java/aiagent/test/PlaceholderToolsTest.java.tmpl", filepath.Join("tool", "PlaceholderToolsTest.java")},
+		{"java/aiagent/test/TaskManagerTest.java.tmpl", filepath.Join("task", "TaskManagerTest.java")},
+	}
+	for _, f := range testFiles {
+		if err := g.writeTemplate(f.tmpl, g.testJavaPath("AIAgent", f.out)); err != nil {
+			return fmt.Errorf("failed to generate test %s: %w", f.out, err)
+		}
+	}
+
+	// ─── IntelliJ Run Configuration ─────────────────────────────────────
+	if err := g.writeTemplate(
+		"idea/run/AIAgent__Maven_.run.xml.tmpl",
+		filepath.Join(".run", "AIAgent.run.xml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate AIAgent run configuration: %w", err)
+	}
+
+	return nil
+}

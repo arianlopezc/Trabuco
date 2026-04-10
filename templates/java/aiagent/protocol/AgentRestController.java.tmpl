@@ -1,0 +1,78 @@
+package {{.GroupID}}.aiagent.protocol;
+
+import {{.GroupID}}.aiagent.agent.PrimaryAgent;
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.InputGuardrailAdvisor;
+import {{.GroupID}}.aiagent.security.OutputGuardrailAdvisor;
+import {{.GroupID}}.aiagent.security.RateLimiter;
+import {{.GroupID}}.aiagent.security.RequireScope;
+import {{.GroupID}}.aiagent.task.TaskManager;
+import {{.GroupID}}.model.dto.AskRequest;
+import {{.GroupID}}.model.dto.ChatRequest;
+import {{.GroupID}}.model.dto.ImmutableAskResponse;
+import {{.GroupID}}.model.dto.ImmutableChatResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
+
+@RestController
+public class AgentRestController {
+
+    private final TaskManager taskManager;
+    private final RateLimiter rateLimiter;
+
+    @Autowired(required = false)
+    private PrimaryAgent primaryAgent;
+
+    @Autowired
+    private {{.GroupID}}.aiagent.knowledge.KnowledgeTools knowledgeTools;
+
+    @Autowired(required = false)
+    private InputGuardrailAdvisor inputGuardrail;
+
+    @Autowired(required = false)
+    private OutputGuardrailAdvisor outputGuardrail;
+
+    public AgentRestController(TaskManager taskManager, RateLimiter rateLimiter) {
+        this.taskManager = taskManager;
+        this.rateLimiter = rateLimiter;
+    }
+
+    @PostMapping("/ask")
+    @RequireScope("public")
+    public Object askQuestion(@Valid @RequestBody AskRequest request) {
+        rateLimiter.checkRateLimit(CallerContext.get());
+        String question = request.question();
+        // Use KnowledgeTools directly — no LLM needed for keyword-based Q&A
+        String answer = knowledgeTools.askQuestion(question);
+        return ImmutableAskResponse.builder().answer(answer).build();
+    }
+
+    @PostMapping("/chat")
+    @RequireScope("public")
+    public Object chat(@Valid @RequestBody ChatRequest request) {
+        rateLimiter.checkRateLimit(CallerContext.get());
+        String message = request.message();
+
+        // Input guardrail
+        if (inputGuardrail != null) {
+            String rejection = inputGuardrail.classify(message);
+            if (rejection != null) {
+                return ImmutableChatResponse.builder().response(rejection).blocked(true).build();
+            }
+        }
+
+        // Agent processing
+        if (primaryAgent != null) {
+            String response = primaryAgent.chat(message);
+            // Output guardrail
+            if (outputGuardrail != null) {
+                response = outputGuardrail.validate(response);
+            }
+            return ImmutableChatResponse.builder().response(response).blocked(false).build();
+        }
+
+        return ImmutableChatResponse.builder().response("Agent brain requires ANTHROPIC_API_KEY.").blocked(false).build();
+    }
+}

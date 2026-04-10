@@ -609,10 +609,15 @@ func TestDisplayOptionsAlignWithSelectableModules(t *testing.T) {
 			len(displayOptions), len(selectableModules))
 	}
 
-	// Each display option must start with its corresponding selectable module name
+	// Each display option must start with its corresponding module name (or DisplayName if set)
 	for i, moduleName := range selectableModules {
 		displayOpt := displayOptions[i]
-		expectedPrefix := moduleName + " - "
+		// Use DisplayName if set, otherwise use Name
+		displayName := moduleName
+		if m := GetModule(moduleName); m != nil && m.DisplayName != "" {
+			displayName = m.DisplayName
+		}
+		expectedPrefix := displayName + " - "
 		if moduleName == "Model" {
 			// Model has " (required)" suffix in description but still starts with "Model - "
 		}

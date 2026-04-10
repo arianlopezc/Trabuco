@@ -236,6 +236,30 @@ func (g *Generator) createDirectories() error {
 		)
 	}
 
+	// AIAgent module directories
+	if g.config.HasModule(config.ModuleAIAgent) {
+		aiBase := filepath.Join(g.outDir, config.ModuleAIAgent, "src", "main", "java", packagePath, "aiagent")
+		aiTestBase := filepath.Join(g.outDir, config.ModuleAIAgent, "src", "test", "java", packagePath, "aiagent")
+		dirs = append(dirs,
+			aiBase,
+			filepath.Join(aiBase, "config"),
+			filepath.Join(aiBase, "security"),
+			filepath.Join(aiBase, "tool"),
+			filepath.Join(aiBase, "agent"),
+			filepath.Join(aiBase, "brain"),
+			filepath.Join(aiBase, "knowledge"),
+			filepath.Join(aiBase, "protocol"),
+			filepath.Join(aiBase, "task"),
+			filepath.Join(aiBase, "event"),
+			filepath.Join(g.outDir, config.ModuleAIAgent, "src", "main", "resources"),
+			filepath.Join(g.outDir, config.ModuleAIAgent, "src", "main", "resources", ".well-known"),
+			filepath.Join(aiTestBase, "security"),
+			filepath.Join(aiTestBase, "brain"),
+			filepath.Join(aiTestBase, "tool"),
+			filepath.Join(aiTestBase, "task"),
+		)
+	}
+
 	// Create all directories
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -267,6 +291,8 @@ func (g *Generator) generateModule(module string) error {
 		return g.generateEventsModule()
 	case config.ModuleEventConsumer:
 		return g.generateEventConsumerModule()
+	case config.ModuleAIAgent:
+		return g.generateAIAgentModule()
 	default:
 		return fmt.Errorf("unknown module: %s", module)
 	}

@@ -1,0 +1,65 @@
+package {{.GroupID}}.aiagent.agent;
+
+import {{.GroupID}}.aiagent.tool.PlaceholderTools;
+import {{.GroupID}}.aiagent.knowledge.KnowledgeTools;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Component;
+
+/**
+ * Primary agent that handles user-facing conversations.
+ *
+ * This agent has access to domain tools, knowledge tools, and can delegate
+ * to the specialist agent for domain-specific sub-tasks.
+ */
+@Component
+@ConditionalOnBean(ChatModel.class)
+public class PrimaryAgent {
+
+    private static final String SYSTEM_PROMPT = """
+        You are the {{.ProjectNamePascal}} AI assistant.
+        You help users by answering questions, looking up information, and performing actions.
+
+        You have access to tools for domain operations, knowledge-based Q&A,
+        and a specialist agent you can delegate to for detailed or technical queries.
+
+        TODO: Customize this system prompt for your domain:
+        - Describe what the agent can help with
+        - List the main capabilities and constraints
+        - Define the agent's personality and tone
+        - Specify any rules (e.g., topics to decline, data the agent should never fabricate)
+
+        Rules:
+        - Only discuss topics relevant to your domain. Politely decline off-topic requests.
+        - Use tools to get real data — never fabricate details.
+        - For specialized queries, delegate to the specialist agent.
+        - Be helpful and concise.
+        """;
+
+    private final ChatClient chatClient;
+
+    public PrimaryAgent(ChatModel chatModel,
+                        PlaceholderTools placeholderTools,
+                        KnowledgeTools knowledgeTools,
+                        SpecialistAgentTool specialistAgentTool) {
+        this.chatClient = ChatClient.builder(chatModel)
+            .defaultSystem(SYSTEM_PROMPT)
+            .defaultTools(placeholderTools, knowledgeTools, specialistAgentTool)
+            .build();
+    }
+
+    @CircuitBreaker(name = "llm", fallbackMethod = "chatFallback")
+    public String chat(String message) {
+        return chatClient.prompt()
+            .user(message)
+            .call()
+            .content();
+    }
+
+    @SuppressWarnings("unused")
+    private String chatFallback(String message, Throwable t) {
+        return "I'm temporarily unable to process requests. Please try again shortly.";
+    }
+}

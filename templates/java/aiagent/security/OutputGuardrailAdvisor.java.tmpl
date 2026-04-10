@@ -1,0 +1,45 @@
+package {{.GroupID}}.aiagent.security;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.regex.Pattern;
+
+@Component
+public class OutputGuardrailAdvisor {
+
+    private static final Logger log = LoggerFactory.getLogger(OutputGuardrailAdvisor.class);
+
+    // PII detection patterns
+    private static final List<Pattern> PII_PATTERNS = List.of(
+        Pattern.compile("\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"), // email
+        Pattern.compile("\\b\\d{3}[-.]?\\d{2}[-.]?\\d{4}\\b"),                       // SSN
+        Pattern.compile("\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b"),           // credit card
+        Pattern.compile("\\b(?:\\+1)?\\(?\\d{3}\\)?[-. ]?\\d{3}[-. ]?\\d{4}\\b")     // phone
+    );
+
+    private static final String SAFE_FALLBACK =
+        "I apologize, but I was unable to generate an appropriate response. " +
+        "Please try rephrasing your question about our {{.ProjectNamePascal}} products and services.";
+
+    /**
+     * Validate LLM output. Returns the original output if safe, or a sanitized version.
+     */
+    public String validate(String output) {
+        if (output == null || output.isBlank()) {
+            return SAFE_FALLBACK;
+        }
+
+        // Check for PII
+        for (Pattern pattern : PII_PATTERNS) {
+            if (pattern.matcher(output).find()) {
+                log.warn("PII detected in output, replacing with safe fallback");
+                return SAFE_FALLBACK;
+            }
+        }
+
+        return output;
+    }
+}

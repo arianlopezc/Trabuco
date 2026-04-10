@@ -12,6 +12,7 @@ func registerAllPrompts(s *server.MCPServer) {
 	registerTrabucoExpert(s)
 	registerDesignMicroservices(s)
 	registerExtendProject(s)
+	registerAIAgentExpert(s)
 }
 
 func registerTrabucoExpert(s *server.MCPServer) {
@@ -37,6 +38,7 @@ TRABUCO MODULE DECISION TREE:
 4. Does the user need business logic orchestration? → Add Shared
 5. Does the user need background jobs? → Add Worker (uses SQL database for job storage)
 6. Does the user need message broker consumers? → Add EventConsumer (pick kafka, rabbitmq, sqs, or pubsub)
+7. Does the user need AI/LLM capabilities? → Add AIAgent (tool calling, guardrails, multi-agent, MCP server, A2A)
 
 COMMON PITFALLS TO AVOID:
 - Do NOT select both SQLDatastore and NoSQLDatastore — they conflict
@@ -59,7 +61,7 @@ WHAT TRABUCO DOES NOT GENERATE:
 - GraphQL, gRPC, WebSockets (REST only)
 - Kubernetes manifests, Terraform, cloud deployment
 - Custom business logic or production database schemas
-- Rate limiting, multi-tenancy, API versioning
+- Rate limiting (available in AIAgent module; for API-only projects, add manually), multi-tenancy, API versioning
 
 POST-GENERATION STEPS:
 1. Replace placeholder entities in Model/ with real domain objects
@@ -233,6 +235,12 @@ STEP-BY-STEP EXTENSION GUIDE:
    - Follow AGENTS.md for coding conventions
    - Follow .ai/prompts/JAVA_CODE_QUALITY.md for quality standards
 
+   IF PROJECT HAS AIAgent MODULE:
+   - To add a new @Tool method: create a new method annotated with @Tool in the tools package, replacing or extending PlaceholderTools
+   - To update the system prompt: modify the system prompt text in PrimaryAgent configuration
+   - To add domain-specific guardrail rules: add ALLOW/BLOCK rules to the input guardrail configuration
+   - To add a new A2A skill: register a new skill in the A2A agent card and implement the corresponding handler
+
 5. VERIFY
    - Run 'mvn test' to ensure everything compiles and tests pass
    - Run 'mvn spotless:apply' to format code
@@ -246,6 +254,114 @@ IMPORTANT CONSTRAINTS:
 
 		return &mcp.GetPromptResult{
 			Description: fmt.Sprintf("Extension guide for adding '%s' to project at %s", feature, projectPath),
+			Messages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.TextContent{Type: "text", Text: text},
+				},
+			},
+		}, nil
+	})
+}
+
+func registerAIAgentExpert(s *server.MCPServer) {
+	s.AddPrompt(mcp.NewPrompt("trabuco_ai_agent_expert",
+		mcp.WithPromptDescription("Get expert instructions for building and customizing AI agents with Trabuco's AIAgent module"),
+		mcp.WithArgument("task",
+			mcp.ArgumentDescription("What you need help with (e.g., 'add a custom tool', 'configure guardrails', 'set up multi-agent', 'connect MCP client')"),
+			mcp.RequiredArgument(),
+		),
+	), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		task := req.Params.Arguments["task"]
+		if task == "" {
+			return nil, fmt.Errorf("task argument is required")
+		}
+
+		text := fmt.Sprintf(`You are an expert on Trabuco's AIAgent module. The user needs help with: %s
+
+AIAGENT MODULE STRUCTURE:
+- aiagent/src/main/java/.../aiagent/
+  - agent/         — PrimaryAgent (main agent), SpecialistAgent (sub-domain delegation)
+  - config/        — Spring AI configuration, model settings, advisor chains
+  - controller/    — REST endpoints: /chat, /ask, /a2a
+  - guardrail/     — Input/output guardrails with ALLOW/BLOCK domain rules
+  - mcp/           — MCP server configuration for Claude Code / Cursor integration
+  - tools/         — @Tool methods (replace PlaceholderTools with real tools)
+  - a2a/           — Agent-to-Agent protocol: agent card, skill handlers
+
+HOW TO ADD CUSTOM @Tool METHODS:
+1. Create a new class in the tools/ package (or add methods to an existing class)
+2. Annotate each method with @Tool(description = "...") — the description is what the LLM sees
+3. Use @ToolParam for parameter descriptions
+4. Replace PlaceholderTools with your domain-specific tools
+5. Register the tool bean in the Spring context (use @Component or @Bean)
+6. The agent automatically discovers all @Tool beans via Spring AI's ToolCallbackProvider
+
+HOW TO CUSTOMIZE THE SYSTEM PROMPT:
+1. Find the PrimaryAgent configuration in agent/ package
+2. Modify the system prompt text to match your domain
+3. Include: what the agent does, what tools it has, how it should respond
+4. Keep the prompt focused — long prompts increase token cost per request
+
+HOW TO CONFIGURE INPUT GUARDRAILS:
+1. Find the guardrail configuration in guardrail/ package
+2. Add domain-specific ALLOW rules (topics the agent should handle)
+3. Add BLOCK rules (topics the agent must refuse)
+4. Guardrails run BEFORE the LLM call — they reject bad inputs early to save tokens
+5. Output guardrails run AFTER the LLM response to filter sensitive content
+
+HOW TO SET UP THE SPECIALIST AGENT:
+1. The SpecialistAgent handles sub-domain delegation from the PrimaryAgent
+2. Configure it with a focused system prompt for its specific domain
+3. The PrimaryAgent delegates to specialists via tool calls
+4. Each specialist has its own tools and guardrails
+
+HOW TO CONNECT CLAUDE CODE / CURSOR VIA MCP:
+1. The AIAgent module exposes an MCP server endpoint
+2. In Claude Code: add the server URL to your MCP configuration
+3. In Cursor: add the server to .cursor/mcp.json
+4. The MCP server exposes your agent's tools as MCP tools
+
+HOW TO USE THE A2A PROTOCOL:
+1. The A2A (Agent-to-Agent) protocol enables inter-agent communication
+2. Your agent publishes an agent card at /.well-known/agent.json
+3. Other agents discover your agent's skills via the card
+4. Implement skill handlers in the a2a/ package
+5. Use A2A to connect multiple Trabuco agents or third-party agents
+
+WHEN TO USE LLM vs DETERMINISTIC CODE:
+- Use LLM: natural language understanding, classification, summarization, creative content
+- Use deterministic code: CRUD operations, calculations, validations, data transformations
+- Token cost guidance: each LLM call costs tokens — avoid LLM for tasks that can be coded
+- Use @Tool methods to let the LLM call deterministic code when needed
+
+SECURITY PIPELINE:
+auth → scope → rate limit → guardrail → agent → output guardrail
+1. Authentication: verify the caller's identity
+2. Scope: check permissions for the requested operation
+3. Rate limit: throttle requests per user/API key
+4. Input guardrail: validate the prompt against domain rules
+5. Agent: process the request with the LLM
+6. Output guardrail: filter the response for sensitive content
+
+OBSERVABILITY:
+- Token metrics: track input/output tokens per request via Spring AI metrics
+- Correlation IDs: trace requests across agent calls and tool invocations
+- Circuit breaker: protects against LLM provider outages with fallback responses
+
+TESTING:
+- All tests work WITHOUT an API key — LLM calls are mocked in tests
+- Integration tests use Testcontainers (no external services needed)
+- Test guardrails independently from the agent
+- Test tools independently from the LLM
+
+IMMUTABLES PATTERN:
+- Use Immutables for all DTOs and value objects (consistent with other Trabuco modules)
+- Define abstract classes with @Value.Immutable annotation
+- Generated immutable implementations provide builders, equals, hashCode, toString`, task)
+
+		return &mcp.GetPromptResult{
+			Description: fmt.Sprintf("AIAgent expert guidance for: %s", task),
 			Messages: []mcp.PromptMessage{
 				{
 					Role:    mcp.RoleUser,

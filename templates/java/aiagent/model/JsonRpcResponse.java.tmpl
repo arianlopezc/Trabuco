@@ -1,0 +1,57 @@
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.annotation.Nullable;
+import org.immutables.value.Value;
+
+/**
+ * A2A JSON-RPC 2.0 response envelope.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableJsonRpcResponse.class)
+@JsonDeserialize(as = ImmutableJsonRpcResponse.class)
+public interface JsonRpcResponse {
+
+    @Value.Default
+    default String jsonrpc() {
+        return "2.0";
+    }
+
+    @Nullable
+    String id();
+
+    @Nullable
+    Object result();
+
+    @Nullable
+    JsonRpcError error();
+
+    @Value.Immutable
+    @ImmutableStyle
+    @JsonSerialize(as = ImmutableJsonRpcError.class)
+    @JsonDeserialize(as = ImmutableJsonRpcError.class)
+    interface JsonRpcError {
+        int code();
+        String message();
+    }
+
+    static JsonRpcResponse success(String id, Object result) {
+        return ImmutableJsonRpcResponse.builder()
+            .id(id)
+            .result(result)
+            .build();
+    }
+
+    static JsonRpcResponse error(String id, int code, String message) {
+        return ImmutableJsonRpcResponse.builder()
+            .id(id)
+            .error(ImmutableJsonRpcError.builder()
+                .code(code)
+                .message(message)
+                .build())
+            .build();
+    }
+}

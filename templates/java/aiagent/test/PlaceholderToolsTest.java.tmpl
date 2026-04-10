@@ -1,0 +1,33 @@
+package {{.GroupID}}.aiagent.tool;
+{{if .HasModule "Shared"}}
+import {{.GroupID}}.shared.service.PlaceholderService;
+import org.mockito.Mockito;
+{{- end}}
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.*;
+
+class PlaceholderToolsTest {
+{{if .HasModule "Shared"}}
+    private final PlaceholderTools tools = new PlaceholderTools(Mockito.mock(PlaceholderService.class));
+{{- else}}
+    private final PlaceholderTools tools = new PlaceholderTools();
+{{- end}}
+
+    @Test
+    void listItems_returnsNonEmpty() {
+        var items = tools.listItems();
+        assertThat(items).isNotEmpty();
+    }
+
+    @Test
+    void getItemDetail_knownId() {
+        var detail = tools.getItemDetail("ITEM-001");
+        assertThat(detail).containsKey("id");
+    }
+
+    @Test
+    void checkAvailability_knownId() {
+        var result = tools.checkAvailability("ITEM-001");
+        assertThat(result).containsKey("available");
+    }
+}

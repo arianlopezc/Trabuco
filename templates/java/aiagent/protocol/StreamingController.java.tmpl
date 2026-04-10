@@ -1,0 +1,80 @@
+package {{.GroupID}}.aiagent.protocol;
+
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.RateLimiter;
+import {{.GroupID}}.aiagent.security.RequireScope;
+import {{.GroupID}}.aiagent.task.TaskManager;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.Map;
+
+@RestController
+public class StreamingController {
+
+    private final TaskManager taskManager;
+    private final RateLimiter rateLimiter;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public StreamingController(TaskManager taskManager, RateLimiter rateLimiter) {
+        this.taskManager = taskManager;
+        this.rateLimiter = rateLimiter;
+    }
+
+    @GetMapping("/tasks/{taskId}/stream")
+    @RequireScope("partner")
+    public SseEmitter streamTask(@PathVariable String taskId) {
+        rateLimiter.checkRateLimit(CallerContext.get());
+
+        var task = taskManager.getTask(taskId);
+        if (task == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found: " + taskId);
+        }
+
+        SseEmitter emitter = new SseEmitter(60_000L); // 60 second timeout
+
+        taskManager.subscribe(taskId, event -> {
+            try {
+                String data = objectMapper.writeValueAsString(Map.of(
+                    "task_id", event.taskId(),
+                    "status", event.status(),
+                    "result", event.result() != null ? event.result() : "",
+                    "error", event.error() != null ? event.error() : "",
+                    "timestamp", event.timestamp().toString()
+                ));
+                emitter.send(SseEmitter.event()
+                    .name(event.status())
+                    .data(data));
+
+                if ("completed".equals(event.status()) || "failed".equals(event.status())) {
+                    emitter.complete();
+                }
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+        });
+
+        // If task already completed, send current state and close
+        if ("completed".equals(task.getStatus()) || "failed".equals(task.getStatus())) {
+            try {
+                String data = objectMapper.writeValueAsString(Map.of(
+                    "task_id", task.getTaskId(),
+                    "status", task.getStatus(),
+                    "result", task.getResult() != null ? task.getResult() : "",
+                    "error", task.getError() != null ? task.getError() : ""
+                ));
+                emitter.send(SseEmitter.event().name(task.getStatus()).data(data));
+                emitter.complete();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+        }
+
+        return emitter;
+    }
+}

@@ -1,0 +1,59 @@
+package {{.GroupID}}.aiagent.task;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.*;
+
+class TaskManagerTest {
+
+    private TaskManager manager;
+
+    @BeforeEach
+    void setUp() {
+        manager = new TaskManager();
+    }
+
+    @Test
+    void submitTask_returnsId() {
+        String id = manager.submitTask(() -> Map.of("result", "done"));
+        assertThat(id).startsWith("TASK-");
+    }
+
+    @Test
+    void taskCompletes() throws Exception {
+        var latch = new CountDownLatch(1);
+        String id = manager.submitTask(() -> {
+            Thread.sleep(50);
+            return Map.of("result", "ok");
+        });
+        manager.subscribe(id, event -> {
+            if ("completed".equals(event.status())) latch.countDown();
+        });
+        assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(manager.getTask(id).getStatus()).isEqualTo("completed");
+    }
+
+    @Test
+    void taskFails() throws Exception {
+        var latch = new CountDownLatch(1);
+        String id = manager.submitTask(() -> {
+            Thread.sleep(50);
+            throw new RuntimeException("boom");
+        });
+        manager.subscribe(id, event -> {
+            if ("failed".equals(event.status())) latch.countDown();
+        });
+        assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(manager.getTask(id).getError()).contains("boom");
+    }
+
+    @Test
+    void getUnknownTask_returnsNull() {
+        assertThat(manager.getTask("TASK-nonexistent")).isNull();
+    }
+}

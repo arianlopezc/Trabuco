@@ -1,0 +1,21 @@
+package {{.GroupID}}.aiagent.security;
+
+public final class CallerContext {
+
+    private static final ThreadLocal<CallerIdentity> HOLDER = new ThreadLocal<>();
+
+    private CallerContext() {}
+
+    public static void set(CallerIdentity identity) {
+        HOLDER.set(identity);
+    }
+
+    public static CallerIdentity get() {
+        CallerIdentity id = HOLDER.get();
+        return id != null ? id : CallerIdentity.anonymous();
+    }
+
+    public static void clear() {
+        HOLDER.remove();
+    }
+}

@@ -1,0 +1,26 @@
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import org.immutables.value.Value;
+
+import java.util.List;
+
+/**
+ * Request DTO for registering a webhook.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableWebhookRegisterRequest.class)
+@JsonDeserialize(as = ImmutableWebhookRegisterRequest.class)
+public interface WebhookRegisterRequest {
+
+    @NotBlank(message = "URL is required")
+    String url();
+
+    @NotEmpty(message = "At least one event type is required")
+    List<String> events();
+}

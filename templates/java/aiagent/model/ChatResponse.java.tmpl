@@ -1,0 +1,23 @@
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import org.immutables.value.Value;
+
+/**
+ * Response DTO for the /chat endpoint.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableChatResponse.class)
+@JsonDeserialize(as = ImmutableChatResponse.class)
+public interface ChatResponse {
+
+    String response();
+
+    @Value.Default
+    default boolean blocked() {
+        return false;
+    }
+}

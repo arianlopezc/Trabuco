@@ -1,0 +1,59 @@
+package {{.GroupID}}.aiagent.brain;
+
+import {{.GroupID}}.aiagent.brain.ImmutableMemoryEntry;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
+public class Scratchpad {
+
+    private final List<MemoryEntry> entries = new ArrayList<>();
+
+    public void add(String thought, String action, String params, String observation) {
+        entries.add(ImmutableMemoryEntry.builder()
+            .step(entries.size() + 1)
+            .thought(thought)
+            .action(action)
+            .params(params)
+            .observation(observation)
+            .build());
+    }
+
+    public List<MemoryEntry> getEntries() {
+        return List.copyOf(entries);
+    }
+
+    public List<String> getToolsCalled() {
+        return entries.stream().map(MemoryEntry::action).toList();
+    }
+
+    public String toPrompt() {
+        if (entries.isEmpty()) return "";
+        return entries.stream()
+            .map(e -> "Step %d:\n  Thought: %s\n  Action: %s(%s)\n  Observation: %s"
+                .formatted(e.step(), e.thought(), e.action(), e.params(), e.observation()))
+            .collect(Collectors.joining("\n\n"));
+    }
+
+    public String summary(int maxTokens) {
+        String full = toPrompt();
+        if (full.length() <= maxTokens * 4) return full;
+        if (entries.size() <= 2) return full;
+        var first = formatEntry(entries.getFirst());
+        var last = formatEntry(entries.getLast());
+        String middle = entries.subList(1, entries.size() - 1).stream()
+            .map(e -> e.action() + "(" + e.params() + ")")
+            .collect(Collectors.joining(", "));
+        return first + "\n[... " + (entries.size() - 2) + " intermediate steps: " + middle + " ...]\n\n" + last;
+    }
+
+    public int size() {
+        return entries.size();
+    }
+
+    private String formatEntry(MemoryEntry e) {
+        return "Step %d:\n  Thought: %s\n  Action: %s(%s)\n  Observation: %s"
+            .formatted(e.step(), e.thought(), e.action(), e.params(), e.observation());
+    }
+}

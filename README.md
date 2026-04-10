@@ -49,6 +49,7 @@ The real power lies in the modular structure. Instead of a monolithic source tre
   - [Worker](#worker)
   - [Events](#events)
   - [EventConsumer](#eventconsumer)
+  - [AI Agent](#ai-agent)
 - [Code Quality & Architecture](#code-quality--architecture)
   - [Auto-Formatting](#auto-formatting)
   - [Architecture Tests](#architecture-tests)
@@ -97,6 +98,7 @@ The real power lies in the modular structure. Instead of a monolithic source tre
 - **GitHub Actions CI** — Opt-in CI workflow that adapts to your modules with `--ci github`
 - **Code quality enforcement** — Google Java Format (Spotless), Maven Enforcer, and auto-formatting hooks
 - **Architecture tests** — ArchUnit rules enforce constructor injection, layer boundaries, and no cyclic dependencies
+- **AI Agent module** — Production-ready AI agent with Spring AI: tool calling, LLM guardrails, multi-agent orchestration, MCP server, A2A protocol, and knowledge base
 - **AI-friendly** — Generates context files, coding rules, quality specs, and task prompts for Claude, Cursor, GitHub Copilot, and Codex
 - **CLI MCP server** — `trabuco mcp` exposes all CLI functionality as structured tools for AI coding agents
 
@@ -539,19 +541,43 @@ Once configured, your AI agent can use these tools:
 
 | Tool | Description |
 |------|-------------|
+| `suggest_architecture` | Analyze requirements and recommend modules, database, and architecture pattern |
+| `design_system` | Decompose requirements into a multi-service system design (review-only) |
+| `generate_workspace` | Generate a multi-service workspace with shared Docker Compose |
 | `init_project` | Generate a new Java project with specified modules, database, and options |
 | `add_module` | Add a module to an existing Trabuco project (with dry-run support) |
 | `run_doctor` | Run health checks on a project and optionally auto-fix issues |
-| `get_project_info` | Read project metadata from `.trabuco.json` or inferred from POM |
-| `list_modules` | List all available modules with descriptions and dependency info |
+| `get_project_info` | Read project metadata and available actions |
 | `check_docker` | Check if Docker is installed and running |
 | `get_version` | Get the Trabuco CLI version |
-| `scan_project` | Analyze a legacy Java project's structure and dependencies (no AI required) |
-| `migrate_project` | Full AI-powered migration of a legacy project (long-running) |
+| `scan_project` | Analyze a legacy Java project for migration feasibility (no AI required) |
+| `migrate_project` | AI-powered migration of a legacy project to Trabuco structure |
 | `auth_status` | Check which AI providers have credentials configured |
 | `list_providers` | List supported AI providers with pricing and model info |
+| `list_modules` | List all available modules with descriptions and dependency info |
 
-**What this looks like in practice:** Ask your AI agent "create a new Java project called order-service with PostgreSQL and Kafka" and it calls `init_project` with the right parameters, gets back structured JSON with the project path, resolved modules, and any warnings — no terminal output to parse.
+### Prompts
+
+Prompts provide expert knowledge for complex decisions:
+
+| Prompt | Description |
+|--------|-------------|
+| `trabuco_expert` | General guidance for any Trabuco task — module decisions, common pitfalls, post-generation steps |
+| `design_microservices` | Step-by-step guide for decomposing requirements into multiple services |
+| `extend_project` | Instructions for adding features to an existing Trabuco project |
+| `trabuco_ai_agent_expert` | Expert guidance for building and customizing AI agents with the AIAgent module |
+
+### Resources
+
+Resources provide stable reference data:
+
+| Resource | Description |
+|----------|-------------|
+| `trabuco://modules` | Full module catalog with use cases, boundaries, dependencies, and conflicts |
+| `trabuco://patterns` | Pre-built architecture patterns with module combinations and recommendations |
+| `trabuco://limitations` | What Trabuco does NOT generate — check before suggesting Trabuco for a requirement |
+
+**What this looks like in practice:** Describe your business to your AI agent — "I need an intelligent assistant that can answer customer questions, check order status, and schedule deliveries" — and it calls `suggest_architecture` to match the `ai-agent` pattern, then `init_project` with `Model,Shared,AIAgent` to generate a complete AI agent with tools, guardrails, and MCP server.
 
 ## Generated Project Structure
 
@@ -609,6 +635,22 @@ myapp/
 │       │   └── listener/            # Event listener implementations
 │       └── resources/
 │           └── application.yml      # Consumer configuration
+├── AIAgent/                         # AI Agent (Spring Boot app, if selected)
+│   └── src/main/
+│       ├── java/.../aiagent/
+│       │   ├── config/              # ChatClient, MCP server, WebConfig
+│       │   ├── security/            # Auth filter, scopes, guardrails, rate limiter
+│       │   ├── tool/                # @Tool-annotated domain tools
+│       │   ├── agent/               # Primary + Specialist agents
+│       │   ├── brain/               # Scratchpad, reflection service
+│       │   ├── knowledge/           # Knowledge base, token-free Q&A
+│       │   ├── protocol/            # REST, A2A, discovery, SSE, webhooks
+│       │   ├── task/                # Async task manager
+│       │   └── event/               # Webhook dispatch
+│       └── resources/
+│           ├── application.yml      # Spring AI + Anthropic config
+│           └── .well-known/
+│               └── agent.json       # A2A discovery agent card
 ├── .ai/                             # AI context directory
 │   ├── prompts/                     # Task guides and quality specs
 │   │   ├── JAVA_CODE_QUALITY.md     # Code quality specification
@@ -821,6 +863,98 @@ public void handleEvent(PlaceholderEvent event, Acknowledgement ack) { ... }
 public void handleEvent(PlaceholderEvent event, BasicAcknowledgeablePubsubMessage msg) { ... }
 ```
 
+### AI Agent
+
+Production AI agent module — a runnable Spring Boot application powered by Spring AI with Anthropic Claude.
+
+| What | Description |
+|------|-------------|
+| **Tools** | `@Tool`-annotated methods the LLM can call — replace placeholders with your domain logic |
+| **Primary Agent** | Customer-facing agent with system prompt, tools, and circuit breaker |
+| **Specialist Agent** | Worker agent for delegated sub-tasks (orchestrator-worker pattern) |
+| **Input Guardrail** | LLM-based classifier blocks prompt injection and off-topic requests before processing |
+| **Output Guardrail** | Regex PII detection (email, SSN, credit card, phone) on all responses |
+| **Knowledge Base** | Token-free Q&A via keyword matching — saves LLM tokens for FAQ-style questions |
+| **MCP Server** | Exposes all `@Tool` beans to Claude Code, Cursor, and other MCP clients |
+| **A2A Protocol** | JSON-RPC 2.0 agent-to-agent communication with task lifecycle |
+| **SSE Streaming** | Real-time task status updates via Server-Sent Events |
+| **Webhooks** | HMAC-signed outbound event notifications for order/status changes |
+| **Scratchpad** | Agent reasoning trace for debugging and auditability |
+| **Reflection** | LLM-driven error recovery: retry, suggest alternative, escalate, or give up |
+
+**Architecture:** The AI Agent follows Anthropic's production recommendations. Deterministic operations (listing items, checking stock) use plain code — no LLM tokens spent. The LLM is only invoked when natural language understanding or judgment is required (routing, multi-step reasoning, error recovery). The circuit breaker (`@CircuitBreaker(name = "llm")`) protects against LLM API outages with automatic fallback responses.
+
+**Multi-agent pattern:**
+
+```
+User message → Primary Agent (orchestrator)
+                    │
+                    ├── calls domain tools directly (simple queries)
+                    │
+                    └── calls askSpecialist tool (complex queries)
+                              │
+                              └── Specialist Agent (worker)
+                                      └── calls specialist tools
+```
+
+The Primary Agent decides when to delegate — same mechanism as any other tool call. The Specialist Agent never calls back (acyclic flow prevents infinite loops).
+
+**Security pipeline (every request):**
+
+```
+Request → ApiKeyAuthFilter → ScopeInterceptor → RateLimiter
+        → InputGuardrailAdvisor (LLM) → Agent → OutputGuardrailAdvisor (regex) → Response
+```
+
+**Graceful degradation:** All LLM-dependent beans use `@ConditionalOnBean(ChatModel.class)`. Without an `ANTHROPIC_API_KEY`, the application starts and serves non-AI endpoints (capabilities, health). The `/chat` endpoint returns a helpful message instead of failing.
+
+**Connecting AI assistants:**
+
+```bash
+# Claude Code
+claude mcp add --transport http my-agent http://localhost:8080/mcp
+
+# Or via .mcp.json in your repo
+{"mcpServers": {"my-agent": {"type": "http", "url": "http://localhost:8080/mcp"}}}
+```
+
+**Endpoints:**
+
+| Method | Path | Scope | Description |
+|--------|------|-------|-------------|
+| POST | `/chat` | public | Natural language conversation (agent brain) |
+| POST | `/ask` | public | Knowledge base Q&A (no LLM tokens) |
+| POST | `/a2a` | varies | A2A JSON-RPC 2.0 (tasks/send, tasks/chat, tasks/get) |
+| GET | `/capabilities` | anonymous | Live tool registry and protocol status |
+| GET | `/tasks/{id}/stream` | partner | SSE task status streaming |
+| POST | `/webhooks` | partner | Register webhook URL |
+| GET | `/webhooks` | partner | List registered webhooks |
+| DELETE | `/webhooks/{id}` | partner | Deregister webhook |
+
+**Getting started:**
+
+```bash
+# Generate project with AI Agent
+trabuco init --name=my-agent --group-id=com.company.agent --modules=Model,Shared,AIAgent
+
+# Start without API key (infrastructure endpoints only)
+cd my-agent && mvn spring-boot:run -pl AIAgent
+
+# Start with full AI capabilities
+ANTHROPIC_API_KEY=your-key mvn spring-boot:run -pl AIAgent
+```
+
+**Customization:**
+1. Replace `PlaceholderTools` methods with your domain tools (follow the `@Tool` + `@ToolParam` annotations)
+2. Update the system prompt in `PrimaryAgent` for your domain's personality and rules
+3. Add domain-specific ALLOW/BLOCK criteria in `InputGuardrailAdvisor`
+4. Replace `KnowledgeBase` entries with your FAQ content
+5. Configure API keys and rate limits in `application.yml`
+
+**Immutables:** All DTOs (`ChatRequest`, `ChatResponse`, `AskRequest`, `AskResponse`, `JsonRpcRequest`, `JsonRpcResponse`, `WebhookRegisterRequest`) and value objects (`CallerIdentity`, `MemoryEntry`, `ReflectionDecision`, `TaskEvent`, `WebhookRegistration`) use the Immutables library with the project's `@ImmutableStyle` — consistent with all other modules.
+
+**Observability:** Actuator + Prometheus metrics are pre-configured. Spring AI auto-instruments `ChatClient` calls, providing `gen_ai.client.token.usage` metrics for cost tracking. Correlation IDs propagate through the full agent pipeline (guardrail → agent → tools → reflection) via MDC.
+
 ## Code Quality & Architecture
 
 Generated projects come with strict code quality enforcement out of the box. Every project includes Google Java Format via Spotless, Maven Enforcer for dependency rules, and ArchUnit for architecture tests. These run as part of the normal build — violations fail the build, not just a linter warning.
@@ -992,6 +1126,7 @@ mvn test
 | `API` | REST endpoints | Model |
 | `Worker` | Background jobs (JobRunr) | Model, Jobs (auto) |
 | `EventConsumer` | Event listeners (Kafka/RabbitMQ/SQS/Pub/Sub) | Model, Events (auto) |
+| `AIAgent` | AI agent (Spring AI, tools, guardrails, MCP, A2A) | Model |
 
 **Notes:**
 - SQLDatastore and NoSQLDatastore are mutually exclusive
@@ -1089,6 +1224,9 @@ See [CI/CD](#cicd) for details on what the workflow includes.
 | AWS SQS | — | Managed queue service (via LocalStack for local dev) |
 | GCP Pub/Sub | — | Google Cloud messaging (via emulator for local dev) |
 | HikariCP | — | Connection pooling (SQL) |
+| Spring AI | 1.0.5 | AI/LLM integration framework |
+| Anthropic Claude | — | LLM provider for AI Agent module |
+| MCP Server | — | Model Context Protocol for tool exposure |
 
 ## Local Development
 

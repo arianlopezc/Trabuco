@@ -1,0 +1,19 @@
+package {{.GroupID}}.aiagent;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.ComponentScan;
+
+@SpringBootApplication
+@ComponentScan(basePackages = {
+    "{{.GroupID}}.aiagent"{{if .HasModule "Shared"}},
+    "{{.GroupID}}.shared"{{end}}{{if .HasModule "SQLDatastore"}},
+    "{{.GroupID}}.sqldatastore"{{end}}{{if .HasModule "NoSQLDatastore"}},
+    "{{.GroupID}}.nosqldatastore"{{end}}
+})
+public class {{.ProjectNamePascal}}AIAgentApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run({{.ProjectNamePascal}}AIAgentApplication.class, args);
+    }
+}

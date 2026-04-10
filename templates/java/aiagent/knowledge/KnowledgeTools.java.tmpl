@@ -1,0 +1,46 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.stereotype.Component;
+
+import java.util.Comparator;
+import java.util.stream.Collectors;
+
+@Component
+public class KnowledgeTools {
+
+    @Tool(description = "Ask a natural language question about {{.ProjectNamePascal}} — services, policies, hours, pricing, and more")
+    public String askQuestion(
+            @ToolParam(description = "The question to answer") String query) {
+        String lower = query.toLowerCase();
+        String[] tokens = lower.split("\\s+");
+
+        var scored = KnowledgeBase.ENTRIES.stream()
+            .map(entry -> {
+                String content = entry.get("content").toLowerCase();
+                String topic = entry.get("topic").toLowerCase();
+                int score = 0;
+                for (String token : tokens) {
+                    if (token.length() <= 2) continue;
+                    if (content.contains(token)) score++;
+                    if (topic.contains(token)) score += 3;
+                }
+                return new ScoredEntry(score, entry.get("content"));
+            })
+            .filter(e -> e.score > 0)
+            .sorted(Comparator.comparingInt(ScoredEntry::score).reversed())
+            .limit(3)
+            .toList();
+
+        if (scored.isEmpty()) {
+            return "I don't have information about that. Please contact support directly.";
+        }
+
+        return scored.stream()
+            .map(ScoredEntry::content)
+            .collect(Collectors.joining("\n\n"));
+    }
+
+    private record ScoredEntry(int score, String content) {}
+}

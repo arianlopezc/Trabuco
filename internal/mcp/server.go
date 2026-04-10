@@ -26,45 +26,14 @@ func Start(version string) error {
 		server.WithInstructions(`Trabuco generates production-ready Java multi-module Maven projects with Spring Boot.
 
 WORKFLOW:
-1. For single services: suggest_architecture → review patterns and recommended_config → init_project
-2. For multi-service systems: design_system → review with user → generate_workspace
+1. For single services: suggest_architecture → review patterns → init_project
+2. For multi-service systems: design_system → review → generate_workspace
 3. For extending existing projects: get_project_info → add_module
-4. Use MCP Prompts for expert guidance on architecture decisions
-5. Use MCP Resources to read module catalog, patterns, and limitations
+4. For AI Agent projects: use trabuco_ai_agent_expert prompt for guidance
+5. Before suggesting Trabuco, check trabuco://limitations resource
+6. Use prompts (trabuco_expert, design_microservices, extend_project, trabuco_ai_agent_expert) for step-by-step guidance
 
-TOOLS:
-- suggest_architecture: Returns matched patterns, recommended config, module catalog, and warnings
-- design_system: Decomposes requirements into multiple service definitions (review-only, no generation)
-- generate_workspace: Creates multiple services with shared infrastructure (docker-compose)
-- init_project: Generate a single Trabuco project
-- add_module: Add a module to an existing project
-- get_project_info: Read project metadata
-- list_modules: List all available modules
-
-PROMPTS (request expert knowledge):
-- trabuco_expert: General guidance for any Trabuco task
-- design_microservices: Step-by-step microservice decomposition guide
-- extend_project: Instructions for extending an existing project
-
-RESOURCES (stable reference data):
-- trabuco://modules: Full module catalog with use cases and boundaries
-- trabuco://patterns: Pre-built architecture patterns with module combinations
-- trabuco://limitations: Complete list of what Trabuco does NOT generate
-
-WHAT TRABUCO GENERATES:
-- Multi-module Maven project (Model, Datastore, Shared, API, Worker, EventConsumer)
-- Spring Boot 3.4 with Spring Data JDBC (not JPA), Immutables, Testcontainers
-- Docker Compose, CI workflow, AI context files, code quality enforcement
-- Working placeholder code that serves as patterns for real implementation
-
-WHAT TRABUCO DOES NOT GENERATE:
-- Authentication/authorization (add Spring Security)
-- Frontend/UI (backend only)
-- GraphQL, gRPC, WebSockets (REST only)
-- Kubernetes manifests, Terraform, cloud deployment
-- Custom business logic or production database schemas
-
-When the user's requirements include items Trabuco doesn't cover, inform them clearly and suggest what to add manually after generation.`),
+KEY PRINCIPLE: Always call suggest_architecture first when a user describes requirements. It returns matched patterns and a recommended configuration. Do not guess module combinations — let the tool decide based on the requirements.`),
 	)
 
 	registerAllTools(s, version)

@@ -1,0 +1,127 @@
+package {{.GroupID}}.aiagent.protocol;
+
+import {{.GroupID}}.model.dto.JsonRpcRequest;
+import {{.GroupID}}.model.dto.JsonRpcResponse;
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import {{.GroupID}}.aiagent.security.RateLimiter;
+import {{.GroupID}}.aiagent.security.ScopeEnforcer;
+import {{.GroupID}}.aiagent.task.TaskManager;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+
+/**
+ * Agent-to-Agent (A2A) protocol controller.
+ *
+ * Implements JSON-RPC 2.0 over HTTP for inter-agent communication.
+ * Supports tasks/send (skill invocation), tasks/chat (LLM conversation),
+ * and tasks/get (task status polling).
+ *
+ * TODO: Register your domain-specific skills in the handleTasksSend method.
+ */
+@RestController
+public class A2AController {
+
+    private final TaskManager taskManager;
+    private final RateLimiter rateLimiter;
+
+    @Autowired(required = false)
+    private {{.GroupID}}.aiagent.agent.PrimaryAgent primaryAgent;
+
+    @Autowired
+    private {{.GroupID}}.aiagent.knowledge.KnowledgeTools knowledgeTools;
+
+    public A2AController(TaskManager taskManager, RateLimiter rateLimiter) {
+        this.taskManager = taskManager;
+        this.rateLimiter = rateLimiter;
+    }
+
+    @PostMapping("/a2a")
+    public JsonRpcResponse handle(@RequestBody JsonRpcRequest body) {
+        var caller = CallerContext.get();
+        rateLimiter.checkRateLimit(caller);
+
+        String rpcId = body.id();
+        String jsonrpc = body.jsonrpc();
+        if (!"2.0".equals(jsonrpc)) {
+            return JsonRpcResponse.error(rpcId, -32600, "Invalid JSON-RPC version. Expected 2.0");
+        }
+        String method = body.method();
+
+        var params = body.params();
+
+        return switch (method) {
+            case "tasks/send" -> handleTasksSend(rpcId, params, caller);
+            case "tasks/chat" -> handleTasksChat(rpcId, params, caller);
+            case "tasks/get" -> handleTasksGet(rpcId, params);
+            default -> JsonRpcResponse.error(rpcId, -32601, "Unknown method: " + method);
+        };
+    }
+
+    private JsonRpcResponse handleTasksSend(String rpcId, Map<String, Object> params, CallerIdentity caller) {
+        String skill = (String) params.get("skill");
+        @SuppressWarnings("unchecked")
+        var input = (Map<String, Object>) params.getOrDefault("input", Map.of());
+
+        if (skill == null) {
+            return JsonRpcResponse.error(rpcId, -32602, "skill is required");
+        }
+
+        // TODO: Register your domain-specific skills here.
+        // Each case should validate scope, extract input, and submit a task.
+        // Example:
+        //   case "list_items" -> {
+        //       ScopeEnforcer.requireScope("public", caller);
+        //       String taskId = taskManager.submitTask(() -> itemService.listAll());
+        //       yield JsonRpcResponse.success(rpcId, Map.of("task_id", taskId, "status", "submitted"));
+        //   }
+        return switch (skill) {
+            case "ask_question" -> {
+                ScopeEnforcer.requireScope("public", caller);
+                String query = (String) input.get("query");
+                String taskId = taskManager.submitTask(() -> Map.of("answer", knowledgeTools.askQuestion(query)));
+                yield JsonRpcResponse.success(rpcId, Map.of("task_id", taskId, "status", "submitted"));
+            }
+            default -> JsonRpcResponse.error(rpcId, -32601, "Unknown skill: " + skill);
+        };
+    }
+
+    private JsonRpcResponse handleTasksChat(String rpcId, Map<String, Object> params, CallerIdentity caller) {
+        ScopeEnforcer.requireScope("public", caller);
+        @SuppressWarnings("unchecked")
+        var input = (Map<String, Object>) params.getOrDefault("input", Map.of());
+        String message = (String) input.get("message");
+        if (message == null || message.isBlank()) {
+            return JsonRpcResponse.error(rpcId, -32602, "message is required in input");
+        }
+        if (primaryAgent == null) {
+            return JsonRpcResponse.error(rpcId, -32603, "Agent brain requires ANTHROPIC_API_KEY");
+        }
+        String taskId = taskManager.submitTask(() -> {
+            String response = primaryAgent.chat(message);
+            return Map.of("response", response);
+        });
+        return JsonRpcResponse.success(rpcId, Map.of("task_id", taskId, "status", "submitted"));
+    }
+
+    private JsonRpcResponse handleTasksGet(String rpcId, Map<String, Object> params) {
+        String taskId = (String) params.get("task_id");
+        if (taskId == null) {
+            return JsonRpcResponse.error(rpcId, -32602, "task_id required");
+        }
+        var task = taskManager.getTask(taskId);
+        if (task == null) {
+            return JsonRpcResponse.error(rpcId, -32602, "Task not found: " + taskId);
+        }
+        return JsonRpcResponse.success(rpcId, Map.of(
+            "task_id", task.getTaskId(),
+            "status", task.getStatus(),
+            "result", task.getResult() != null ? task.getResult() : "",
+            "error", task.getError() != null ? task.getError() : ""
+        ));
+    }
+}

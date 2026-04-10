@@ -1,0 +1,30 @@
+package {{.GroupID}}.aiagent.agent;
+
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Component;
+
+/**
+ * Wraps the SpecialistAgent as a tool so the PrimaryAgent can delegate to it.
+ *
+ * TODO: Update the @Tool description to reflect what the specialist agent handles
+ * in your domain (e.g., "Ask the operations agent about scheduling and logistics").
+ */
+@Component
+@ConditionalOnBean(SpecialistAgent.class)
+public class SpecialistAgentTool {
+
+    private final SpecialistAgent specialistAgent;
+
+    public SpecialistAgentTool(SpecialistAgent specialistAgent) {
+        this.specialistAgent = specialistAgent;
+    }
+
+    @Tool(description = "Ask the specialist agent about detailed, technical, or domain-specific questions. "
+        + "Use when the user asks something that requires specialized knowledge or deeper analysis.")
+    public String askSpecialistAgent(
+            @ToolParam(description = "Question requiring specialist knowledge or analysis") String question) {
+        return specialistAgent.ask(question);
+    }
+}

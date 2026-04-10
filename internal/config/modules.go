@@ -11,6 +11,7 @@ const (
 	ModuleWorker         = "Worker"
 	ModuleEvents         = "Events"
 	ModuleEventConsumer = "EventConsumer"
+	ModuleAIAgent       = "AIAgent"
 )
 
 // Database type constants
@@ -31,7 +32,8 @@ const (
 
 // Module represents a project module with its metadata
 type Module struct {
-	Name           string   // Module name (e.g., "Model")
+	Name           string   // Technical identifier (no spaces): "AIAgent"
+	DisplayName    string   // Human-readable name: "AI Agent" (optional, defaults to Name)
 	Description    string   // Short description for CLI display
 	UseCase        string   // Business-level: when would you pick this module
 	WhenToUse      string   // Natural language triggers (e.g., "user says 'I need a database'")
@@ -145,6 +147,18 @@ var ModuleRegistry = []Module{
 		Required:       false,
 		Internal:       false,
 		Dependencies:   []string{ModuleModel, ModuleEvents},
+		ConflictsWith:  []string{},
+	},
+	{
+		Name:           ModuleAIAgent,
+		DisplayName:    "AI Agent",
+		Description:    "Production AI agent with Spring AI (tools, guardrails, multi-agent, MCP server)",
+		UseCase:        "Adds a production AI agent framework with tool calling, LLM-based input/output guardrails, multi-agent orchestration, MCP server, A2A protocol, circuit breaker, observability, and knowledge base. Built on Spring AI with Anthropic Claude.",
+		WhenToUse:      "User mentions: AI, agent, LLM, Claude, chatbot, intelligent assistant, natural language, MCP, tool calling, guardrails, multi-agent",
+		DoesNotInclude: "Does not include model training, fine-tuning, vector database, or RAG with embeddings. Uses keyword-based knowledge retrieval. Does not include a frontend chat UI.",
+		Required:       false,
+		Internal:       false,
+		Dependencies:   []string{ModuleModel},
 		ConflictsWith:  []string{},
 	},
 }
@@ -274,7 +288,11 @@ func GetModuleDisplayOptions() []string {
 		if m.Required {
 			suffix = " (required)"
 		}
-		options = append(options, m.Name+" - "+m.Description+suffix)
+		displayName := m.Name
+		if m.DisplayName != "" {
+			displayName = m.DisplayName
+		}
+		options = append(options, displayName+" - "+m.Description+suffix)
 	}
 	return options
 }

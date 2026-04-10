@@ -1,0 +1,66 @@
+package {{.GroupID}}.aiagent.protocol;
+
+import {{.GroupID}}.aiagent.event.WebhookManager;
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.RateLimiter;
+import {{.GroupID}}.aiagent.security.RequireScope;
+import {{.GroupID}}.model.dto.WebhookRegisterRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import jakarta.validation.Valid;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+public class WebhookController {
+
+    private final WebhookManager webhookManager;
+    private final RateLimiter rateLimiter;
+
+    public WebhookController(WebhookManager webhookManager, RateLimiter rateLimiter) {
+        this.webhookManager = webhookManager;
+        this.rateLimiter = rateLimiter;
+    }
+
+    @PostMapping("/webhooks")
+    @RequireScope("partner")
+    public Map<String, Object> registerWebhook(@Valid @RequestBody WebhookRegisterRequest request) {
+        rateLimiter.checkRateLimit(CallerContext.get());
+        String url = request.url();
+        var events = request.events();
+        var reg = webhookManager.register(url, events, CallerContext.get().keyLabel());
+        return Map.of(
+            "webhook_id", reg.webhookId(),
+            "url", reg.url(),
+            "events", reg.events(),
+            "status", reg.status()
+        );
+    }
+
+    @GetMapping("/webhooks")
+    @RequireScope("partner")
+    public List<Map<String, Object>> listWebhooks() {
+        rateLimiter.checkRateLimit(CallerContext.get());
+        return webhookManager.listWebhooks().stream()
+            .map(wh -> Map.<String, Object>of(
+                "webhook_id", wh.webhookId(),
+                "url", wh.url(),
+                "events", wh.events()
+            ))
+            .toList();
+    }
+
+    @DeleteMapping("/webhooks/{webhookId}")
+    @RequireScope("partner")
+    public Map<String, String> deleteWebhook(@PathVariable String webhookId) {
+        rateLimiter.checkRateLimit(CallerContext.get());
+        try {
+            webhookManager.deregister(webhookId);
+            return Map.of("status", "deleted");
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
+    }
+}

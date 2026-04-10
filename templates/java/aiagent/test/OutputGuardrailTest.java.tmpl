@@ -1,0 +1,40 @@
+package {{.GroupID}}.aiagent.security;
+
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.*;
+
+class OutputGuardrailTest {
+
+    private final OutputGuardrailAdvisor advisor = new OutputGuardrailAdvisor();
+
+    @Test
+    void cleanOutput_passes() {
+        String result = advisor.validate("We have 47 croissants in stock.");
+        assertThat(result).isEqualTo("We have 47 croissants in stock.");
+    }
+
+    @Test
+    void emailPII_blocked() {
+        String result = advisor.validate("Contact us at john@example.com for orders.");
+        assertThat(result).contains("unable to generate");
+    }
+
+    @Test
+    void phonePII_blocked() {
+        String result = advisor.validate("Call us at (786) 555-1234.");
+        assertThat(result).contains("unable to generate");
+    }
+
+    @Test
+    void nullOutput_fallback() {
+        String result = advisor.validate(null);
+        assertThat(result).contains("unable to generate");
+    }
+
+    @Test
+    void blankOutput_fallback() {
+        String result = advisor.validate("   ");
+        assertThat(result).contains("unable to generate");
+    }
+}

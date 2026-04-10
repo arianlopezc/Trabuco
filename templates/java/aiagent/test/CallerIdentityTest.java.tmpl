@@ -1,0 +1,36 @@
+package {{.GroupID}}.aiagent.security;
+
+import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.*;
+
+class CallerIdentityTest {
+
+    @Test
+    void anonymous_isAtLeast_anonymous() {
+        assertThat(CallerIdentity.anonymous().isAtLeast("anonymous")).isTrue();
+    }
+
+    @Test
+    void anonymous_notAtLeast_public() {
+        assertThat(CallerIdentity.anonymous().isAtLeast("public")).isFalse();
+    }
+
+    @Test
+    void public_isAtLeast_public() {
+        var caller = ImmutableCallerIdentity.builder().tier("public").keyHash("hash").keyLabel("label").build();
+        assertThat(caller.isAtLeast("public")).isTrue();
+    }
+
+    @Test
+    void partner_isAtLeast_public() {
+        var caller = ImmutableCallerIdentity.builder().tier("partner").keyHash("hash").keyLabel("label").build();
+        assertThat(caller.isAtLeast("public")).isTrue();
+    }
+
+    @Test
+    void public_notAtLeast_partner() {
+        var caller = ImmutableCallerIdentity.builder().tier("public").keyHash("hash").keyLabel("label").build();
+        assertThat(caller.isAtLeast("partner")).isFalse();
+    }
+}

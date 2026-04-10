@@ -1,0 +1,85 @@
+package {{.GroupID}}.aiagent.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Map;
+
+@Component
+public class ApiKeyAuthFilter extends OncePerRequestFilter {
+
+    // TODO: Replace with a configuration bean or externalized config for production use.
+    // These are placeholder keys for development only.
+    private static final Map<String, KeyEntry> API_KEYS = Map.of(
+        "public-read-key", new KeyEntry("public", "public-read-key"),
+        "partner-secret-key", new KeyEntry("partner", "partner-secret-key")
+    );
+
+    private record KeyEntry(String tier, String label) {}
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        try {
+            String authHeader = request.getHeader("Authorization");
+
+            if (authHeader == null || authHeader.isBlank()) {
+                CallerContext.set(CallerIdentity.anonymous());
+                chain.doFilter(request, response);
+                return;
+            }
+
+            if (!authHeader.toLowerCase().startsWith("bearer ")) {
+                sendError(response, HttpStatus.FORBIDDEN, "Invalid API key");
+                return;
+            }
+
+            String key = authHeader.substring(7).trim();
+            KeyEntry entry = API_KEYS.get(key);
+
+            if (entry == null) {
+                sendError(response, HttpStatus.FORBIDDEN, "Invalid API key");
+                return;
+            }
+
+            String keyHash = sha256(key);
+            CallerContext.set(ImmutableCallerIdentity.builder()
+                .tier(entry.tier())
+                .keyHash(keyHash)
+                .keyLabel(entry.label())
+                .build());
+            chain.doFilter(request, response);
+        } finally {
+            CallerContext.clear();
+        }
+    }
+
+    private void sendError(HttpServletResponse response, HttpStatus status, String message) throws IOException {
+        response.setStatus(status.value());
+        response.setContentType("application/json");
+        response.getWriter().write("{\"error\":\"" + message + "\"}");
+    }
+
+    private String sha256(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) hex.append(String.format("%02x", b));
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}

@@ -1,0 +1,41 @@
+package {{.GroupID}}.aiagent.security;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import org.immutables.value.Value;
+
+/**
+ * Identity of an API caller resolved from the Authorization header.
+ * Tiers: anonymous (no key) < public < partner
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableCallerIdentity.class)
+@JsonDeserialize(as = ImmutableCallerIdentity.class)
+public interface CallerIdentity {
+
+    String tier();
+    String keyHash();
+    String keyLabel();
+
+    default boolean isAtLeast(String requiredTier) {
+        return tierLevel(tier()) >= tierLevel(requiredTier);
+    }
+
+    private static int tierLevel(String tier) {
+        return switch (tier) {
+            case "partner" -> 2;
+            case "public" -> 1;
+            default -> 0;
+        };
+    }
+
+    static CallerIdentity anonymous() {
+        return ImmutableCallerIdentity.builder()
+            .tier("anonymous")
+            .keyHash("anonymous")
+            .keyLabel("anonymous")
+            .build();
+    }
+}

@@ -1,0 +1,75 @@
+package {{.GroupID}}.aiagent.task;
+
+import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import {{.GroupID}}.aiagent.task.ImmutableTaskEvent;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.*;
+import java.util.function.Consumer;
+
+@Component
+public class TaskManager {
+
+    private final ConcurrentHashMap<String, TaskRecord> tasks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<Consumer<TaskEvent>>> subscribers = new ConcurrentHashMap<>();
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+    public String submitTask(Callable<Map<String, Object>> work) {
+        String taskId = "TASK-" + UUID.randomUUID();
+        var record = new TaskRecord(taskId);
+        tasks.put(taskId, record);
+
+        executor.submit(() -> {
+            record.setStatus("working");
+            notify(taskId, "working", null, null);
+            try {
+                Map<String, Object> result = work.call();
+                record.setStatus("completed");
+                record.setResult(result);
+                notify(taskId, "completed", result, null);
+            } catch (Exception e) {
+                record.setStatus("failed");
+                record.setError(e.getMessage());
+                notify(taskId, "failed", null, e.getMessage());
+            }
+        });
+
+        return taskId;
+    }
+
+    public TaskRecord getTask(String taskId) {
+        return tasks.get(taskId);
+    }
+
+    public void subscribe(String taskId, Consumer<TaskEvent> listener) {
+        subscribers.computeIfAbsent(taskId, k -> new CopyOnWriteArrayList<>()).add(listener);
+    }
+
+    public void unsubscribe(String taskId, Consumer<TaskEvent> listener) {
+        var subs = subscribers.get(taskId);
+        if (subs != null) subs.remove(listener);
+    }
+
+    private void notify(String taskId, String status, Map<String, Object> result, String error) {
+        var event = ImmutableTaskEvent.builder()
+            .taskId(taskId)
+            .status(status)
+            .result(result)
+            .error(error)
+            .build();
+        var subs = subscribers.get(taskId);
+        if (subs != null) {
+            for (var listener : subs) {
+                try { listener.accept(event); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    public void reset() {
+        tasks.clear();
+        subscribers.clear();
+    }
+}

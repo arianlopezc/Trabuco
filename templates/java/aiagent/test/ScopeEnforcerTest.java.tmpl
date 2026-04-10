@@ -1,0 +1,42 @@
+package {{.GroupID}}.aiagent.security;
+
+import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
+
+import static org.assertj.core.api.Assertions.*;
+
+class ScopeEnforcerTest {
+
+    @AfterEach
+    void cleanup() {
+        CallerContext.clear();
+    }
+
+    @Test
+    void allowsEqualTier() {
+        var caller = ImmutableCallerIdentity.builder().tier("public").keyHash("h").keyLabel("l").build();
+        assertThatCode(() -> ScopeEnforcer.requireScope("public", caller)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void allowsHigherTier() {
+        var caller = ImmutableCallerIdentity.builder().tier("partner").keyHash("h").keyLabel("l").build();
+        assertThatCode(() -> ScopeEnforcer.requireScope("public", caller)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsLowerTier() {
+        var caller = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("h").keyLabel("l").build();
+        assertThatThrownBy(() -> ScopeEnforcer.requireScope("partner", caller))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("partner");
+    }
+
+    @Test
+    void usesCallerContext() {
+        CallerContext.set(ImmutableCallerIdentity.builder().tier("partner").keyHash("h").keyLabel("l").build());
+        assertThatCode(() -> ScopeEnforcer.requireScope("partner")).doesNotThrowAnyException();
+    }
+}

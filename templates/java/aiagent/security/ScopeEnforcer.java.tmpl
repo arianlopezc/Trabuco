@@ -1,0 +1,22 @@
+package {{.GroupID}}.aiagent.security;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
+public final class ScopeEnforcer {
+
+    private ScopeEnforcer() {}
+
+    public static void requireScope(String requiredTier, CallerIdentity caller) {
+        if (!caller.isAtLeast(requiredTier)) {
+            throw new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "This action requires " + requiredTier + " access. Your tier: " + caller.tier()
+            );
+        }
+    }
+
+    public static void requireScope(String requiredTier) {
+        requireScope(requiredTier, CallerContext.get());
+    }
+}

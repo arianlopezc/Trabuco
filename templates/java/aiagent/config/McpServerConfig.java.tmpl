@@ -1,0 +1,20 @@
+package {{.GroupID}}.aiagent.config;
+
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * MCP Server configuration.
+ *
+ * Spring AI MCP Server auto-configuration discovers @Tool-annotated beans
+ * and exposes them as MCP tools at the configured endpoint.
+ *
+ * The MCP server is available at /mcp (Streamable HTTP transport).
+ * Connect from Claude Code:
+ *   claude mcp add --transport http {{.ProjectName}}-agent http://localhost:8080/mcp
+ */
+@Configuration
+public class McpServerConfig {
+    // Spring AI MCP Server auto-configuration handles everything.
+    // @Tool-annotated beans are auto-discovered and exposed.
+    // See application.yml for MCP server settings.
+}

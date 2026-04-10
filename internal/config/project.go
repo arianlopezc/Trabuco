@@ -103,6 +103,11 @@ func (c *ProjectConfig) HasBothDatastores() bool {
 	return c.HasModule(ModuleSQLDatastore) && c.HasModule(ModuleNoSQLDatastore)
 }
 
+// HasAIAgentModule returns true if the AI Agent module is selected
+func (c *ProjectConfig) HasAIAgentModule() bool {
+	return c.HasModule(ModuleAIAgent)
+}
+
 // JobRunr Storage Configuration Helpers
 // These determine what storage backend JobRunr should use for job persistence.
 // The storage is separate from the main application datastore to allow for

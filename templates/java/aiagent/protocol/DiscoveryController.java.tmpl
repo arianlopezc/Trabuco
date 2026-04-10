@@ -1,0 +1,35 @@
+package {{.GroupID}}.aiagent.protocol;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Discovery endpoint for agent capabilities.
+ *
+ * TODO: Update the tools list to reflect your domain-specific skills.
+ */
+@RestController
+public class DiscoveryController {
+
+    // TODO: Replace Map<String, Object> with a typed CapabilitiesResponse DTO for production use.
+    @GetMapping("/capabilities")
+    public Map<String, Object> capabilities() {
+        return Map.of(
+            "agent", Map.of(
+                "name", "{{.ProjectNamePascal}} AI Agent",
+                "description", "{{.ProjectNamePascal}} intelligent agent with tool use and multi-agent delegation"
+            ),
+            "tools", List.of(
+                Map.of("tool", "list_items", "description", "List all available items", "scope", "public", "status", "active"),
+                Map.of("tool", "get_item_detail", "description", "Get item details by ID", "scope", "public", "status", "active"),
+                Map.of("tool", "check_availability", "description", "Check item availability", "scope", "public", "status", "active"),
+                Map.of("tool", "ask_question", "description", "Ask a knowledge-base question", "scope", "public", "status", "active"),
+                Map.of("tool", "ask_specialist", "description", "Ask the specialist agent", "scope", "public", "status", "active")
+            ),
+            "protocols", Map.of("rest", "active", "mcp", "active", "a2a", "active")
+        );
+    }
+}

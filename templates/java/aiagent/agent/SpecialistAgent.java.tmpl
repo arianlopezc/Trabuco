@@ -1,0 +1,59 @@
+package {{.GroupID}}.aiagent.agent;
+
+import {{.GroupID}}.aiagent.knowledge.KnowledgeTools;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Component;
+
+/**
+ * Specialist agent for domain-specific sub-tasks.
+ *
+ * The primary agent delegates to this agent when it encounters questions
+ * that require specialized knowledge or processing.
+ *
+ * TODO: Customize this agent for your domain (e.g., technical support,
+ * operations, analytics, compliance review).
+ */
+@Component
+@ConditionalOnBean(ChatModel.class)
+public class SpecialistAgent {
+
+    private static final String SYSTEM_PROMPT = """
+        You are the {{.ProjectNamePascal}} specialist agent.
+        You handle detailed, technical, or domain-specific queries that require
+        specialized knowledge or deeper analysis.
+
+        TODO: Customize this system prompt for your specialist domain:
+        - Describe the specialist's area of expertise
+        - List specific capabilities (e.g., scheduling, analysis, troubleshooting)
+        - Define how this agent differs from the primary agent
+
+        Always provide specific, actionable information.
+        """;
+
+    private final ChatClient chatClient;
+
+    public SpecialistAgent(@Qualifier("specialistChatModel") ChatModel chatModel,
+                           KnowledgeTools knowledgeTools) {
+        this.chatClient = ChatClient.builder(chatModel)
+            .defaultSystem(SYSTEM_PROMPT)
+            .defaultTools(knowledgeTools)
+            .build();
+    }
+
+    @CircuitBreaker(name = "llm", fallbackMethod = "askFallback")
+    public String ask(String question) {
+        return chatClient.prompt()
+            .user(question)
+            .call()
+            .content();
+    }
+
+    @SuppressWarnings("unused")
+    private String askFallback(String question, Throwable t) {
+        return "Specialist operations are temporarily unavailable. Please try again shortly.";
+    }
+}

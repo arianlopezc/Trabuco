@@ -1,0 +1,18 @@
+package {{.GroupID}}.model.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import org.immutables.value.Value;
+
+/**
+ * Response DTO for the /ask endpoint.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableAskResponse.class)
+@JsonDeserialize(as = ImmutableAskResponse.class)
+public interface AskResponse {
+
+    String answer();
+}

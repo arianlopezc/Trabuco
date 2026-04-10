@@ -1,0 +1,75 @@
+package {{.GroupID}}.aiagent.tool;
+{{if .HasModule "Shared"}}
+import {{.GroupID}}.shared.service.PlaceholderService;
+{{- end}}
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Domain-specific tools exposed to the AI agent.
+ *
+ * TODO: Replace the placeholder methods below with tools relevant to your domain.
+ * Each @Tool method becomes callable by the LLM during a conversation.
+ * Keep descriptions clear and specific — the LLM uses them to decide when to call a tool.
+ */
+@Component
+public class PlaceholderTools {
+{{if .HasModule "Shared"}}
+    private final PlaceholderService placeholderService;
+
+    public PlaceholderTools(PlaceholderService placeholderService) {
+        this.placeholderService = placeholderService;
+    }
+{{- else}}
+    public PlaceholderTools() {
+        // TODO: Inject your domain services here
+    }
+{{- end}}
+
+    /**
+     * TODO: Replace with a method that lists items from your domain (e.g., products, tickets, documents).
+     */
+    @Tool(description = "List all available items with their names and descriptions")
+    public List<Map<String, String>> listItems() {
+        // TODO: Replace with real data source
+        return List.of(
+            Map.of("id", "ITEM-001", "name", "Example Item A", "description", "First example item"),
+            Map.of("id", "ITEM-002", "name", "Example Item B", "description", "Second example item"),
+            Map.of("id", "ITEM-003", "name", "Example Item C", "description", "Third example item")
+        );
+    }
+
+    /**
+     * TODO: Replace with a method that retrieves details for a specific item in your domain.
+     */
+    @Tool(description = "Get detailed information about a specific item by its ID")
+    public Map<String, Object> getItemDetail(
+            @ToolParam(description = "The unique identifier of the item, e.g. ITEM-001") String id) {
+        // TODO: Replace with real lookup logic
+        return Map.of(
+            "id", id,
+            "name", "Example Item",
+            "description", "Detailed description for " + id,
+            "status", "active"
+        );
+    }
+
+    /**
+     * TODO: Replace with a method that checks availability, status, or capacity in your domain.
+     */
+    @Tool(description = "Check the current availability or status of an item by its ID")
+    public Map<String, Object> checkAvailability(
+            @ToolParam(description = "The unique identifier of the item to check") String id) {
+        // TODO: Replace with real availability check
+        return Map.of(
+            "id", id,
+            "available", true,
+            "quantity", 10,
+            "lastChecked", java.time.Instant.now().toString()
+        );
+    }
+}

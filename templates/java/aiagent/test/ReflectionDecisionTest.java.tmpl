@@ -1,0 +1,29 @@
+package {{.GroupID}}.aiagent.brain;
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.*;
+
+class ReflectionDecisionTest {
+
+    @Test
+    void retry() {
+        var d = ReflectionDecision.retry();
+        assertThat(d.isRetry()).isTrue();
+        assertThat(d.isEscalate()).isFalse();
+        assertThat(d.isGiveUp()).isFalse();
+    }
+
+    @Test
+    void escalate() {
+        var d = ReflectionDecision.escalate("Please clarify");
+        assertThat(d.isEscalate()).isTrue();
+        assertThat(d.message()).isEqualTo("Please clarify");
+    }
+
+    @Test
+    void giveUp() {
+        var d = ReflectionDecision.giveUp("Cannot cancel");
+        assertThat(d.isGiveUp()).isTrue();
+        assertThat(d.message()).isEqualTo("Cannot cancel");
+    }
+}

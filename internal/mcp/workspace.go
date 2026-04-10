@@ -41,7 +41,8 @@ func registerDesignSystem(s *server.MCPServer) {
 			"Decompose natural language requirements into a multi-service system design. "+
 				"Returns a structured design with service definitions, patterns, and infrastructure notes. "+
 				"Does NOT generate any code — returns a design document for review before calling generate_workspace. "+
-				"Use this when the user describes a system that needs multiple independent services.",
+				"Use this when the user describes a system that needs multiple independent services. "+
+				"NOTE: Service detection uses keyword matching against common service names (e.g., 'user service', 'notification service', 'payment service'). For best results, describe requirements using explicit service names. If the decomposition doesn't match expectations, use init_project to create services individually.",
 		),
 		mcp.WithString("requirements",
 			mcp.Description("Natural language description of the multi-service system requirements"),
@@ -180,7 +181,7 @@ func registerGenerateWorkspace(s *server.MCPServer, version string) {
 			outDir := filepath.Join(absWorkspace, svc.Name)
 			gen, err := generator.NewWithVersionAt(cfg, version, outDir)
 			if err != nil {
-				return toolError(fmt.Sprintf("Service '%s': failed to create generator: %v", svc.Name, err)), nil
+				return toolError(fmt.Sprintf("Service '%s': failed to create generator: %v. Check that the module combination is valid (use suggest_architecture first) and the output directory is writable.", svc.Name, err)), nil
 			}
 
 			if err := gen.Generate(); err != nil {
@@ -281,6 +282,11 @@ func buildSystemDesign(requirements string) *systemDesign {
 		{"integration service", "", "Connect with external systems and third-party APIs", "rest-api"},
 		{"webhook service", "", "Receive and process incoming webhooks", "rest-api"},
 		{"reporting service", "", "Generate reports and data aggregations", "background-processing"},
+		// AI / agent
+		{"ai-agent-service", "ai agent", "AI agent service with LLM-powered tool calling, guardrails, and multi-agent orchestration", "ai-agent"},
+		{"chatbot-service", "chatbot", "AI-powered chatbot service with tool calling and guardrails", "ai-agent"},
+		{"assistant-service", "assistant", "AI assistant service with LLM-powered capabilities", "ai-agent"},
+		{"nlp-service", "nlp", "Natural language processing service with AI agent capabilities", "ai-agent"},
 	}
 
 	matchedKeywords := make(map[string]bool) // tracks which keywords were matched

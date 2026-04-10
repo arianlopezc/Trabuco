@@ -1,0 +1,31 @@
+package {{.GroupID}}.aiagent.task;
+
+import java.time.Instant;
+import java.util.Map;
+
+public class TaskRecord {
+    private final String taskId;
+    private volatile String status;
+    private volatile Map<String, Object> result;
+    private volatile String error;
+    private final Instant createdAt;
+    private volatile Instant updatedAt;
+
+    public TaskRecord(String taskId) {
+        this.taskId = taskId;
+        this.status = "submitted";
+        this.createdAt = Instant.now();
+        this.updatedAt = this.createdAt;
+    }
+
+    public String getTaskId() { return taskId; }
+    public String getStatus() { return status; }
+    public Map<String, Object> getResult() { return result; }
+    public String getError() { return error; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+
+    public void setStatus(String status) { this.status = status; this.updatedAt = Instant.now(); }
+    public void setResult(Map<String, Object> result) { this.result = result; }
+    public void setError(String error) { this.error = error; }
+}

@@ -1,0 +1,64 @@
+package {{.GroupID}}.aiagent.brain;
+
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.*;
+
+class ScratchpadTest {
+
+    @Test
+    void empty() {
+        var sp = new Scratchpad();
+        assertThat(sp.size()).isZero();
+        assertThat(sp.toPrompt()).isEmpty();
+    }
+
+    @Test
+    void addEntry() {
+        var sp = new Scratchpad();
+        sp.add("Check stock", "checkStock", "CROIS-001", "{\"stockLevel\": 47}");
+        assertThat(sp.size()).isEqualTo(1);
+        assertThat(sp.getEntries().get(0).step()).isEqualTo(1);
+    }
+
+    @Test
+    void sequentialNumbering() {
+        var sp = new Scratchpad();
+        sp.add("t1", "a1", "{}", "o1");
+        sp.add("t2", "a2", "{}", "o2");
+        sp.add("t3", "a3", "{}", "o3");
+        assertThat(sp.getEntries().stream().map(MemoryEntry::step).toList())
+            .containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void toPromptFormat() {
+        var sp = new Scratchpad();
+        sp.add("Check stock", "checkStock", "CROIS-001", "50 units");
+        String prompt = sp.toPrompt();
+        assertThat(prompt).contains("Step 1");
+        assertThat(prompt).contains("Thought: Check stock");
+        assertThat(prompt).contains("Action: checkStock");
+        assertThat(prompt).contains("Observation: 50 units");
+    }
+
+    @Test
+    void toolsCalled() {
+        var sp = new Scratchpad();
+        sp.add("t", "checkStock", "{}", "o");
+        sp.add("t", "placeOrder", "{}", "o");
+        assertThat(sp.getToolsCalled()).containsExactly("checkStock", "placeOrder");
+    }
+
+    @Test
+    void summaryTruncatesLongTraces() {
+        var sp = new Scratchpad();
+        for (int i = 0; i < 20; i++) {
+            sp.add("Thinking ".repeat(10), "tool_" + i, "param".repeat(50), "result ".repeat(100));
+        }
+        String summary = sp.summary(500);
+        assertThat(summary.length()).isLessThan(sp.toPrompt().length());
+        assertThat(summary).contains("Step 1");
+        assertThat(summary).contains("Step 20");
+    }
+}

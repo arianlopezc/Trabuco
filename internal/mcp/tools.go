@@ -187,7 +187,7 @@ func registerInitProject(s *server.MCPServer, version string) {
 
 		gen, err := generator.NewWithVersion(cfg, version)
 		if err != nil {
-			return toolError(fmt.Sprintf("Failed to create generator: %v", err)), nil
+			return toolError(fmt.Sprintf("Failed to create generator: %v. Check that the module combination is valid (use suggest_architecture first) and the output directory is writable.", err)), nil
 		}
 
 		if err := gen.Generate(); err != nil {
@@ -323,7 +323,7 @@ func registerAddModule(s *server.MCPServer, version string) {
 
 		meta, err := doctor.GetProjectMetadata(absPath)
 		if err != nil {
-			return toolError(fmt.Sprintf("Failed to read project metadata: %v", err)), nil
+			return toolError(fmt.Sprintf("Failed to read project info at '%s': %v. Verify the path points to a Trabuco project root (should contain .trabuco.json or pom.xml).", absPath, err)), nil
 		}
 
 		adder := generator.NewModuleAdder(absPath, meta, version, true)
@@ -362,6 +362,11 @@ func registerAddModule(s *server.MCPServer, version string) {
 			"files_created":  dryResult.FilesCreated,
 			"files_modified": dryResult.FilesModified,
 			"build":          buildStatus,
+			"next_steps": []string{
+				"Run 'mvn clean compile -DskipTests' to verify compilation",
+				"Run 'mvn spotless:apply' to format generated code",
+				"Check .ai/prompts/ for implementation guidance",
+			},
 		})
 	})
 }
@@ -567,6 +572,14 @@ func detectDisambiguations(lower string) []string {
 		warnings = append(warnings, "Ambiguous term 'webhook': Receiving webhooks requires an HTTP endpoint (API module). Sending/processing webhooks asynchronously requires Worker for background delivery. EventConsumer is not needed unless webhooks are routed through a message broker.")
 	}
 
+	if containsAny(lower, "agent") && !containsAny(lower, "ai agent", "aiagent", "llm", "claude", "chatbot") {
+		warnings = append(warnings, "Ambiguous term 'agent': Could mean AI agent (AIAgent module — LLM-powered with tools and guardrails) or a background worker agent (Worker module). If the user needs LLM/AI capabilities, suggest AIAgent. If they need background job processing, suggest Worker.")
+	}
+
+	if containsAny(lower, "ai") && !containsAny(lower, "ai agent", "aiagent", "llm", "claude", "chatbot") {
+		warnings = append(warnings, "Ambiguous term 'ai': Could mean AI agent (AIAgent module — full agent framework with Spring AI) or AI coding assistant configuration (--ai-agents flag for Claude/Cursor/Copilot context files). These are different: AIAgent is a runtime module, --ai-agents generates IDE configuration files.")
+	}
+
 	return warnings
 }
 
@@ -592,7 +605,7 @@ func detectUnsupported(lower string) []string {
 		{[]string{"multi-tenant", "tenant", "saas"},
 			"Multi-tenancy: Not built-in. Implement tenant isolation manually"},
 		{[]string{"rate limit", "throttl"},
-			"Rate limiting: Not included. Add Spring Cloud Gateway or Bucket4j manually"},
+			"Rate limiting: Available in the AIAgent module. For API-only projects without AIAgent, implement rate limiting manually or use a library like Bucket4j."},
 	}
 
 	var result []string
@@ -731,11 +744,52 @@ func registerGetProjectInfo(s *server.MCPServer) {
 			// Fall back to POM inference
 			meta, err = doctor.GetProjectMetadata(absPath)
 			if err != nil {
-				return toolError(fmt.Sprintf("Failed to read project info: %v", err)), nil
+				return toolError(fmt.Sprintf("Failed to read project info at '%s': %v. Verify the path points to a Trabuco project root (should contain .trabuco.json or pom.xml).", absPath, err)), nil
 			}
 		}
 
-		return toolJSON(meta)
+		// Compute addable modules
+		var addable []string
+		for _, m := range config.ModuleRegistry {
+			if m.Internal || m.Required {
+				continue
+			}
+			found := false
+			for _, existing := range meta.Modules {
+				if existing == m.Name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Check conflicts
+				hasConflict := false
+				for _, conflict := range m.ConflictsWith {
+					for _, existing := range meta.Modules {
+						if existing == conflict {
+							hasConflict = true
+							break
+						}
+					}
+				}
+				if !hasConflict {
+					addable = append(addable, m.Name)
+				}
+			}
+		}
+
+		// Build available actions
+		var actions []string
+		if len(addable) > 0 {
+			actions = append(actions, fmt.Sprintf("Use add_module to add: %s", strings.Join(addable, ", ")))
+		}
+		actions = append(actions, "Use run_doctor to check project health")
+
+		return toolJSON(map[string]any{
+			"metadata":          meta,
+			"addable_modules":   addable,
+			"available_actions": actions,
+		})
 	})
 }
 
@@ -814,7 +868,7 @@ func registerGetVersion(s *server.MCPServer, version string) {
 
 func registerScanProject(s *server.MCPServer) {
 	tool := mcp.NewTool("scan_project",
-		mcp.WithDescription("Analyze a legacy Java project structure and dependencies (fast, no AI required)"),
+		mcp.WithDescription("Analyze a legacy Java project to assess migration feasibility. Scans POM structure, Spring Boot version, database usage, entity/repository/service/controller counts, and dependency compatibility. Call this BEFORE migrate_project to understand whether migration is possible and what blockers exist. Returns a migration_summary with compatible, replaceable, and unsupported dependencies. If has_blockers is true, address unsupported dependencies before migration. This tool does NOT modify any files — it is a read-only analysis."),
 		mcp.WithString("path",
 			mcp.Description("Path to the legacy Java project to scan"),
 			mcp.Required(),
@@ -872,7 +926,7 @@ func registerScanProject(s *server.MCPServer) {
 
 func registerMigrateProject(s *server.MCPServer, version string) {
 	tool := mcp.NewTool("migrate_project",
-		mcp.WithDescription("Full AI-powered migration of a legacy Java project to Trabuco structure (long-running)"),
+		mcp.WithDescription("Migrate a legacy Java project to Trabuco's multi-module structure using AI-powered code transformation. PREREQUISITES: (1) Run scan_project first to check for blockers, (2) Verify AI credentials with auth_status. This is a long-running operation that makes LLM API calls — use dry_run=true first to preview the migration plan without generating files. Creates the migrated project in a NEW directory (does not modify the source). After migration, run run_doctor on the output to verify structural integrity."),
 		mcp.WithString("source_path",
 			mcp.Description("Path to the legacy Java project to migrate"),
 			mcp.Required(),
