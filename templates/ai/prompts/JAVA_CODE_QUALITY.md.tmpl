@@ -623,21 +623,18 @@ CREATE TABLE order_item (
 
 ### 5.4 Pagination (Keyset by ID)
 
-**Never use offset pagination** (`OFFSET`, `Pageable`). Use keyset pagination with `WHERE id > :afterId`.
+**Always use keyset pagination** with `WHERE id > :afterId`. Never use `Pageable`.
 
 ```java
-// CORRECT: Keyset pagination — constant performance
+// CORRECT: Keyset pagination — constant performance at any depth
 @Query("SELECT * FROM users WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
 List<UserRecord> findPage(@Param("afterId") Long afterId, @Param("limit") int limit);
-
-// WRONG: Offset pagination — degrades with large offsets
-Page<UserRecord> findAll(Pageable pageable);
 ```
 
-**Why:** Offset pagination scans and discards rows (`OFFSET 10000` reads 10,000 rows to skip them). Keyset pagination uses an index seek — constant performance at any depth.
+**Why:** Keyset pagination uses an index seek, so performance stays constant regardless of how deep the client paginates. The client passes the last-seen ID as `afterId` on the next request.
 
 **Checklist:**
-- [ ] No `Pageable` or `OFFSET` in repository methods
+- [ ] No `Pageable` in repository methods
 - [ ] List queries use `WHERE id > :afterId ORDER BY id ASC LIMIT :limit`
 - [ ] Controller caps `limit` to a maximum (e.g., 100)
 {{- end}}
@@ -857,7 +854,7 @@ Before submitting any code, verify:
 - [ ] DTOs are Immutables in Model module
 {{- if .HasModule "SQLDatastore"}}
 - [ ] No `FOREIGN KEY` or `REFERENCES` in SQL migrations — indexed columns only
-- [ ] List queries use keyset pagination (`WHERE id > :afterId`), not `OFFSET`/`Pageable`
+- [ ] List queries use keyset pagination (`WHERE id > :afterId`), not `Pageable`
 {{- end}}
 
 ### Testing

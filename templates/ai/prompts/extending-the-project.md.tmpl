@@ -31,27 +31,31 @@ This guide covers common features that Trabuco does not generate but that you ca
 4. For OAuth2: Add `spring-boot-starter-oauth2-client`
 {{- end}}
 
-## Pagination
+## Pagination (Keyset)
+
+**Always use keyset pagination** — never `Pageable`. The client passes the last-seen ID (`afterId`) and a `limit`; the query uses `WHERE id > :afterId ORDER BY id ASC LIMIT :limit`, giving constant performance at any depth.
 {{- if and (.HasModule "API") (.HasModule "SQLDatastore")}}
 
-1. Add pagination parameters to repository methods in `SQLDatastore`:
+1. Add a keyset query method to the repository in `SQLDatastore`:
    ```java
-   List<PlaceholderRecord> findAll(int offset, int limit);
-   long count();
+   @Query("SELECT * FROM placeholder WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+   List<PlaceholderRecord> findPage(@Param("afterId") Long afterId, @Param("limit") int limit);
    ```
-2. Add `page` and `size` query parameters to controller endpoints in `API`:
+2. Add `afterId` and `limit` query parameters to controller endpoints in `API` (cap `limit`):
    ```java
    @GetMapping
-   public PageResponse<ImmutablePlaceholder> list(
-       @RequestParam(defaultValue = "0") int page,
-       @RequestParam(defaultValue = "20") int size) { ... }
+   public List<ImmutablePlaceholder> list(
+       @RequestParam(defaultValue = "0") Long afterId,
+       @RequestParam(defaultValue = "20") int limit) {
+       return service.findPage(afterId, Math.min(limit, 100));
+   }
    ```
-3. Create a `PageResponse<T>` DTO in `Model` with `content`, `page`, `size`, `totalElements`, `totalPages`
+3. Clients paginate by passing the last item's `id` as `afterId` on the next request (`afterId=0` returns the first page). See `{{.PromptsDir}}/add-endpoint.md` for the full pattern.
 {{- else}}
 
-1. Add pagination parameters to repository query methods (`offset`, `limit`)
-2. Add `page` and `size` query parameters to controller endpoints
-3. Create a `PageResponse<T>` DTO with `content`, `page`, `size`, `totalElements`, `totalPages`
+1. Add keyset query methods to repositories (`WHERE id > :afterId ORDER BY id ASC LIMIT :limit`)
+2. Add `afterId` and `limit` query parameters to controller endpoints; cap `limit` (e.g., 100)
+3. Clients paginate by passing the last item's `id` as `afterId` on the next request
 {{- end}}
 
 ## Caching with Redis

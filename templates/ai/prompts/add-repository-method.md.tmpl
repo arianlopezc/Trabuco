@@ -51,16 +51,14 @@ List<{EntityName}Record> findByStatusPaged(
     @Param("limit") int limit);
 ```
 
-#### WRONG -- Never Use Offset Pagination
+#### WRONG -- Never Use `Pageable`
 
 ```java
-// WRONG: Offset pagination degrades linearly with data growth
+// WRONG: Pageable performs offset-style scans that degrade linearly with data growth
 Page<{EntityName}Record> findAll(Pageable pageable);
-
-// WRONG: OFFSET skips rows by counting, O(n) on large tables
-@Query("SELECT * FROM {entity_table} ORDER BY id LIMIT :limit OFFSET :offset")
-List<{EntityName}Record> findPage(@Param("limit") int limit, @Param("offset") int offset);
 ```
+
+Always use keyset pagination (above) instead.
 
 #### Batch Operations
 
@@ -204,7 +202,7 @@ mvn test
 ## Checklist
 
 - [ ] Method added to repository interface
-- [ ] Uses keyset pagination (`WHERE id > :afterId`), not offset (`Pageable`/`OFFSET`)
+- [ ] Uses keyset pagination (`WHERE id > :afterId`), not `Pageable`
 - [ ] Custom `@Query` uses parameterized inputs (`:param`), not string concatenation
 - [ ] Index added for any new filtered/sorted column
 - [ ] Index migration uses correct version number (sequential, no gaps)

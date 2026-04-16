@@ -298,9 +298,7 @@ After starting the API:
 
 ## Pagination (Keyset / Cursor-Based)
 
-**Never use offset pagination** (`Pageable`, `OFFSET`). Use keyset pagination by ID — it performs consistently regardless of dataset size.
-
-The client passes the last-seen ID (`afterId`) and a page size (`limit`). The query uses `WHERE id > :afterId ORDER BY id ASC LIMIT :limit`.
+**Always use keyset pagination by ID.** Never use `Pageable`. Keyset pagination performs consistently regardless of dataset size — the client passes the last-seen ID (`afterId`) and a page size (`limit`), and the query uses `WHERE id > :afterId ORDER BY id ASC LIMIT :limit`.
 
 ### Repository
 
@@ -362,10 +360,6 @@ void should_ReturnPageOfEntities_When_AfterIdProvided() throws Exception {
 }
 ```
 
-### Why Keyset Over Offset
+### Why Keyset
 
-| Aspect | Offset (`OFFSET N`) | Keyset (`WHERE id > N`) |
-|--------|---------------------|------------------------|
-| Performance | Degrades linearly with offset | Constant — uses index seek |
-| Consistency | Skips/duplicates rows on concurrent inserts | Stable — cursor is immutable |
-| Complexity | Simple but misleading | Slightly more client logic |
+Keyset pagination uses an index seek, so performance stays constant regardless of how deep the client paginates. The cursor (`afterId`) is immutable, so concurrent inserts do not cause skipped or duplicated rows across pages.
