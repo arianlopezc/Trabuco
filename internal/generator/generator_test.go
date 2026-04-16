@@ -487,6 +487,90 @@ func TestGenerator_Generate_DatabaseSpecificContent(t *testing.T) {
 	}
 }
 
+func TestGenerator_Generate_GlobalExceptionHandler_DataIntegrity(t *testing.T) {
+	tests := []struct {
+		name             string
+		modules          []string
+		database         string
+		noSQLDatabase    string
+		shouldContain    bool
+	}{
+		{
+			name:          "SQLDatastore includes DataIntegrity handlers",
+			modules:       []string{"Model", "SQLDatastore", "API"},
+			database:      "postgresql",
+			shouldContain: true,
+		},
+		{
+			name:          "NoSQLDatastore includes DataIntegrity handlers",
+			modules:       []string{"Model", "NoSQLDatastore", "API"},
+			noSQLDatabase: "mongodb",
+			shouldContain: true,
+		},
+		{
+			name:          "API-only omits DataIntegrity handlers",
+			modules:       []string{"Model", "API"},
+			shouldContain: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tempDir)
+
+			oldWd, _ := os.Getwd()
+			os.Chdir(tempDir)
+			defer os.Chdir(oldWd)
+
+			cfg := &config.ProjectConfig{
+				ProjectName:   "integrity-test",
+				GroupID:       "com.test",
+				ArtifactID:    "integrity-test",
+				JavaVersion:   "21",
+				Modules:       tt.modules,
+				Database:      tt.database,
+				NoSQLDatabase: tt.noSQLDatabase,
+			}
+
+			gen, err := New(cfg)
+			if err != nil {
+				t.Fatalf("Failed to create generator: %v", err)
+			}
+
+			if err := gen.Generate(); err != nil {
+				t.Fatalf("Failed to generate project: %v", err)
+			}
+
+			handlerPath := filepath.Join("integrity-test", "API", "src", "main", "java",
+				"com", "test", "api", "config", "GlobalExceptionHandler.java")
+			data, err := os.ReadFile(handlerPath)
+			if err != nil {
+				t.Fatalf("Failed to read GlobalExceptionHandler.java: %v", err)
+			}
+			src := string(data)
+
+			markers := []string{
+				"DataIntegrityViolationException",
+				"DuplicateKeyException",
+				"HttpStatus.CONFLICT",
+			}
+			for _, m := range markers {
+				present := contains(src, m)
+				if tt.shouldContain && !present {
+					t.Errorf("expected GlobalExceptionHandler to contain %q", m)
+				}
+				if !tt.shouldContain && present {
+					t.Errorf("expected GlobalExceptionHandler to NOT contain %q", m)
+				}
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
 }

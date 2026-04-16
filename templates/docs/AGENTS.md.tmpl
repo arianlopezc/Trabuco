@@ -94,6 +94,23 @@ Never import from API in Worker/EventConsumer or vice versa.
 - **Pagination**: Keyset by ID (`WHERE id > :afterId ORDER BY id ASC LIMIT :limit`), never offset/`Pageable`
 - **No foreign keys**: Parent IDs are indexed columns only — no `REFERENCES`, no `ON DELETE CASCADE`
 {{- end}}
+{{- if .HasModule "API"}}
+
+## Exception Handling (HTTP paths)
+
+`GlobalExceptionHandler` (`@RestControllerAdvice`) translates thrown exceptions to HTTP responses. Throw, don't catch-to-translate:
+
+- `IllegalArgumentException` → 400
+- `ResponseStatusException(HttpStatus.NOT_FOUND, …)` → 404 (use `Optional.orElseThrow(...)`)
+- `@Valid` / `@Validated` failures → 400 (automatic)
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+- `DuplicateKeyException` / `DataIntegrityViolationException` → 409 (let them bubble)
+{{- end}}
+
+`try/catch` in a controller or HTTP service that only rethrows or sets a status is redundant — delete it.
+
+**Scope:** HTTP paths only. Event listeners, JobRunr handlers, and scheduled jobs must catch-log-rethrow themselves (to trigger retry/DLQ). Full reference: `.ai/prompts/JAVA_CODE_QUALITY.md` §4.1.1.
+{{- end}}
 
 ## Testing
 

@@ -76,6 +76,23 @@ public User createUser(CreateUserRequest request) {
 - EventConsumer -> Model, Shared
 
 Never import from API in Worker/EventConsumer or vice versa.
+{{- if .HasModule "API"}}
+
+## Exception Handling (HTTP paths)
+
+`GlobalExceptionHandler` (`@RestControllerAdvice`) maps thrown exceptions to HTTP responses. Throw, don't catch-to-translate:
+
+- `IllegalArgumentException` → 400
+- `ResponseStatusException(HttpStatus.NOT_FOUND, …)` → 404 (prefer `Optional.orElseThrow(...)`)
+- `@Valid` / `@Validated` failures → 400 (automatic)
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+- `DuplicateKeyException` / `DataIntegrityViolationException` → 409 (let them bubble from the repository)
+{{- end}}
+
+A `try/catch` in a controller or HTTP-facing service that only rethrows or returns an HTTP status is redundant — delete it.
+
+Scope is HTTP-only. Event listeners, JobRunr handlers, and `@Scheduled` jobs must catch-log-rethrow themselves. Full reference: `.ai/prompts/JAVA_CODE_QUALITY.md` §4.1.1.
+{{- end}}
 
 ## Testing
 

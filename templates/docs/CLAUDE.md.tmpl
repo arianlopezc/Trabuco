@@ -198,7 +198,9 @@ public Placeholder create(PlaceholderRequest request) {  // interface type
 
 ## Exception Handling
 
-`GlobalExceptionHandler` handles all common exceptions — do not add try-catch in controllers.
+`GlobalExceptionHandler` (`@RestControllerAdvice`) translates thrown exceptions on HTTP paths. Throw, don't catch-to-translate: `IllegalArgumentException` → 400, `ResponseStatusException(HttpStatus.NOT_FOUND, …)` → 404, `@Valid` failures → 400 (automatic){{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, `DuplicateKeyException`/`DataIntegrityViolationException` → 409{{- end}}. A `try/catch` in a controller or HTTP service that only rethrows or sets a status is redundant — delete it.
+
+Scope is HTTP-only; listeners, job handlers, and scheduled jobs catch-log-rethrow themselves. Full reference: `.ai/prompts/JAVA_CODE_QUALITY.md` §4.1.1.
 {{- end}}
 
 ## Configuration

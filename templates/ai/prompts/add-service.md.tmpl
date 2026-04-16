@@ -245,6 +245,9 @@ mvn test
 - **Using `@Autowired` field injection** — ArchUnit will reject it; use constructor injection
 - **Returning Record types from services** — use Immutables (`ImmutableX`)
 - **Swallowing exceptions in catch blocks** — always log or rethrow with context
+{{- if .HasModule "API"}}
+- **`try/catch` to translate status codes in HTTP-facing services** — throw (`IllegalArgumentException`, `ResponseStatusException`, `Optional.orElseThrow(...)`) and let `GlobalExceptionHandler` map the status. See `JAVA_CODE_QUALITY.md` §4.1.1 for the full list. Services called only from listeners/job handlers follow the listener's error-handling rules instead.
+{{- end}}
 - **Logging sensitive data** — never log passwords, tokens, PII (emails, SSNs)
 - **Missing circuit breaker on external calls** — all external service/HTTP calls need `@CircuitBreaker`
 - **Testing implementation details instead of behavior** — test through public methods

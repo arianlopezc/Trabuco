@@ -158,6 +158,8 @@ public void publish({Entity}{Action}Event event) {
 
 ### 4. Create Event Listener
 
+**Error-handling scope:** event listeners run OUTSIDE `GlobalExceptionHandler`. The `try { … } catch (Exception e) { log.error(…); throw e; }` pattern below is required — catching to add context and rethrowing is what triggers broker retry / DLQ routing. Do not remove it citing `JAVA_CODE_QUALITY.md` §4.1.1; that section's no-redundant-try/catch rule applies only to HTTP paths.
+
 **File**: `EventConsumer/src/main/java/{{.PackagePath}}/eventconsumer/listener/{Entity}EventListener.java`
 
 {{- if .UsesKafka}}

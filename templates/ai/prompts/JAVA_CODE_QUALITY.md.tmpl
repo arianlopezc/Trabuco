@@ -509,6 +509,42 @@ try {
 - [ ] No empty catch blocks
 - [ ] Exception messages include relevant context (IDs, parameters)
 - [ ] Not catching exceptions handled by GlobalExceptionHandler
+{{- if .HasModule "API"}}
+
+### 4.1.1 Handled exceptions reference (HTTP paths only)
+
+**Scope:** `GlobalExceptionHandler` is `@RestControllerAdvice` — it only applies to code reachable from `@RestController` (controllers and the services they call during an HTTP request). It does NOT cover event listeners, JobRunr job handlers, `@Scheduled` jobs, or AI agent tools — those must handle their own exceptions (catch-log-rethrow so the framework triggers retry/DLQ).
+
+On HTTP paths, **throw; do not catch to translate status codes**. The handler maps:
+
+| Throw this | Response | Notes |
+|---|---|---|
+| `MethodArgumentNotValidException` / `ConstraintViolationException` | 400 | Automatic from `@Valid` / `@Validated` — never hand-validate to return 400 |
+| `HttpMessageNotReadableException` | 400 | Malformed JSON — do not pre-parse to catch this |
+| `MissingServletRequestParameterException` / `MethodArgumentTypeMismatchException` | 400 | Missing or wrong-typed query/path params |
+| `IllegalArgumentException` | 400 | Use for invariant violations with a user-safe message |
+| `NoResourceFoundException` | 404 | Spring raises this automatically |
+| `ResponseStatusException(HttpStatus.NOT_FOUND, reason)` | 404 | Throw from services when an entity is missing — typically via `Optional.orElseThrow(...)` |
+| `ResponseStatusException(status, reason)` | dynamic | Use when you need a status code without a dedicated exception |
+| `HttpRequestMethodNotSupportedException` | 405 | Automatic |
+| `HttpMediaTypeNotSupportedException` | 415 | Automatic |
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+| `DuplicateKeyException` | 409 | Unique-constraint violations from Spring Data — let them bubble |
+| `DataIntegrityViolationException` | 409 | Foreign-key, check, not-null — let them bubble |
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+{{- if .UsesKafka}}
+| `KafkaException` | 503 | Broker unreachable |
+{{- else if .UsesRabbitMQ}}
+| `AmqpException` | 503 | Broker unreachable |
+{{- end}}
+{{- end}}
+| anything else | 500 | Sanitized message; full trace logged server-side |
+
+**Rule:** a `try/catch` in a controller or HTTP-facing service that only rethrows a different exception or builds a `ResponseEntity` with an error status is redundant — delete it.
+
+**Counter-case:** listeners, job handlers, and scheduled jobs run outside this scope. Catching `Exception` there to log context and rethrow is **expected** (the broker / JobRunr uses the rethrow to trigger retry or DLQ).
+{{- end}}
 
 ### 4.2 Validation
 

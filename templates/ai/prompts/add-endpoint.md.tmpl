@@ -293,7 +293,7 @@ After starting the API:
 - **Missing `@Valid`**: Required for validation annotations to work
 - **Wrong HTTP methods**: POST for create, PUT for full update, PATCH for partial
 - **Exposing entities directly**: Always use Response DTOs, never return entities
-- **Manual exception handling**: Let `GlobalExceptionHandler` handle common cases
+- **Manual exception handling**: Throw (`IllegalArgumentException`, `ResponseStatusException`, `Optional.orElseThrow(...)`) and let `GlobalExceptionHandler` map to status codes. A `try/catch` that only rethrows or sets a status is redundant — delete it. Full reference: `JAVA_CODE_QUALITY.md` §4.1.1.
 - **Hardcoded paths**: Use `@PathVariable` and `@RequestParam` appropriately
 
 ## Pagination (Keyset / Cursor-Based)

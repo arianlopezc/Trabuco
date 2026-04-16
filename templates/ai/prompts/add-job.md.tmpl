@@ -290,6 +290,7 @@ mvn test
 - **Missing `@Component`**: Handler won't be found by Spring
 - **Blocking operations without timeout**: Add timeouts to external calls
 - **Large payloads in request**: Keep request data minimal, fetch details in handler
+- **Deleting the handler's `try/catch` citing §4.1.1**: JobRunr handlers run outside `GlobalExceptionHandler`'s scope. Catch-log-rethrow is required so JobRunr can trigger retries — the no-redundant-try/catch rule in `JAVA_CODE_QUALITY.md` §4.1.1 applies only to HTTP paths.
 
 ## Recurring Jobs
 

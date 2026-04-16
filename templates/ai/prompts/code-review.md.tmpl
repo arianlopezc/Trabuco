@@ -128,6 +128,14 @@ EventConsumer   → Model, Shared, Events
 | Null safety | `Objects.requireNonNull` in constructors | Scattered null checks |
 | Empty blocks | Log or handle meaningfully | `catch (E e) { }` |
 | Rethrow | Wrap with context | Swallow or log-and-continue |
+{{- if .HasModule "API"}}
+| HTTP translation | Throw; let `GlobalExceptionHandler` map to status | `try/catch` in controller/service that rethrows or sets a status |
+{{- end}}
+
+{{- if .HasModule "API"}}
+
+**Redundant-try-catch rule:** in a `@RestController` or a service called from one, any `try/catch` whose only effect is to rethrow a different exception or build a `ResponseEntity` with an error status must be deleted — `GlobalExceptionHandler` already covers the cases enumerated in `JAVA_CODE_QUALITY.md` §4.1.1. This rule does NOT apply to event listeners, JobRunr handlers, or `@Scheduled` jobs — those catch-log-rethrow to trigger retry/DLQ.
+{{- end}}
 
 ### G. Test Quality
 

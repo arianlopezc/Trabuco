@@ -19,6 +19,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
+{{- end}}
 {{- if .HasModule "EventConsumer"}}
 {{- if .UsesKafka}}
 import org.apache.kafka.common.KafkaException;
@@ -199,6 +203,43 @@ public class GlobalExceptionHandler {
         .message(ex.getMessage())
         .build());
   }
+
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+  /**
+   * Handle unique-constraint violations (subclass of DataIntegrityViolationException).
+   * SECURITY: the root-cause message may contain table/column names and is logged only.
+   */
+  @ExceptionHandler(DuplicateKeyException.class)
+  public ResponseEntity<ErrorResponse> handleDuplicateKey(DuplicateKeyException ex) {
+    logger.warn("Duplicate key violation: {}", ex.getMostSpecificCause().getMessage());
+
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.CONFLICT.value())
+        .error("Conflict")
+        .message("A resource with the provided value already exists")
+        .build());
+  }
+
+  /**
+   * Handle remaining data-integrity violations (foreign key, check, not-null, etc.).
+   * SECURITY: the root-cause message may contain schema details and is logged only.
+   */
+  @ExceptionHandler(DataIntegrityViolationException.class)
+  public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+    logger.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+      .body(ErrorResponse.builder()
+        .timestamp(Instant.now())
+        .status(HttpStatus.CONFLICT.value())
+        .error("Conflict")
+        .message("The request violates a data integrity constraint")
+        .build());
+  }
+{{- end}}
 
 {{- if .HasModule "EventConsumer"}}
 {{- if .UsesKafka}}
