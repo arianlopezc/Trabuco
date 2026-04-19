@@ -11,6 +11,25 @@ Create a new domain entity with all required layers: entity definition, reposito
 - Docker running (for repository tests with Testcontainers)
 {{- end}}
 
+## Denormalization — decide before writing the entity
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+Before defining the entity, decide which patterns apply. Trade write amplification for flat, fast reads. Full reference: `{{.PromptsDir}}/JAVA_CODE_QUALITY.md` §5.5.
+
+- **Snapshot hot fields.** If you'll display `{EntityName}.relatedUserEmail` on every list screen, store a `relatedUserEmailSnapshot` column/field directly on the entity — don't look it up every read. Sync via event handler when the source changes.
+- **Materialize aggregates.** If you'll show `commentCount` / `totalCents` / `childCount` frequently, store it as a column/field and increment on the write path. Avoid `SELECT COUNT(*)` on every read.
+- **Embed bounded 1-to-few.** If the entity has a small bounded list always read together (tags, status history, small settings), prefer an embedded field:
+{{- if .HasModule "SQLDatastore"}}
+  - PostgreSQL: use `jsonb` column for bounded JSON arrays; index with `GIN` if queried.
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+  - MongoDB: native subdocuments (`List<NestedDoc>` inside the document).
+{{- end}}
+- **Never use foreign keys.** Trabuco forbids `REFERENCES` / `ON DELETE CASCADE`. Parent IDs are regular indexed columns. Referential integrity belongs in the service layer.
+
+Document each denormalization decision (why it was made, how it stays in sync) in a code comment on the field. A reviewer must be able to find the write path that maintains the invariant.
+{{- end}}
+
 ## Steps
 
 ### 1. Create the Entity Interface

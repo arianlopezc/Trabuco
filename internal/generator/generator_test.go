@@ -571,6 +571,130 @@ func TestGenerator_Generate_GlobalExceptionHandler_DataIntegrity(t *testing.T) {
 	}
 }
 
+func TestGenerator_Generate_DatastorePerformancePatterns(t *testing.T) {
+	tests := []struct {
+		name          string
+		modules       []string
+		database      string
+		noSQLDatabase string
+		checks        map[string][]string // relative path -> required substrings
+	}{
+		{
+			name:     "SQL repo exposes batch + drain + bounded-update methods",
+			modules:  []string{"Model", "SQLDatastore", "Shared"},
+			database: "postgresql",
+			checks: map[string][]string{
+				"perf-test/SQLDatastore/src/main/java/com/test/sqldatastore/repository/PlaceholderRepository.java": {
+					"findAllByIdIn",
+					"findPage",
+					"updateDescriptionBatchWithLimit",
+					"FOR UPDATE SKIP LOCKED",
+				},
+				"perf-test/Shared/src/main/java/com/test/shared/service/PlaceholderService.java": {
+					"DEFAULT_IN_CHUNK_SIZE",
+					"processAllBatched",
+					"findByIds",
+					"chunked",
+				},
+			},
+		},
+		{
+			name:     "MySQL uses ORDER BY LIMIT form (no FOR UPDATE SKIP LOCKED)",
+			modules:  []string{"Model", "SQLDatastore", "Shared"},
+			database: "mysql",
+			checks: map[string][]string{
+				"perf-test/SQLDatastore/src/main/java/com/test/sqldatastore/repository/PlaceholderRepository.java": {
+					"updateDescriptionBatchWithLimit",
+					"ORDER BY id",
+					"LIMIT :limit",
+				},
+			},
+		},
+		{
+			name:          "Mongo repo exposes findAllByIdIn + keyset method",
+			modules:       []string{"Model", "NoSQLDatastore", "Shared"},
+			noSQLDatabase: "mongodb",
+			checks: map[string][]string{
+				"perf-test/NoSQLDatastore/src/main/java/com/test/nosqldatastore/repository/PlaceholderDocumentRepository.java": {
+					"findAllByIdIn",
+					"findByIdGreaterThanOrderByIdAsc",
+					"Limit limit",
+				},
+				"perf-test/Shared/src/main/java/com/test/shared/service/PlaceholderService.java": {
+					"processAllBatched",
+					"findByIds",
+					"chunked",
+				},
+			},
+		},
+		{
+			name:     "JAVA_CODE_QUALITY.md ships §5.5 when a datastore is selected",
+			modules:  []string{"Model", "SQLDatastore", "API"},
+			database: "postgresql",
+			checks: map[string][]string{
+				"perf-test/.ai/prompts/JAVA_CODE_QUALITY.md": {
+					"### 5.5 Datastore Performance",
+					"Keyset Drain Loop",
+					"chunked",
+					"ESR",
+				},
+				"perf-test/AGENTS.md": {
+					"Keyset Drain Loop",
+				},
+				"perf-test/CLAUDE.md": {
+					"findAllByIdIn",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tempDir)
+
+			oldWd, _ := os.Getwd()
+			os.Chdir(tempDir)
+			defer os.Chdir(oldWd)
+
+			cfg := &config.ProjectConfig{
+				ProjectName:     "perf-test",
+				GroupID:         "com.test",
+				ArtifactID:      "perf-test",
+				JavaVersion:     "21",
+				Modules:         tt.modules,
+				Database:        tt.database,
+				NoSQLDatabase:   tt.noSQLDatabase,
+				IncludeCLAUDEMD: true,
+			}
+
+			gen, err := New(cfg)
+			if err != nil {
+				t.Fatalf("Failed to create generator: %v", err)
+			}
+			if err := gen.Generate(); err != nil {
+				t.Fatalf("Failed to generate project: %v", err)
+			}
+
+			for path, needles := range tt.checks {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatalf("Failed to read %s: %v", path, err)
+				}
+				src := string(data)
+				for _, needle := range needles {
+					if !contains(src, needle) {
+						t.Errorf("%s: expected substring %q not found", path, needle)
+					}
+				}
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
 }

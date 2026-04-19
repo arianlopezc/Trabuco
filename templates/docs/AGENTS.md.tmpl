@@ -94,6 +94,13 @@ Never import from API in Worker/EventConsumer or vice versa.
 - **Pagination**: Keyset by ID (`WHERE id > :afterId ORDER BY id ASC LIMIT :limit`), never offset/`Pageable`
 - **No foreign keys**: Parent IDs are indexed columns only — no `REFERENCES`, no `ON DELETE CASCADE`
 {{- end}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+- **Batch reads**: `findAllByIdIn` / `findAllById` / `multiGet` — never loop `findById`; chunk ID lists at ≤1000
+- **Bounded bulk writes**: `UPDATE`/`DELETE` with `LIMIT` + drain loop — never unbounded
+- **Keyset Drain Loop** for processing large result sets with bounded memory
+- **Denormalize**: snapshot hot fields, materialize aggregates, embed 1-to-few — document sync path
+- Full reference: `.ai/prompts/JAVA_CODE_QUALITY.md` §5.5
+{{- end}}
 {{- if .HasModule "API"}}
 
 ## Exception Handling (HTTP paths)

@@ -192,6 +192,71 @@ public List<Immutable{EntityName}> findByStatus(String status) {
 }
 ```
 {{- end}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+### 3.1 Bulk Orchestration — batch at service boundaries
+
+Services that fetch related entities or process many rows must batch. Full reference: `{{.PromptsDir}}/JAVA_CODE_QUALITY.md` §5.5.
+
+**Batch reads via `IN`** — never loop `findById`:
+
+```java
+// CORRECT — chunk at 1000, single round trip per chunk
+public List<Immutable{EntityName}> findByIds(List<Long> ids) {
+    if (ids.isEmpty()) return List.of();
+    List<Immutable{EntityName}> out = new ArrayList<>(ids.size());
+    for (List<Long> chunk : chunked(ids, 1000)) {
+        repository.findAllByIdIn(chunk).forEach(r -> out.add({EntityName}Record.toEntity(r)));
+    }
+    return out;
+}
+```
+
+**Drain large result sets with a Keyset Drain Loop** — bounded memory, terminates on short page:
+
+```java
+public int processAllBatched(Consumer<Immutable{EntityName}> action) {
+    final int BATCH = 500;
+    long afterId = 0L;
+    int processed = 0;
+    while (true) {
+        List<{EntityName}Record> page = repository.findPage(afterId, BATCH);
+        if (page.isEmpty()) break;
+        page.forEach(r -> action.accept({EntityName}Record.toEntity(r)));
+        afterId = page.get(page.size() - 1).id();
+        processed += page.size();
+        if (page.size() < BATCH) break;
+    }
+    return processed;
+}
+```
+
+**Bulk UPDATE/DELETE** — call the repo's `LIMIT`-bounded method in a loop until it returns 0 (see `add-repository-method.md`).
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+
+**MongoDB bulk writes** — inject `MongoTemplate` and use `bulkOps`:
+
+```java
+public BulkWriteResult insertMany(List<{EntityName}Document> docs) {
+    if (docs.isEmpty()) return BulkWriteResult.unacknowledged();
+    BulkOperations bulk = mongoTemplate.bulkOps(BulkMode.UNORDERED, {EntityName}Document.class);
+    bulk.insert(docs);
+    return bulk.execute();
+}
+```
+{{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+
+**Redis bulk reads** — inject `StringRedisTemplate` and use `multiGet`:
+
+```java
+public List<String> mgetByKeys(List<String> keys) {
+    if (keys.isEmpty()) return List.of();
+    return stringRedisTemplate.opsForValue().multiGet(keys);
+}
+```
+{{- end}}
+{{- end}}
 {{- if .HasModule "EventConsumer"}}
 
 ### 4. Publishing Events

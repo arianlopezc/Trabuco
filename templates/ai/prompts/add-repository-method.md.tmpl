@@ -60,17 +60,74 @@ Page<{EntityName}Record> findAll(Pageable pageable);
 
 Always use keyset pagination (above) instead.
 
-#### Batch Operations
+#### Batch Read — `IN (:ids)` to kill N+1
 
 ```java
+@Query("SELECT * FROM {entity_table} WHERE id IN (:ids)")
+List<{EntityName}Record> findAllByIdIn(@Param("ids") Collection<Long> ids);
+```
+
+Use this instead of a loop of `findById`. Chunk the ID list at 1000 per call in the service layer (Postgres caps at ~65K bind parameters). See `JAVA_CODE_QUALITY.md` §5.5.
+
+#### Bounded bulk UPDATE / DELETE — always pair with `LIMIT`
+
+```java
+// WRONG — locks every matching row until commit; breaks replicas on large match sets
 @Modifying
 @Query("UPDATE {entity_table} SET status = :newStatus WHERE status = :oldStatus")
 int updateStatusBatch(@Param("oldStatus") String oldStatus, @Param("newStatus") String newStatus);
 
+// CORRECT — locks only :limit rows per call; run inside a drain loop
 @Modifying
-@Query("DELETE FROM {entity_table} WHERE status = :status AND created_at < :before")
-int deleteOlderThan(@Param("status") String status, @Param("before") Instant before);
+{{- if eq .Database "postgresql"}}
+@Query("""
+    UPDATE {entity_table} SET status = :newStatus
+    WHERE id IN (
+      SELECT id FROM {entity_table}
+      WHERE status = :oldStatus
+      ORDER BY id
+      LIMIT :limit
+      FOR UPDATE SKIP LOCKED
+    )
+    """)
+{{- else}}
+@Query("""
+    UPDATE {entity_table} SET status = :newStatus
+    WHERE status = :oldStatus
+    ORDER BY id
+    LIMIT :limit
+    """)
+{{- end}}
+int updateStatusBatchWithLimit(@Param("oldStatus") String oldStatus,
+                               @Param("newStatus") String newStatus,
+                               @Param("limit") int limit);
 ```
+
+Service-layer drain loop:
+
+```java
+int total = 0;
+while (true) {
+    int updated = repository.updateStatusBatchWithLimit(oldStatus, newStatus, 500);
+    total += updated;
+    if (updated < 500) break;   // no more rows to update
+}
+```
+
+#### Keyset Drain Loop — process large result sets with bounded memory
+
+```java
+long afterId = 0L;
+while (true) {
+    List<{EntityName}Record> page = repository.findPage(afterId, 500);
+    if (page.isEmpty()) break;
+    page.forEach(processor::process);
+    afterId = page.get(page.size() - 1).id();
+    if (page.size() < 500) break;  // last page
+}
+```
+
+O(constant) memory regardless of total rows; each batch is O(log N) via the primary-key index.
 
 **Replace placeholders:**
 - `{EntityName}` -> Actual entity name (PascalCase, e.g., `Product`)
@@ -204,8 +261,10 @@ mvn test
 - [ ] Method added to repository interface
 - [ ] Uses keyset pagination (`WHERE id > :afterId`), not `Pageable`
 - [ ] Custom `@Query` uses parameterized inputs (`:param`), not string concatenation
-- [ ] Index added for any new filtered/sorted column
+- [ ] Index added for any new filtered/sorted column (ESR rule for composites: Equality, Sort, Range)
 - [ ] Index migration uses correct version number (sequential, no gaps)
+- [ ] Batch-read methods use `IN (:ids)`; callers chunk IDs at 1000
+- [ ] Bulk `UPDATE` / `DELETE` paired with `LIMIT` and run in a drain loop
 - [ ] Integration test written with Testcontainers
 - [ ] Tests cover: expected results, empty results, pagination
 - [ ] Code compiles (`mvn clean compile`)
@@ -217,5 +276,8 @@ mvn test
 - **Missing index for filtered columns** — causes full table scans; always index WHERE/JOIN columns
 - **`@Query` without parameterized inputs** — SQL injection risk; always use `@Param`
 - **`SELECT *` when only a few columns needed** — wastes memory on wide tables
+- **Looping `findById` instead of `findAllByIdIn`** — N round trips where 1 would do; kills performance as parent set grows
+- **Unbounded `UPDATE` / `DELETE`** — holds row locks for the entire match set, stalls readers, breaks replication; pair with `LIMIT` + drain loop
+- **`IN (:ids)` with an unchunked list** — Postgres caps at ~65K bind params; chunk at 1000 in the service layer
 - **Not testing with Testcontainers** — SQL syntax differs between H2 and PostgreSQL/MySQL
 - **Modifying existing migration files** — Flyway checksums will fail; create a new migration

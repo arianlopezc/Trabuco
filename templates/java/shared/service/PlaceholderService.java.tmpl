@@ -8,11 +8,20 @@ import {{.GroupID}}.sqldatastore.repository.PlaceholderRepository;
 {{- else if .HasModule "NoSQLDatastore"}}
 import {{.GroupID}}.model.entities.PlaceholderDocument;
 import {{.GroupID}}.nosqldatastore.repository.PlaceholderDocumentRepository;
+{{- if eq .NoSQLDatabase "mongodb"}}
+import org.springframework.data.domain.Limit;
+{{- end}}
 {{- end}}
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.time.Instant;
+{{- if or (.HasModule "SQLDatastore") (and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb"))}}
+import java.util.ArrayList;
+{{- end}}
 import java.util.List;
 import java.util.Optional;
+{{- if or (.HasModule "SQLDatastore") (and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb"))}}
+import java.util.function.Consumer;
+{{- end}}
 import java.util.stream.StreamSupport;
 import org.springframework.stereotype.Service;
 
@@ -31,6 +40,12 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class PlaceholderService {
+
+  /** Chunk size cap when passing IDs to an IN/$in query — stays under driver/server limits. */
+  private static final int DEFAULT_IN_CHUNK_SIZE = 1000;
+
+  /** Default batch size for the Keyset Drain Loop (see JAVA_CODE_QUALITY.md §5.5). */
+  private static final int DEFAULT_DRAIN_BATCH = 500;
 
 {{- if .HasModule "SQLDatastore"}}
   private final PlaceholderRepository repository;
@@ -110,6 +125,50 @@ public class PlaceholderService {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Fetch many placeholders by ID in one or few round trips.
+   * Replaces N+1 loops of {@code findById}. Chunks the input at DEFAULT_IN_CHUNK_SIZE.
+   * See JAVA_CODE_QUALITY.md §5.5.
+   */
+  @CircuitBreaker(name = "default")
+  public List<ImmutablePlaceholder> findByIds(List<Long> ids) {
+    if (ids.isEmpty()) return List.of();
+    List<ImmutablePlaceholder> out = new ArrayList<>(ids.size());
+    for (List<Long> chunk : chunked(ids, DEFAULT_IN_CHUNK_SIZE)) {
+      repository.findAllByIdIn(chunk).forEach(r -> out.add(toImmutable(r)));
+    }
+    return out;
+  }
+
+  /**
+   * Keyset Drain Loop — process every placeholder in bounded-memory batches.
+   * Terminates when the fetched page is shorter than the batch size.
+   * See JAVA_CODE_QUALITY.md §5.5.
+   */
+  public int processAllBatched(Consumer<ImmutablePlaceholder> action) {
+    long afterId = 0L;
+    int processed = 0;
+    while (true) {
+      List<PlaceholderRecord> page = repository.findPage(afterId, DEFAULT_DRAIN_BATCH);
+      if (page.isEmpty()) break;
+      page.forEach(r -> action.accept(toImmutable(r)));
+      afterId = page.get(page.size() - 1).id();
+      processed += page.size();
+      if (page.size() < DEFAULT_DRAIN_BATCH) break;
+    }
+    return processed;
+  }
+
+  private ImmutablePlaceholder toImmutable(PlaceholderRecord record) {
+    return ImmutablePlaceholder.builder()
+      .id(record.id())
+      .name(record.name())
+      .description(record.description())
+      .createdAt(record.createdAt())
+      .updatedAt(record.updatedAt())
+      .build();
   }
 {{- else if .HasModule "NoSQLDatastore"}}
   private final PlaceholderDocumentRepository repository;
@@ -195,6 +254,53 @@ public class PlaceholderService {
     }
     return false;
   }
+{{- if eq .NoSQLDatabase "mongodb"}}
+
+  /**
+   * Fetch many placeholders by document ID in one or few round trips.
+   * Replaces N+1 loops of {@code findById}. Chunks the input at DEFAULT_IN_CHUNK_SIZE.
+   * See JAVA_CODE_QUALITY.md §5.5.
+   */
+  @CircuitBreaker(name = "default")
+  public List<ImmutablePlaceholder> findByIds(List<String> ids) {
+    if (ids.isEmpty()) return List.of();
+    List<ImmutablePlaceholder> out = new ArrayList<>(ids.size());
+    for (List<String> chunk : chunked(ids, DEFAULT_IN_CHUNK_SIZE)) {
+      repository.findAllByIdIn(chunk).forEach(d -> out.add(toImmutable(d)));
+    }
+    return out;
+  }
+
+  /**
+   * Keyset Drain Loop — process every document in bounded-memory batches.
+   * Terminates when the fetched page is shorter than the batch size.
+   * See JAVA_CODE_QUALITY.md §5.5.
+   */
+  public int processAllBatched(Consumer<ImmutablePlaceholder> action) {
+    String afterId = "";
+    int processed = 0;
+    while (true) {
+      List<PlaceholderDocument> page =
+          repository.findByIdGreaterThanOrderByIdAsc(afterId, Limit.of(DEFAULT_DRAIN_BATCH));
+      if (page.isEmpty()) break;
+      page.forEach(d -> action.accept(toImmutable(d)));
+      afterId = page.get(page.size() - 1).id();
+      processed += page.size();
+      if (page.size() < DEFAULT_DRAIN_BATCH) break;
+    }
+    return processed;
+  }
+
+  private ImmutablePlaceholder toImmutable(PlaceholderDocument doc) {
+    return ImmutablePlaceholder.builder()
+      .documentId(doc.id())
+      .name(doc.name())
+      .description(doc.description())
+      .createdAt(doc.createdAt())
+      .updatedAt(doc.updatedAt())
+      .build();
+  }
+{{- end}}
 {{- else}}
   // TODO: No datastore module included.
   // Add SQLDatastore or NoSQLDatastore module for data persistence.
@@ -217,6 +323,17 @@ public class PlaceholderService {
 
   public boolean delete(Long id) {
     throw new UnsupportedOperationException("Datastore module required");
+  }
+{{- end}}
+{{- if or (.HasModule "SQLDatastore") (and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb"))}}
+
+  /** Split a list into fixed-size chunks. Used to cap IN/$in parameter counts. */
+  private static <T> List<List<T>> chunked(List<T> list, int size) {
+    List<List<T>> out = new ArrayList<>();
+    for (int i = 0; i < list.size(); i += size) {
+      out.add(list.subList(i, Math.min(i + size, list.size())));
+    }
+    return out;
   }
 {{- end}}
 }

@@ -2,6 +2,9 @@ package {{.GroupID}}.nosqldatastore.repository;
 
 import {{.GroupID}}.model.entities.PlaceholderDocument;
 {{- if eq .NoSQLDatabase "mongodb"}}
+import java.util.Collection;
+import java.util.List;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.mongodb.repository.MongoRepository;
 {{- else if eq .NoSQLDatabase "redis"}}
 import org.springframework.data.repository.CrudRepository;
@@ -15,9 +18,19 @@ import org.springframework.stereotype.Repository;
 {{- if eq .NoSQLDatabase "mongodb"}}
  * <p>Uses Spring Data MongoDB for document storage.
  * MongoDB stores documents as BSON (binary JSON).
+ *
+ * <p>Performance patterns demonstrated below (see JAVA_CODE_QUALITY.md §5.5):
+ * - findAllByIdIn: batch read via $in — replaces N+1 loops of findById
+ * - findByIdGreaterThanOrderByIdAsc: keyset drain — pass {@code afterId = ""}
+ *   for the first page, then the last document's id. Terminate when the returned
+ *   list is shorter than the limit.
 {{- else if eq .NoSQLDatabase "redis"}}
  * Uses Spring Data Redis for key-value storage.
  * Redis stores data with @RedisHash annotation.
+ *
+ * <p>Note: for true bulk operations (MGET, pipelined writes), drop to
+ * {@code StringRedisTemplate} in the service layer — the repository interface
+ * issues one command per call. See PlaceholderService for examples.
 {{- end}}
  *
  * <p>Replace this with your actual repositories.
@@ -25,10 +38,28 @@ import org.springframework.stereotype.Repository;
 @Repository
 {{- if eq .NoSQLDatabase "mongodb"}}
 public interface PlaceholderDocumentRepository extends MongoRepository<PlaceholderDocument, String> {
+
+  /** Find a document by name. */
+  Optional<PlaceholderDocument> findByName(String name);
+
+  /**
+   * Batch read by IDs — replaces a loop of {@code findById} calls.
+   * Chunk the input list at 1000 per call (see PlaceholderService).
+   */
+  List<PlaceholderDocument> findAllByIdIn(Collection<String> ids);
+
+  /**
+   * Keyset page — constant cost regardless of depth.
+   * Pass {@code afterId = ""} (empty string sorts first) for the first page,
+   * then the last document's id for each subsequent call.
+   * Terminate the drain loop when the returned list is shorter than the limit.
+   */
+  List<PlaceholderDocument> findByIdGreaterThanOrderByIdAsc(String afterId, Limit limit);
+}
 {{- else if eq .NoSQLDatabase "redis"}}
 public interface PlaceholderDocumentRepository extends CrudRepository<PlaceholderDocument, String> {
-{{- end}}
 
   /** Find a document by name. */
   Optional<PlaceholderDocument> findByName(String name);
 }
+{{- end}}

@@ -674,6 +674,235 @@ List<UserRecord> findPage(@Param("afterId") Long afterId, @Param("limit") int li
 - [ ] List queries use `WHERE id > :afterId ORDER BY id ASC LIMIT :limit`
 - [ ] Controller caps `limit` to a maximum (e.g., 100)
 {{- end}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+### 5.5 Datastore Performance
+
+**Principles** — apply to every datastore:
+
+1. **Round trips dominate latency.** 100 × `findById` = 100 network round trips ≈ 100–1000 ms. One batched read = one round trip. Always batch.
+2. **Bounded batch = bounded locks.** Any `UPDATE`/`DELETE` that could match more than ~1000 rows must be `LIMIT`-bounded and run in a drain loop. Unbounded bulk writes hold locks for minutes and stall replicas.
+3. **Drain with keyset, never `OFFSET`/`skip`.** Large-result processing uses `findPage(afterId, limit)` in a loop, terminating when the page is shorter than the limit. Constant memory, O(log N) per batch.
+4. **Denormalize at write time, read flat.** Prefer stored snapshots, embedded subdocuments, and materialized counts over joins/lookups. Accept write amplification — keep sync explicit (events or reconciliation).
+5. **Every predicate hits an index.** Every column in `WHERE` / `ORDER BY` / `$in` must be indexed. Composite indexes follow the **ESR** rule: Equality, Sort, Range.
+
+**Quick reference:**
+
+| Operation | SQL (Spring Data JDBC) | MongoDB | Redis |
+|---|---|---|---|
+| Batch read by IDs | `findAllByIdIn(Collection)` | `findAllById(Collection)` | `multiGet(keys)` |
+| Batch insert | `saveAll(records)` | `bulkOps.insert(docs)` | `executePipelined` |
+| Batch update | `UPDATE … WHERE id IN (SELECT … LIMIT :n)` | `bulkOps.updateMulti(...)` | `executePipelined` |
+| Batch delete | `DELETE … WHERE id IN (SELECT … LIMIT :n)` | `bulkOps.remove(...)` | `executePipelined` |
+| Drain large result | `findPage(afterId, limit)` in loop | `findByIdGreaterThan(afterId, Limit.of(n))` in loop | `SCAN` with `COUNT` |
+
+#### Batch reads — kill N+1 with `IN` / `$in`
+
+```java
+// WRONG — one round trip per parent
+List<Order> orders = orderRepository.findAllByUserId(userId);
+orders.forEach(o -> o.items(itemRepository.findAllByOrderId(o.id())));  // N queries
+
+// CORRECT — two round trips, total
+List<Order> orders = orderRepository.findAllByUserId(userId);
+List<Long> orderIds = orders.stream().map(Order::id).toList();
+Map<Long, List<Item>> itemsByOrder = itemRepository.findAllByOrderIdIn(orderIds).stream()
+    .collect(groupingBy(Item::orderId));
+```
+
+**Chunk the ID list at 1000 per call.** Postgres caps at ~65K bind parameters and drivers degrade well before that. Use a small helper:
+
+```java
+public static <T> List<List<T>> chunked(List<T> list, int size) {
+    List<List<T>> out = new ArrayList<>();
+    for (int i = 0; i < list.size(); i += size) {
+        out.add(list.subList(i, Math.min(i + size, list.size())));
+    }
+    return out;
+}
+```
+{{- if .HasModule "SQLDatastore"}}
+
+#### Bounded bulk UPDATE / DELETE (SQL)
+
+```java
+// WRONG — locks every matching row until commit
+@Modifying
+@Query("UPDATE orders SET status = :neu WHERE status = :old")
+int bulkUpdateStatus(@Param("old") String old, @Param("neu") String neu);
+
+// CORRECT — locks only :limit rows, skips contended ones
+@Modifying
+{{- if eq .Database "postgresql"}}
+@Query("""
+    UPDATE orders SET status = :neu
+    WHERE id IN (
+      SELECT id FROM orders
+      WHERE status = :old
+      ORDER BY id
+      LIMIT :limit
+      FOR UPDATE SKIP LOCKED
+    )
+    """)
+{{- else}}
+@Query("""
+    UPDATE orders SET status = :neu
+    WHERE status = :old
+    ORDER BY id
+    LIMIT :limit
+    """)
+{{- end}}
+int updateStatusBatchWithLimit(@Param("old") String old,
+                               @Param("neu") String neu,
+                               @Param("limit") int limit);
+```
+{{- if eq .Database "postgresql"}}
+
+`FOR UPDATE SKIP LOCKED` lets multiple workers drain concurrently without deadlocking — if row is already being updated by another worker, skip it.
+{{- end}}
+
+#### Keyset Drain Loop (SQL)
+
+```java
+public int processPendingBatched() {
+    final int BATCH = 500;
+    long afterId = 0L;
+    int processed = 0;
+
+    while (true) {
+        List<OrderRecord> page = orderRepository.findPendingAfter(afterId, BATCH);
+        if (page.isEmpty()) break;
+
+        page.forEach(orderProcessor::process);
+        afterId = page.get(page.size() - 1).id();
+        processed += page.size();
+
+        if (page.size() < BATCH) break;  // last page
+    }
+    return processed;
+}
+```
+
+O(constant) memory. Terminates on short page so the loop never over-reads.
+{{- end}}
+
+#### Denormalize — embed / snapshot / materialize
+
+Trade write amplification for flat reads. Three patterns:
+
+```java
+// SNAPSHOT — duplicate hot fields inline to skip a join on every read
+public record Post(
+    @Id Long id,
+    Long authorId,
+    String authorEmailSnapshot,   // refreshed on user-email-changed event
+    String title,
+    int commentCount              // incremented on comment-created event
+) {}
+```
+
+```sql
+-- Both snapshotted columns indexed for direct query access
+CREATE INDEX idx_posts_author_id ON posts(author_id);
+CREATE INDEX idx_posts_author_email ON posts(author_email_snapshot);
+```
+
+- **Snapshot** hot fields you'd otherwise join for (e.g., `user.email` on `post`).
+- **Materialize** derived aggregates (`comment_count` on `post`) instead of `SELECT COUNT(*)` on every read.
+- **Embed** 1-to-few relationships (Mongo subdocuments; Postgres JSONB for bounded arrays like `tags`) when the children are always read with the parent and rarely updated alone.
+
+Sync responsibility is on you — prefer event-driven propagation (when a user's email changes, emit an event and update all snapshots). Make the invariant explicit in a reconciliation job that runs nightly as a safety net.
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+
+#### MongoDB — `BulkOperations` in the service layer
+
+```java
+// WRONG — N round trips to mongod
+docs.forEach(mongoTemplate::save);
+
+// CORRECT — one batched wire frame
+public BulkWriteResult insertMany(List<PlaceholderDocument> docs) {
+    if (docs.isEmpty()) return BulkWriteResult.unacknowledged();
+    BulkOperations bulk = mongoTemplate.bulkOps(BulkMode.UNORDERED, PlaceholderDocument.class);
+    bulk.insert(docs);
+    return bulk.execute();
+}
+```
+
+`UNORDERED` lets mongod parallelize. `MongoRepository` has no native bulk — drop to `MongoTemplate`.
+{{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+
+#### Redis — `multiGet` and pipelining
+
+```java
+// WRONG — N round trips
+List<String> values = keys.stream()
+    .map(k -> stringRedisTemplate.opsForValue().get(k))
+    .toList();
+
+// CORRECT — one round trip via MGET
+public List<String> mgetByKeys(List<String> keys) {
+    if (keys.isEmpty()) return List.of();
+    return stringRedisTemplate.opsForValue().multiGet(keys);
+}
+
+// Mixed commands — pipeline them
+public void bulkSet(Map<String, String> kv) {
+    stringRedisTemplate.executePipelined((RedisCallback<Object>) conn -> {
+        kv.forEach((k, v) -> conn.stringCommands().set(k.getBytes(), v.getBytes()));
+        return null;
+    });
+}
+```
+
+Redis is fast (~0.1 ms local) but round trips add up over the network. `MGET` is one round trip regardless of key count.
+{{- end}}
+
+#### ESR rule for composite indexes
+
+```java
+@Query("""
+    SELECT * FROM orders
+    WHERE status = :status       -- Equality
+      AND id > :afterId           -- Sort (keyset cursor)
+      AND created_at > :since     -- Range
+    ORDER BY id ASC
+    LIMIT :limit
+    """)
+List<OrderRecord> findActiveSince(@Param("status") String status,
+                                   @Param("afterId") Long afterId,
+                                   @Param("since") Instant since,
+                                   @Param("limit") int limit);
+```
+
+```sql
+-- Columns ordered Equality → Sort → Range
+CREATE INDEX idx_orders_status_id_created ON orders(status, id, created_at);
+```
+
+Without this compound index, the query scans every order matching `status`.
+
+**Anti-patterns:**
+
+- Loop of `findById` — always replace with `findAllByIdIn` or `findAllById`.
+- Unbounded `findAll()` on a growing table — load 10M rows into Java = OOM.
+- `Pageable` / `skip()` / `OFFSET` for deep pagination — use keyset.
+- Unchunked `IN` list — chunk at 1000 to stay under driver and server limits.
+- `SELECT *` on wide rows — project to DTO when only a few columns are needed.
+- Unbounded `UPDATE` / `DELETE` — always pair with `LIMIT` + drain loop.
+
+**Checklist:**
+
+- [ ] Batch reads via `IN` / `$in` / `multiGet`, chunked at ≤1000 IDs per call
+- [ ] Bulk `UPDATE` / `DELETE` bounded with `LIMIT`, in a drain loop
+- [ ] Large result-set processing uses the Keyset Drain Loop pattern (terminate when `page.size() < batch`)
+- [ ] Denormalization documented at entity-design time (snapshot / materialize / embed)
+- [ ] Every `WHERE` / `ORDER BY` / `$in` column is indexed
+- [ ] Composite indexes follow ESR (Equality, Sort, Range)
+- [ ] No `Pageable`, `skip()`, `OFFSET` anywhere
+- [ ] No loops of single-row repository calls
+{{- end}}
 
 ---
 

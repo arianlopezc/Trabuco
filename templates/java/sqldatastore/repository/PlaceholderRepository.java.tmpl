@@ -1,8 +1,10 @@
 package {{.GroupID}}.sqldatastore.repository;
 
 import {{.GroupID}}.model.entities.PlaceholderRecord;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
@@ -20,6 +22,11 @@ import org.springframework.stereotype.Repository;
  * For business logic, convert to/from Placeholder interface using
  * Placeholder.fromRecord() and placeholder.toRecord().
  *
+ * <p>Performance patterns demonstrated below (see JAVA_CODE_QUALITY.md §5.5):
+ * - findAllByIdIn: batch read via IN — replaces N+1 loops of findById
+ * - findPage: keyset pagination — constant cost regardless of depth
+ * - updateStatusBatchWithLimit: bounded bulk UPDATE — use inside a drain loop
+ *
  * <p>Replace this with your actual repositories.
  */
 @Repository
@@ -34,4 +41,51 @@ public interface PlaceholderRepository extends CrudRepository<PlaceholderRecord,
 
   /** Check if a placeholder with the given name exists. */
   boolean existsByName(String name);
+
+  /**
+   * Batch read by IDs — replaces a loop of {@code findById} calls.
+   * Chunk the input list at 1000 per call (see PlaceholderService).
+   */
+  @Query("SELECT * FROM placeholders WHERE id IN (:ids)")
+  List<PlaceholderRecord> findAllByIdIn(@Param("ids") Collection<Long> ids);
+
+  /**
+   * Keyset page — constant cost regardless of depth.
+   * Pass {@code afterId = 0} for the first page; then the last row's id for each subsequent call.
+   * Terminate the drain loop when the returned list is shorter than {@code limit}.
+   */
+  @Query("SELECT * FROM placeholders WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+  List<PlaceholderRecord> findPage(@Param("afterId") Long afterId, @Param("limit") int limit);
+
+  /**
+   * Bounded bulk UPDATE — use inside a drain loop, not as a single call.
+{{- if eq .Database "postgresql"}}
+   * Uses FOR UPDATE SKIP LOCKED so multiple workers can drain concurrently without deadlocking.
+{{- end}}
+   * Returns the number of rows updated per batch; stop the loop when it returns 0.
+   */
+  @Modifying
+{{- if eq .Database "postgresql"}}
+  @Query("""
+      UPDATE placeholders SET description = :neu
+      WHERE id IN (
+        SELECT id FROM placeholders
+        WHERE description = :old
+        ORDER BY id
+        LIMIT :limit
+        FOR UPDATE SKIP LOCKED
+      )
+      """)
+{{- else}}
+  @Query("""
+      UPDATE placeholders SET description = :neu
+      WHERE description = :old
+      ORDER BY id
+      LIMIT :limit
+      """)
+{{- end}}
+  int updateDescriptionBatchWithLimit(
+      @Param("old") String oldDescription,
+      @Param("neu") String newDescription,
+      @Param("limit") int limit);
 }

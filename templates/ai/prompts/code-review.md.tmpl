@@ -155,6 +155,22 @@ EventConsumer   → Model, Shared, Events
 {{- end}}
 
 **Key question:** Could you delete the production code, keep only the tests, and rewrite from scratch to pass all tests? If yes, the tests are testing behavior correctly.
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+### H. Datastore Performance
+
+| Check | Correct | Wrong |
+|-------|---------|-------|
+| Batch reads | `findAllByIdIn` / `findAllById` / `multiGet` | Loop of `findById` |
+| IN chunking | Callers chunk IDs at ≤1000 per call | Unchunked list passed to `IN (:ids)` |
+| Bulk writes | `UPDATE … WHERE id IN (SELECT … LIMIT :n)` in drain loop | Unbounded `UPDATE` / `DELETE` |
+| Pagination | Keyset (`WHERE id > :afterId LIMIT :n`) | `Pageable`, `skip()`, `OFFSET` |
+| Large result processing | Keyset Drain Loop (terminate on short page) | `findAll().forEach(...)` on growing tables |
+| Indexes | Every `WHERE` / `ORDER BY` / `$in` column indexed; composites follow ESR | Missing index, wrong column order in composite |
+| Denormalization | Snapshotted / materialized / embedded fields documented with sync path | Join-heavy reads, repeated `COUNT(*)` |
+
+**Rule:** if a reviewer spots `for (id : ids) repository.findById(id)`, `repository.findAll()` on a table that can grow unboundedly, or a `@Modifying @Query` without `LIMIT`, request changes. Each is a silent performance bomb that works on test data and fails under load. Full reference: `JAVA_CODE_QUALITY.md` §5.5.
+{{- end}}
 
 ---
 

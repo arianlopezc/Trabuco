@@ -38,6 +38,12 @@ This project enforces strict code quality standards. You MUST:
 | Pagination | Keyset by ID (`WHERE id > :afterId`), never `OFFSET`/`Pageable` |
 | Foreign keys | Never — use indexed columns for parent IDs, enforce in service layer |
 {{- end}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+| Batch reads | `findAllByIdIn` / `findAllById` / `multiGet`; chunk IDs at ≤1000. Never loop `findById` |
+| Bulk writes | `UPDATE`/`DELETE` paired with `LIMIT` in a drain loop. Never unbounded bulk writes |
+| Large result drain | Keyset Drain Loop: `findPage(afterId, limit)` until page < limit |
+| Denormalization | Snapshot hot fields; materialize aggregates; embed 1-to-few — documented with sync path |
+{{- end}}
 
 ## Build & Test Commands
 
