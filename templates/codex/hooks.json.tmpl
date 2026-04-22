@@ -10,6 +10,17 @@
           "timeout": 30
         }
       ]
+    }{{- if .ReviewEmitsStopHook}},
+    {
+      "event": "Stop",
+      "handlers": [
+        {
+          "type": "command",
+          "command": ".codex/hooks/require-review.sh",
+          "timeout": 60
+        }
+      ]
     }
+    {{- end}}
   ]
 }

@@ -235,3 +235,29 @@ jobs:
 
       - name: Run tests
         run: mvn test -B
+{{- if .ReviewEnabled}}
+
+  review-checks:
+    # Runs the same deterministic checks the code-reviewer and performance-reviewer
+    # subagents perform, but as a CI gate. Fails the build on any finding. Runs
+    # in parallel with `build` (no dependency on compile output — pure static
+    # analysis over source files).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history needed when scope=diff so we can diff against the base ref.
+          fetch-depth: 0
+
+      - name: Run deterministic review checks
+        run: |
+          chmod +x .github/scripts/review-checks.sh
+          # On pull_request events, scope to the diff so we don't punish pre-existing
+          # violations that aren't part of this PR. On push events, check everything.
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+            git fetch origin "${GITHUB_BASE_REF}":"refs/remotes/origin/${GITHUB_BASE_REF}" --quiet || true
+            .github/scripts/review-checks.sh --scope=diff
+          else
+            .github/scripts/review-checks.sh --scope=all
+          fi
+{{- end}}

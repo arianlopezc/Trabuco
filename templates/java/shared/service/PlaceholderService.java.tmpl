@@ -84,9 +84,17 @@ public class PlaceholderService {
         .build());
   }
 
-  /** Get all placeholders. */
+  /**
+   * Get all placeholders.
+   *
+   * <p>Placeholder demo: uses {@code findAll()} for brevity. For production code on growing
+   * tables, replace with a keyset drain loop ({@code findPage(afterId, limit)} terminating on
+   * short page) — see {@code .ai/prompts/JAVA_CODE_QUALITY.md} §5.5. Remove the suppression
+   * below when you replace this with a real implementation.
+   */
   @CircuitBreaker(name = "default")
   public List<ImmutablePlaceholder> findAll() {
+    // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with keyset drain)
     return StreamSupport.stream(repository.findAll().spliterator(), false)
       .map(record -> ImmutablePlaceholder.builder()
         .id(record.id())
@@ -212,9 +220,17 @@ public class PlaceholderService {
         .build());
   }
 
-  /** Get all placeholders. */
+  /**
+   * Get all placeholders.
+   *
+   * <p>Placeholder demo: uses {@code findAll()} for brevity. For production code on growing
+   * collections, replace with a cursor-based iterator or keyset drain — see
+   * {@code .ai/prompts/JAVA_CODE_QUALITY.md} §5.5. Remove the suppression below when you
+   * replace this with a real implementation.
+   */
   @CircuitBreaker(name = "default")
   public List<ImmutablePlaceholder> findAll() {
+    // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with cursor or keyset drain)
     return StreamSupport.stream(repository.findAll().spliterator(), false)
       .map(doc -> ImmutablePlaceholder.builder()
         .documentId(doc.id())

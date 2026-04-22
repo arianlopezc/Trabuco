@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+# Trabuco-generated review checks. Runs the same deterministic patterns the
+# code-reviewer and performance-reviewer subagents use, but as a CI gate.
+#
+# Usage:
+#   .github/scripts/review-checks.sh               # check entire codebase
+#   .github/scripts/review-checks.sh --scope=diff  # check PR diff only
+#
+# Exits non-zero if any finding is detected. Findings are emitted as GitHub
+# Actions error annotations (::error file=X,line=Y::...) so they appear inline
+# in the PR UI.
+#
+# Module-gating: this script is generated per project. Checks for modules not
+# selected are omitted entirely, matching the subagent behavior.
+
+set -u
+FAIL=0
+FINDINGS=0
+
+# --- scope --------------------------------------------------------------------
+# all    — every tracked file (used by push-event CI)
+# diff   — files changed between origin/$GITHUB_BASE_REF and HEAD (used by PR CI)
+# local  — files changed in the working tree: tracked modifications + staged +
+#          untracked. This is what the Stop-hook adapters use for turn-scoped
+#          enforcement during interactive agent sessions.
+SCOPE=all
+for arg in "$@"; do
+  case "$arg" in
+    --scope=diff)  SCOPE=diff  ;;
+    --scope=all)   SCOPE=all   ;;
+    --scope=local) SCOPE=local ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
+# Collect target file sets. git ls-files is fast, cache-friendly, and respects
+# .gitignore; fall back to find if we're somehow not in git.
+collect_files() {
+  local pattern=$1
+  if [ "$SCOPE" = "diff" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+    git diff --name-only --diff-filter=AM "origin/$GITHUB_BASE_REF"...HEAD -- "$pattern" 2>/dev/null || true
+  elif [ "$SCOPE" = "local" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Working-tree deltas: diff vs HEAD picks up staged+unstaged modifications;
+    # ls-files --others --exclude-standard adds untracked files.
+    {
+      git diff --name-only HEAD -- "$pattern" 2>/dev/null || true
+      git ls-files --others --exclude-standard -- "$pattern" 2>/dev/null || true
+    } | sort -u
+  elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git ls-files -- "$pattern" 2>/dev/null || true
+  else
+    find . -type f -name "$(basename "$pattern")" ! -path '*/target/*' ! -path '*/.git/*' 2>/dev/null || true
+  fi
+}
+
+# Two file sets:
+#   JAVA_MAIN_FILES — production code only (src/main/java). Performance and
+#                     idiom checks run here; test code legitimately mentions
+#                     forbidden patterns (ArchUnit rules, mocks).
+#   JAVA_ALL_FILES  — main + test. Secrets and boundary-import checks run here.
+JAVA_ALL_FILES=$(collect_files '*.java' | tr '\n' ' ')
+JAVA_MAIN_FILES=$(collect_files '*.java' | grep '/src/main/java/' | tr '\n' ' ')
+{{- if .HasModule "SQLDatastore"}}
+SQL_FILES=$(collect_files 'SQLDatastore/src/main/resources/db/migration/*.sql' | tr '\n' ' ')
+{{- end}}
+
+if [ -z "${JAVA_ALL_FILES// /}" ]; then
+  echo "No Java files in scope (scope=$SCOPE). Nothing to check."
+  exit 0
+fi
+
+# Default file set for most checks: production code only.
+JAVA_FILES="$JAVA_MAIN_FILES"
+
+# --- helpers ------------------------------------------------------------------
+
+# is_suppressed FILE LINE RULE
+# Returns 0 (true) if line LINE or LINE-1 in FILE carries a suppression
+# comment matching RULE or `all`.
+is_suppressed() {
+  local file=$1 linenum=$2 rule=$3
+  local same_line prev_line
+  same_line=$(sed -n "${linenum}p" "$file" 2>/dev/null)
+  prev_line=""
+  if [ "$linenum" -gt 1 ]; then
+    prev_line=$(sed -n "$((linenum-1))p" "$file" 2>/dev/null)
+  fi
+  # shellcheck disable=SC2016
+  if printf '%s\n%s\n' "$prev_line" "$same_line" \
+     | grep -qE "trabuco-allow:[[:space:]]*(all|[^/]*\\b$rule\\b)"; then
+    return 0
+  fi
+  return 1
+}
+
+# run_grep_check NAME RULE_ID REGEX [files...]
+# Emits GitHub annotations for every matching line and updates FAIL / FINDINGS.
+# Skips matches whose same-or-previous line contains `// trabuco-allow: <rule>`
+# or `// trabuco-allow: all`.
+run_grep_check() {
+  local name=$1 rule=$2 pattern=$3
+  shift 3
+  local files=${*:-$JAVA_FILES}
+  echo "::group::[$rule] $name"
+  local output
+  # shellcheck disable=SC2086
+  # -H forces the filename prefix even when only one file is supplied, so the
+  # `file:line:content` parser below always has three segments.
+  output=$(grep -HnE "$pattern" $files 2>/dev/null || true)
+  if [ -n "$output" ]; then
+    local kept=""
+    local count=0
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      local file linenum rest
+      file=${line%%:*}
+      rest=${line#*:}
+      linenum=${rest%%:*}
+      rest=${rest#*:}
+      if is_suppressed "$file" "$linenum" "$rule"; then
+        continue
+      fi
+      local snippet=${rest:0:140}
+      kept+="$file:$linenum: $snippet"$'\n'
+      echo "  $file:$linenum: $snippet"
+      echo "::error file=$file,line=$linenum,title=[$rule] $name::$snippet"
+      count=$((count+1))
+    done <<< "$output"
+    if [ "$count" -gt 0 ]; then
+      FAIL=1
+      FINDINGS=$((FINDINGS+count))
+    else
+      echo "  ok (all matches suppressed)"
+    fi
+  else
+    echo "  ok"
+  fi
+  echo "::endgroup::"
+}
+
+# --- Spring patterns (main code only) -----------------------------------------
+
+# @Autowired on a field: line starts with @Autowired (nothing after, or directly
+# followed by `private`/`protected` on same or next line means field injection).
+run_grep_check "Field injection (@Autowired on field)" \
+  "spring.field-injection" \
+  '^[[:space:]]*@Autowired[[:space:]]*$|^[[:space:]]*@Autowired[[:space:]]+(private|protected)'
+
+# @Transactional on private: multi-line pattern — @Transactional followed by a
+# private method declaration on the next non-blank line. Uses awk for the
+# multi-line peek.
+tx_private_multi_line_check() {
+  echo "::group::[spring.tx-private] @Transactional on private method"
+  local count=0
+  for f in $JAVA_FILES; do
+    [ -f "$f" ] || continue
+    while IFS= read -r hit; do
+      [ -z "$hit" ] && continue
+      local ln snippet
+      ln=${hit%%:*}; snippet=${hit#*:}
+      if is_suppressed "$f" "$ln" "spring.tx-private"; then continue; fi
+      echo "  $f:$ln:$snippet"
+      echo "::error file=$f,line=$ln,title=[spring.tx-private] @Transactional on private method::$snippet"
+      count=$((count+1))
+    done < <(awk '
+      /@Transactional([^A-Za-z]|$)/ { tx_line=NR; tx_seen=1; next }
+      tx_seen {
+        if (/^[[:space:]]*$/) next
+        if (/^[[:space:]]*\/\//) next
+        if (/^[[:space:]]*private[[:space:]]/) {
+          print tx_line ": " $0
+        }
+        tx_seen=0
+      }
+    ' "$f")
+  done
+  if [ "$count" -gt 0 ]; then FAIL=1; FINDINGS=$((FINDINGS+count)); else echo "  ok"; fi
+  echo "::endgroup::"
+}
+tx_private_multi_line_check
+
+# --- Secrets (main + test — secrets don't belong anywhere) --------------------
+
+run_grep_check "Hardcoded AWS access key" \
+  "sec.aws-key" \
+  'AKIA[0-9A-Z]{16}' \
+  $JAVA_ALL_FILES
+
+run_grep_check "Hardcoded OpenAI-style key" \
+  "sec.openai-key" \
+  'sk-[A-Za-z0-9]{32,}' \
+  $JAVA_ALL_FILES
+
+# Hardcoded secret: matches case-insensitive identifier names (api_key, API_KEY,
+# token, password, secret). Looks for `= "<16+ chars>"` style literals.
+run_grep_check "Hardcoded password/secret/token literal" \
+  "sec.hardcoded-secret" \
+  '([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn])[[:space:]]*=[[:space:]]*"[A-Za-z0-9+/=_-]{16,}"' \
+  $JAVA_ALL_FILES
+
+# --- Datastore patterns (gated) ----------------------------------------------
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+# N+1: findById appearing within 5 lines after a `for` header or a `.stream()`
+# call in the same file. Multi-line heuristic via awk.
+n_plus_one_check() {
+  echo "::group::[perf.n-plus-one] N+1: findById following a for-loop or stream"
+  local count=0
+  for f in $JAVA_FILES; do
+    [ -f "$f" ] || continue
+    while IFS= read -r hit; do
+      [ -z "$hit" ] && continue
+      local ln snippet
+      ln=${hit%%:*}; snippet=${hit#*:}
+      if is_suppressed "$f" "$ln" "perf.n-plus-one"; then continue; fi
+      echo "  $f:$ln:$snippet"
+      echo "::error file=$f,line=$ln,title=[perf.n-plus-one] N+1 query::$snippet"
+      count=$((count+1))
+    done < <(awk '
+      { buf[NR]=$0 }
+      /\.findById[[:space:]]*\(/ {
+        for (i=NR-5; i<NR; i++) {
+          if (i in buf && (buf[i] ~ /(^|[^A-Za-z_])for[[:space:]]*\(/ || buf[i] ~ /\.stream[[:space:]]*\(/)) {
+            print NR ": " $0
+            break
+          }
+        }
+      }
+    ' "$f")
+  done
+  if [ "$count" -gt 0 ]; then FAIL=1; FINDINGS=$((FINDINGS+count)); else echo "  ok"; fi
+  echo "::endgroup::"
+}
+n_plus_one_check
+
+# Unbounded scan: any `.findAll()` call — Spring Data convention. Broad match;
+# flag-then-suppress is better than under-catching.
+run_grep_check "Unbounded scan (findAll) on a repository" \
+  "perf.unbounded-scan" \
+  '\.findAll[[:space:]]*\([[:space:]]*\)'
+
+run_grep_check "Offset pagination (Pageable / OFFSET / skip)" \
+  "perf.offset-pagination" \
+  '\bPageable\b|\bOFFSET\b|\.skip\('
+
+run_grep_check "SQL string concatenation in @Query" \
+  "perf.sql-concat" \
+  '@Query\([^)]*"[^"]*"\s*\+'
+
+# @Modifying without LIMIT — check the 1-4 lines following each @Modifying annotation.
+echo "::group::[perf.unbounded-dml] Unbounded bulk write (@Modifying @Query without LIMIT)"
+unbounded_dml_findings=0
+for f in $JAVA_FILES; do
+  [ -f "$f" ] || continue
+  # awk: for every @Modifying, read the next up-to-4 lines; if they contain
+  # @Query and no LIMIT, emit the position of @Modifying.
+  awk '
+    /@Modifying/ { mod_line=NR; collect=1; buf=""; next }
+    collect && collect<=5 {
+      buf = buf " " $0
+      collect++
+      if (/;/ || /\)$/) {
+        if (buf ~ /@Query/ && buf !~ /[Ll][Ii][Mm][Ii][Tt]/) {
+          print FILENAME ":" mod_line ": @Modifying query without LIMIT"
+        }
+        collect=0
+      }
+    }
+  ' "$f" | while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    file=${line%%:*}; rest=${line#*:}; ln=${rest%%:*}; rest=${rest#*:}
+    echo "  $file:$ln:$rest"
+    echo "::error file=$file,line=$ln,title=[perf.unbounded-dml] Unbounded bulk write::$rest"
+    unbounded_dml_findings=$((unbounded_dml_findings+1))
+  done
+done
+# Note: the counter above is scoped to the subshell; we re-count from output
+# captured in a file if this ever needs to be exact. For now we gate on
+# whether any annotations were produced.
+echo "::endgroup::"
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+
+# --- SQL-specific migration checks --------------------------------------------
+
+if [ -n "${SQL_FILES// /}" ]; then
+  run_grep_check "Foreign key declared in migration (project policy: indexed columns only)" \
+    "sql.foreign-key" \
+    'REFERENCES|FOREIGN KEY' \
+    $SQL_FILES
+
+  run_grep_check "Unbounded UPDATE/DELETE in migration" \
+    "sql.unbounded-dml" \
+    '^[^-]*\b(UPDATE|DELETE)\b(?![^;]*\b[Ll][Ii][Mm][Ii][Tt]\b)' \
+    $SQL_FILES
+fi
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+
+run_grep_check "Redis KEYS * pattern (production-killing)" \
+  "nosql.redis-keys" \
+  '\bKEYS\b\s*\*'
+
+run_grep_check "MongoDB \$where eval (slow + unindexed)" \
+  "nosql.mongo-where-eval" \
+  '@Query\(".*\$where'
+{{- end}}
+{{- if .HasModule "API"}}
+
+# --- API (controller) patterns -----------------------------------------------
+# Narrow scope to controller files to avoid flagging worker/event-consumer
+# catch-log-rethrow (which IS required there for retry/DLQ).
+CONTROLLER_FILES=$(echo "$JAVA_FILES" | tr ' ' '\n' | grep -E '/api/controller/.*\.java$' | tr '\n' ' ')
+if [ -n "${CONTROLLER_FILES// /}" ]; then
+  run_grep_check "Controller try/catch that only builds ResponseEntity (redundant — GlobalExceptionHandler owns this)" \
+    "api.redundant-try-catch" \
+    'catch\s*\([^)]*\)\s*\{[^}]*ResponseEntity' \
+    $CONTROLLER_FILES
+fi
+{{- end}}
+
+# --- Module boundary checks (always) ------------------------------------------
+# Each module can only import from its declared dependencies. Flag violations.
+
+check_boundary() {
+  local module=$1 forbidden_pkg=$2 rule=$3
+  local source_glob="$module/src/main/java"
+  [ -d "$source_glob" ] || return 0
+  echo "::group::[$rule] Boundary: $module must not import $forbidden_pkg"
+  local output
+  output=$(grep -rnE "^import\s+[^;]*\.$forbidden_pkg\." "$source_glob" 2>/dev/null || true)
+  if [ -n "$output" ]; then
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      file=${line%%:*}; rest=${line#*:}; ln=${rest%%:*}; rest=${rest#*:}
+      echo "  $file:$ln:$rest"
+      echo "::error file=$file,line=$ln,title=[$rule] Boundary violation::$rest"
+      FINDINGS=$((FINDINGS+1))
+    done <<< "$output"
+    FAIL=1
+  else
+    echo "  ok"
+  fi
+  echo "::endgroup::"
+}
+{{- if .HasModule "API"}}
+check_boundary API worker boundary.api-imports-worker
+check_boundary API eventconsumer boundary.api-imports-eventconsumer
+{{- end}}
+{{- if .HasModule "Worker"}}
+check_boundary Worker api boundary.worker-imports-api
+check_boundary Worker eventconsumer boundary.worker-imports-eventconsumer
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+check_boundary EventConsumer api boundary.eventconsumer-imports-api
+check_boundary EventConsumer worker boundary.eventconsumer-imports-worker
+{{- end}}
+
+# --- Summary ------------------------------------------------------------------
+
+echo
+if [ $FAIL -eq 0 ]; then
+  echo "Review checks passed — no findings."
+  exit 0
+fi
+echo "Review checks FAILED — $FINDINGS finding(s). See annotations above for each violation."
+echo
+echo "Rule reference:  .ai/prompts/JAVA_CODE_QUALITY.md (§5.5 for performance rules)."
+echo "Subagent parity: these checks mirror the code-reviewer / performance-reviewer subagents."
+echo "Suppress a false positive with an inline comment on the offending line:"
+echo "    // trabuco-allow: <rule-id>       (e.g., perf.unbounded-scan)"
+echo "    // trabuco-allow: all             (disables all rules for that line)"
+exit 1

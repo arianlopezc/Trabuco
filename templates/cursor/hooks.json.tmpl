@@ -5,6 +5,14 @@
       {
         "command": "mvn spotless:apply -q 2>/dev/null || true"
       }
+    ]{{- if .ReviewEmitsStopHook}},
+    "stop": [
+      {
+        "command": ".cursor/hooks/require-review.sh",
+        "timeout": 60,
+        "loop_limit": 3
+      }
     ]
+    {{- end}}
   }
 }

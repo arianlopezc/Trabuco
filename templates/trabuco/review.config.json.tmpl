@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "mode": "{{.Review.Mode}}",
+  "generatedAt": "{{.Review.GeneratedAt}}",
+  "agents": [
+    "code-reviewer"{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}},
+    "performance-reviewer"{{- end}}{{- if .HasModule "AIAgent"}},
+    "prompt-reviewer"{{- end}}
+  ],
+  "maxReviewCycles": 3
+}

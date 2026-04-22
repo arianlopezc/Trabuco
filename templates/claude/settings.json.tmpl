@@ -27,10 +27,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mvn spotless:apply -q 2>/dev/null || true"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format.sh"
+          }
+        ]
+      }
+    ]{{- if .ReviewEmitsStopHook}},
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/require-review.sh"
           }
         ]
       }
     ]
+    {{- end}}
   }
 }

@@ -58,6 +58,22 @@ mvn spotless:check         # Formatting correct
 
 If any command fails, fix the issue before proceeding.
 
+## Code Review Protocol
+
+After any code modification, review against project standards before completing the turn. Use the review playbooks in `.ai/prompts/`:
+
+- `.ai/prompts/code-review.md` — general code-quality review
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+- `.ai/prompts/JAVA_CODE_QUALITY.md` §5.5 — datastore performance checks
+{{- end}}
+{{- if .HasModule "AIAgent"}}
+- `.ai/prompts/add-guardrail-rule.md` — prompt/guardrail review patterns
+{{- end}}
+
+Run the review, address findings, repeat — up to 3 cycles. If unresolved findings remain, surface them to the user rather than iterating indefinitely.
+
+Disable: `trabuco review disable` (persistent) or `TRABUCO_REVIEW_HOOK=off` (session-only).
+
 ## Module Dependency Rules
 
 ```

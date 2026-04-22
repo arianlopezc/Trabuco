@@ -1,0 +1,34 @@
+# Claude Code Hooks
+
+This directory contains the hooks Trabuco generated for `{{.ProjectName}}`. Each hook is small, single-purpose, and intentionally auditable. Read every script before trusting it.
+
+## `hooks/format.sh` — PostToolUse on Write|Edit
+
+Runs `mvn spotless:apply` after file writes so generated code lands pre-formatted. No network access, no user-data reads, no dynamic dispatch. Failures are swallowed — the Maven build is the real gate.
+
+## `hooks/require-review.sh` — Stop
+
+Single-shot guard that ensures the `code-reviewer` subagent is invoked when Java files changed this session. Mechanism:
+
+1. If `TRABUCO_REVIEW_HOOK=off` or `.trabuco/review.config.json` has `"enabled": false` → exit 0.
+2. If `stop_hook_active=true` (we already blocked once this session) → exit 0.
+3. If no `*.java` files changed → exit 0.
+4. If the transcript shows the `code-reviewer` subagent was invoked → exit 0.
+5. Otherwise, emit `{"decision":"block","reason":"..."}` to ask the main agent to invoke the reviewer.
+
+Self-terminating: once the reviewer runs, the next Stop passes and the turn completes. Fails closed (passes without blocking) if `jq`, `git`, or the transcript are unavailable, so the hook cannot jam a session.
+
+### Disabling
+
+| Scope | Command |
+|---|---|
+| Session | `export TRABUCO_REVIEW_HOOK=off` |
+| Persistent | `trabuco review disable` |
+| Uninstall | `trabuco review remove` |
+
+### Security notes
+
+- Both hooks run with your shell privileges. Read them before committing changes.
+- All commands are pinned (no user input piped to `sh`); `$CLAUDE_PROJECT_DIR` is quoted everywhere.
+- The Stop hook does not perform network I/O and writes no files outside the repo.
+- See the top-level Trabuco documentation for the rationale behind this design (minimal deterministic hooks + subagent-led review).

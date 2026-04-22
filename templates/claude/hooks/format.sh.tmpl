@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Trabuco-generated hook: auto-format Java sources after Write/Edit.
+# Runs Google Java Format via Spotless. Best-effort; build catches real issues.
+cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
+mvn spotless:apply -q 2>/dev/null || true

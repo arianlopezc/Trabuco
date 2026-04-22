@@ -372,6 +372,78 @@ If you prefer to use your own database instead of Docker:
 | `CB_SLOW_CALL_DURATION_MS` | Slow call threshold (ms) | 2000 |
 | `CB_WAIT_DURATION_MS` | Wait time in open state (ms) | 30000 |
 {{- end}}
+{{- if .HasCIProvider "github"}}
+
+## CI/CD
+
+GitHub Actions workflow at `.github/workflows/ci.yml` runs on push to `main` and on pull requests:
+
+| Job | Description |
+|-----|-------------|
+| `build` | Compile, tests, formatting check, enforcer rules |
+{{- if .ReviewEnabled}}
+| `review-checks` | Deterministic code review (see [Code Review](#code-review)) |
+{{- end}}
+{{- end}}
+{{- if .ReviewEnabled}}
+
+## Code Review
+
+{{if .HasAIAgent "claude"}}This project enforces code quality automatically during Claude Code sessions (via hooks and subagents){{if .HasCIProvider "github"}} and in CI{{end}}.{{else if or (.HasAIAgent "codex") (.HasAIAgent "cursor")}}This project enforces code quality automatically during coding-agent sessions (via Stop-hook iteration){{if .HasCIProvider "github"}} and in CI{{end}}.{{else if .HasCIProvider "github"}}This project enforces code quality in CI via `.github/scripts/review-checks.sh`.{{end}} All layers share the same rule set, defined in `.ai/prompts/JAVA_CODE_QUALITY.md`.
+
+### Active Layers
+
+| Layer | Trigger |
+|-------|---------|
+{{- if .HasAIAgent "claude"}}
+| `code-reviewer` subagent | Auto-invoked by Claude Code after Java changes |
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+| `performance-reviewer` subagent | Auto-invoked when datastore code changes |
+{{- end}}
+{{- if .HasModule "AIAgent"}}
+| `prompt-reviewer` subagent | Auto-invoked when AI agent code changes |
+{{- end}}
+| Claude Code Stop-hook | Blocks turn completion on deterministic findings — up to 3 iteration cycles |
+{{- end}}
+{{- if .HasAIAgent "codex"}}
+| Codex CLI Stop-hook | Blocks turn completion on deterministic findings — up to 3 iteration cycles |
+{{- end}}
+{{- if .HasAIAgent "cursor"}}
+| Cursor stop hook | Auto-submits findings as follow-up message — up to 3 iteration cycles |
+{{- end}}
+{{- if .HasCIProvider "github"}}
+| GitHub Actions `review-checks` job | Runs on every push and pull request |
+{{- end}}
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `trabuco review status` | Show current review configuration |
+| `trabuco review disable` / `enable` | Toggle Stop-hook enforcement |
+| `trabuco review install` / `remove` | (Re)install or remove review artifacts |
+{{- if .HasCIProvider "github"}}
+| `.github/scripts/review-checks.sh --scope=all` | Run the CI review checks locally |
+{{- end}}
+
+### Kill Switches
+
+| Variable / Setting | Effect |
+|--------------------|--------|
+| `TRABUCO_REVIEW_HOOK=off` | Session-only bypass |
+| `.trabuco/review.config.json` → `"enabled": false` | Persistent — equivalent to `trabuco review disable` |
+
+### Suppressing a Finding
+
+Add an inline comment on (or immediately above) the offending line:
+
+```java
+// trabuco-allow: perf.unbounded-scan
+return repository.findAll();
+```
+
+Use `// trabuco-allow: all` to suppress every rule for that line.
+{{- end}}
 
 ---
 

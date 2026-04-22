@@ -12,6 +12,8 @@ paths:
 
 Perform a comprehensive code review following project standards.
 
+> **Tip:** for full review coverage on automatic turns, the `code-reviewer` subagent is the preferred path. This skill is the manual, user-invoked alternative — use it when you want review on demand outside the normal agent loop{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}. See also `/review-performance` for datastore-focused checks{{- end}}{{- if .HasModule "AIAgent"}} and `/review-prompts` for AI-agent code{{- end}}.
+
 ## Changes to Review
 
 !`git diff --cached --stat 2>/dev/null || git diff main..HEAD --stat 2>/dev/null || echo "No staged or branch changes found"`

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Cursor 1.7+ stop-hook adapter. Deterministic enforcement only — Cursor's
+# agent system is different from Claude Code's subagents, so the "was the
+# reviewer invoked" layer does not apply.
+#
+# Cursor's stop hook uses a DIFFERENT output schema than Claude/Codex:
+#   {"followup_message": "..."}    — non-empty string auto-submits as the next
+#                                    user turn, creating an iteration loop.
+#   {}                             — empty response lets the turn complete.
+#
+# Cycle cap: Cursor enforces `loop_limit` natively (set to 3 in .cursor/hooks.json)
+# and passes the current `loop_count` in stdin. We use that instead of our own
+# counter. When loop_count == MAX, we surface findings but skip the followup
+# (so Cursor doesn't auto-submit another turn).
+#
+# Kill switches mirror the Claude / Codex adapters.
+
+set -u
+
+if [ "${TRABUCO_REVIEW_HOOK:-on}" = "off" ]; then
+  exit 0
+fi
+
+# Cursor passes workspace via workspace_roots[] in stdin. Fallback chain.
+PROJECT_DIR="${CURSOR_WORKSPACE_DIR:-${CLAUDE_PROJECT_DIR:-$(pwd)}}"
+CFG="$PROJECT_DIR/.trabuco/review.config.json"
+if [ -f "$CFG" ] && command -v jq >/dev/null 2>&1; then
+  DISABLED=$(jq -r 'if (.enabled == false) then "yes" else "no" end' < "$CFG" 2>/dev/null || echo "no")
+  [ "$DISABLED" = "yes" ] && exit 0
+fi
+
+INPUT=$(cat || echo '{}')
+if ! command -v jq >/dev/null 2>&1; then
+  exit 0
+fi
+
+LOOP_COUNT=$(printf '%s' "$INPUT" | jq -r '.loop_count // 0' 2>/dev/null || echo 0)
+case "$LOOP_COUNT" in ''|*[!0-9]*) LOOP_COUNT=0 ;; esac
+# If Cursor gave us a workspace root, prefer it.
+WS_ROOT=$(printf '%s' "$INPUT" | jq -r '.workspace_roots[0] // empty' 2>/dev/null || echo "")
+if [ -n "$WS_ROOT" ] && [ -d "$WS_ROOT" ]; then
+  PROJECT_DIR="$WS_ROOT"
+fi
+
+cd "$PROJECT_DIR" || exit 0
+if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  exit 0
+fi
+if ! git rev-parse HEAD >/dev/null 2>&1; then
+  exit 0
+fi
+
+CHANGED=$(
+  {
+    git diff --name-only HEAD 2>/dev/null || true
+    git ls-files --others --exclude-standard 2>/dev/null || true
+  } | sort -u | grep -E '\.java$' || true
+)
+[ -z "$CHANGED" ] && exit 0
+
+SCRIPT="$PROJECT_DIR/.github/scripts/review-checks.sh"
+[ ! -x "$SCRIPT" ] && exit 0
+
+CHECK_OUT=$("$SCRIPT" --scope=local 2>&1 || true)
+if ! echo "$CHECK_OUT" | grep -q '^::error'; then
+  # Clean — emit empty response so Cursor lets the turn complete.
+  exit 0
+fi
+
+FINDINGS=$(echo "$CHECK_OUT" \
+  | grep '^::error' \
+  | sed -E 's/^::error file=([^,]+),line=([^,]+),title=\[([^]]+)\][^:]*::(.*)$/- `\1:\2` — \3: \4/' \
+  | head -40)
+COUNT=$(echo "$FINDINGS" | grep -c '^-' || echo 0)
+
+MAX_LOOP=3
+
+if [ "$LOOP_COUNT" -ge "$MAX_LOOP" ]; then
+  # Advisory mode: surface findings but don't emit followup_message — Cursor
+  # stops auto-submitting and the user sees the note.
+  MSG=$(printf "Review cycle cap reached (%d/%d). %d unresolved finding(s) surfaced for manual review:\n\n%s" "$LOOP_COUNT" "$MAX_LOOP" "$COUNT" "$FINDINGS")
+  echo "[trabuco-review] $MSG" >&2
+  exit 0
+fi
+
+FOLLOWUP=$(printf "Review check failed (cycle %d/%d). %d finding(s) to address before completing:\n\n%s\n\nFix guidance: see .ai/prompts/JAVA_CODE_QUALITY.md. Suppress false positives with '// trabuco-allow: <rule-id>'. Kill switch: 'trabuco review disable' or TRABUCO_REVIEW_HOOK=off." "$((LOOP_COUNT+1))" "$MAX_LOOP" "$COUNT" "$FINDINGS")
+
+# Cursor output schema: followup_message is auto-submitted as next user turn.
+jq -nc --arg msg "$FOLLOWUP" '{"followup_message": $msg}'

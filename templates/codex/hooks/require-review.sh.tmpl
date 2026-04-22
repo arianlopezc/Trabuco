@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Codex CLI Stop-hook adapter. Deterministic enforcement only — Codex does not
+# have a first-class subagent concept like Claude Code, so there is no "was the
+# reviewer invoked" layer here. Only the scripted checks.
+#
+# Uses the same {"decision":"block","reason":"..."} output schema as Claude
+# Code, per the Codex hooks reference (Stop events accept this response to
+# auto-continue the agent with the reason as a follow-up prompt).
+#
+# Iteration cap: 3 cycles per session. At cycle 4+ we switch to advisory.
+#
+# Kill switches mirror the Claude adapter:
+#   TRABUCO_REVIEW_HOOK=off                             (session)
+#   .trabuco/review.config.json → "enabled": false       (persistent)
+
+set -u
+
+if [ "${TRABUCO_REVIEW_HOOK:-on}" = "off" ]; then
+  exit 0
+fi
+
+# Codex exposes the project root via $CODEX_WORKSPACE_DIR on hook invocations.
+# Fall back to CLAUDE_PROJECT_DIR (some shared configs) or pwd.
+PROJECT_DIR="${CODEX_WORKSPACE_DIR:-${CLAUDE_PROJECT_DIR:-$(pwd)}}"
+CFG="$PROJECT_DIR/.trabuco/review.config.json"
+if [ -f "$CFG" ] && command -v jq >/dev/null 2>&1; then
+  DISABLED=$(jq -r 'if (.enabled == false) then "yes" else "no" end' < "$CFG" 2>/dev/null || echo "no")
+  [ "$DISABLED" = "yes" ] && exit 0
+fi
+
+INPUT=$(cat || echo '{}')
+if ! command -v jq >/dev/null 2>&1; then
+  exit 0
+fi
+STOP_ACTIVE=$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
+# Codex's turn_id is the closest analogue to Claude's session_id for counter keys.
+SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.turn_id // .session_id // empty' 2>/dev/null || echo "")
+
+cd "$PROJECT_DIR" || exit 0
+if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  exit 0
+fi
+if ! git rev-parse HEAD >/dev/null 2>&1; then
+  exit 0
+fi
+
+CHANGED=$(
+  {
+    git diff --name-only HEAD 2>/dev/null || true
+    git ls-files --others --exclude-standard 2>/dev/null || true
+  } | sort -u | grep -E '\.java$' || true
+)
+[ -z "$CHANGED" ] && exit 0
+
+# Cycle counter.
+STATE_DIR="$PROJECT_DIR/.trabuco/review-state"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+if [ -n "$SESSION_ID" ]; then
+  COUNT_FILE="$STATE_DIR/codex-${SESSION_ID}.count"
+else
+  COUNT_FILE="$STATE_DIR/codex-$(date +%Y%m%d).count"
+fi
+CYCLE=0
+if [ -f "$COUNT_FILE" ]; then
+  CYCLE=$(cat "$COUNT_FILE" 2>/dev/null || echo 0)
+fi
+case "$CYCLE" in ''|*[!0-9]*) CYCLE=0 ;; esac
+MAX_CYCLES=3
+
+# Short-circuit: if Codex is already in a continuation loop from our previous
+# block, don't stack a second block on top of it. The agent is already seeing
+# our reason as a follow-up prompt.
+if [ "$STOP_ACTIVE" = "true" ] && [ "$CYCLE" -gt 0 ]; then
+  # Still enforce — check if findings remain. If clean, pass. If still failing,
+  # we'll re-block up to MAX_CYCLES.
+  :
+fi
+
+SCRIPT="$PROJECT_DIR/.github/scripts/review-checks.sh"
+[ ! -x "$SCRIPT" ] && exit 0
+
+CHECK_OUT=$("$SCRIPT" --scope=local 2>&1 || true)
+if ! echo "$CHECK_OUT" | grep -q '^::error'; then
+  exit 0
+fi
+
+FINDINGS=$(echo "$CHECK_OUT" \
+  | grep '^::error' \
+  | sed -E 's/^::error file=([^,]+),line=([^,]+),title=\[([^]]+)\][^:]*::(.*)$/- `\1:\2` — \3: \4/' \
+  | head -40)
+COUNT=$(echo "$FINDINGS" | grep -c '^-' || echo 0)
+
+if [ "$CYCLE" -ge "$MAX_CYCLES" ]; then
+  echo "[trabuco-review] Cycle cap reached ($CYCLE/$MAX_CYCLES). Surfacing $COUNT finding(s) as advisory:" >&2
+  echo "$FINDINGS" >&2
+  exit 0
+fi
+
+CYCLE=$((CYCLE+1))
+echo "$CYCLE" > "$COUNT_FILE"
+REASON=$(printf "Review check failed (cycle %d/%d). %d finding(s) to address:\n\n%s\n\nFix guidance: see .ai/prompts/JAVA_CODE_QUALITY.md. Suppress false positives with '// trabuco-allow: <rule-id>'. Kill switch: 'trabuco review disable' or TRABUCO_REVIEW_HOOK=off." "$CYCLE" "$MAX_CYCLES" "$COUNT" "$FINDINGS")
+
+# Codex Stop-hook output: same schema as Claude.
+jq -nc --arg reason "$REASON" '{"decision":"block","reason":$reason}'

@@ -31,8 +31,29 @@ type ProjectConfig struct {
 	// CI/CD Provider
 	CIProvider string // "github" or "" (empty = none)
 
+	// Review: on-turn code review automation (subagents + hooks + skills)
+	Review ReviewConfig
+
 	// Deprecated: Use AIAgents instead
 	IncludeCLAUDEMD bool // Legacy field for backwards compatibility
+}
+
+// ReviewMode selects how much review scaffolding to emit.
+const (
+	ReviewModeFull    = "full"    // subagents + skills + hooks (default)
+	ReviewModeMinimal = "minimal" // subagents + skills, no Stop hook guard
+	ReviewModeOff     = "off"     // no review artifacts at all
+)
+
+// ReviewConfig controls what review artifacts are generated.
+//
+// Semantics:
+//   - Mode == "off"      → skip all review emission
+//   - Mode == "minimal"  → emit subagents + skills + CLAUDE.md directive; no Stop hook
+//   - Mode == "full"     → emit everything including the Stop hook enforcement guard
+type ReviewConfig struct {
+	Mode        string // "full" | "minimal" | "off"
+	GeneratedAt string // RFC3339 timestamp of generation
 }
 
 // Derived helper methods
@@ -346,4 +367,16 @@ func (c *ProjectConfig) HasCIProvider(id string) bool {
 // HasAnyCIProvider returns true if any CI provider is configured
 func (c *ProjectConfig) HasAnyCIProvider() bool {
 	return c.CIProvider != ""
+}
+
+// ReviewEnabled returns true when any review scaffolding should be emitted.
+// Mirrors Mode for convenience in templates.
+func (c *ProjectConfig) ReviewEnabled() bool {
+	return c.Review.Mode != ReviewModeOff && c.Review.Mode != ""
+}
+
+// ReviewEmitsStopHook returns true only when Mode=full — i.e., we wire the
+// Stop hook guard that ensures the code-reviewer subagent is invoked.
+func (c *ProjectConfig) ReviewEmitsStopHook() bool {
+	return c.Review.Mode == ReviewModeFull
 }

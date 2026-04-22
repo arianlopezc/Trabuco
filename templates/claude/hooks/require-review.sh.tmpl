@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# Claude Code Stop-hook adapter. Two-layer enforcement:
+#
+#  Layer 1 (semantic): verify the `code-reviewer` subagent was invoked when
+#  Java files changed. Blocks with a reason asking the agent to delegate.
+#
+#  Layer 2 (deterministic): run .github/scripts/review-checks.sh against the
+#  working-tree diff. If violations remain, block with the findings embedded
+#  in the reason so the agent sees the exact file/line/rule and can iterate.
+#
+# Iteration cap: 3 cycles per session. At cycle 4+ we switch to advisory mode —
+# findings still surfaced, but turn completes — so an unresolvable finding
+# can't jam a session.
+#
+# Kill switches:
+#   TRABUCO_REVIEW_HOOK=off    (runtime, session-scoped)
+#   .trabuco/review.config.json → "enabled": false   (persistent, via `trabuco review disable`)
+#
+# Fails closed: any unexpected error path exits 0 so the hook can't stall
+# the agent. The CI workflow is the backstop.
+
+set -u
+
+# --- Kill switches ------------------------------------------------------------
+if [ "${TRABUCO_REVIEW_HOOK:-on}" = "off" ]; then
+  exit 0
+fi
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+CFG="$PROJECT_DIR/.trabuco/review.config.json"
+if [ -f "$CFG" ] && command -v jq >/dev/null 2>&1; then
+  DISABLED=$(jq -r 'if (.enabled == false) then "yes" else "no" end' < "$CFG" 2>/dev/null || echo "no")
+  if [ "$DISABLED" = "yes" ]; then
+    exit 0
+  fi
+fi
+
+# --- Parse stop-hook input ----------------------------------------------------
+INPUT=$(cat || echo '{}')
+if ! command -v jq >/dev/null 2>&1; then
+  # No jq — we can't parse input. Fail closed.
+  exit 0
+fi
+STOP_ACTIVE=$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
+TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
+SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+
+# --- Working-tree scope check -------------------------------------------------
+cd "$PROJECT_DIR" || exit 0
+if ! command -v git >/dev/null 2>&1; then
+  exit 0
+fi
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  exit 0
+fi
+if ! git rev-parse HEAD >/dev/null 2>&1; then
+  # Fresh project with no commits yet — skip to avoid flagging scaffold files.
+  exit 0
+fi
+
+CHANGED=$(
+  {
+    git diff --name-only HEAD 2>/dev/null || true
+    git ls-files --others --exclude-standard 2>/dev/null || true
+  } | sort -u | grep -E '\.java$' || true
+)
+if [ -z "$CHANGED" ]; then
+  exit 0
+fi
+
+# --- Cycle counter (per-session, 3-cap) --------------------------------------
+STATE_DIR="$PROJECT_DIR/.trabuco/review-state"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+if [ -n "$SESSION_ID" ]; then
+  COUNT_FILE="$STATE_DIR/${SESSION_ID}.count"
+else
+  # No session id — use a single rolling file scoped by day. Not perfect but
+  # keeps the cap working even in edge cases.
+  COUNT_FILE="$STATE_DIR/$(date +%Y%m%d).count"
+fi
+if [ -f "$COUNT_FILE" ]; then
+  CYCLE=$(cat "$COUNT_FILE" 2>/dev/null || echo 0)
+else
+  CYCLE=0
+fi
+case "$CYCLE" in ''|*[!0-9]*) CYCLE=0 ;; esac
+MAX_CYCLES=3
+
+# Helper: emit a Claude block decision with reason.
+emit_block() {
+  local reason=$1
+  jq -nc --arg reason "$reason" '{"decision":"block","reason":$reason}'
+}
+
+# Helper: increment cycle counter.
+bump_cycle() {
+  CYCLE=$((CYCLE+1))
+  echo "$CYCLE" > "$COUNT_FILE"
+}
+
+# --- Layer 1: subagent invocation check --------------------------------------
+REVIEWER_SEEN=0
+if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+  if grep -qE '"subagent_type"[[:space:]]*:[[:space:]]*"code-reviewer"' "$TRANSCRIPT" 2>/dev/null; then
+    REVIEWER_SEEN=1
+  elif grep -qE '"name"[[:space:]]*:[[:space:]]*"code-reviewer"' "$TRANSCRIPT" 2>/dev/null; then
+    REVIEWER_SEEN=1
+  fi
+fi
+
+if [ "$STOP_ACTIVE" != "true" ] && [ "$REVIEWER_SEEN" = "0" ]; then
+  # First Stop, reviewer not invoked — standard block asking to delegate.
+  bump_cycle
+  REASON='Code was modified but the `code-reviewer` subagent was not invoked this session. Before completing this turn, delegate to the `code-reviewer` subagent to verify the changes against project standards.{{ if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore") }} If datastore code (repositories, queries, entities, migrations) changed, also invoke `performance-reviewer`.{{ end }}{{ if .HasModule "AIAgent" }} If AI-agent code (system prompts, guardrails, tools) changed, also invoke `prompt-reviewer`.{{ end }} Address findings and re-invoke as needed — up to 3 review cycles. To disable: `trabuco review disable` or set TRABUCO_REVIEW_HOOK=off.'
+  emit_block "$REASON"
+  exit 0
+fi
+
+# --- Layer 2: deterministic check via review-checks.sh -----------------------
+SCRIPT="$PROJECT_DIR/.github/scripts/review-checks.sh"
+if [ ! -x "$SCRIPT" ]; then
+  # review-checks.sh not emitted (e.g., --review=minimal or no CI). The
+  # subagent path is the only enforcement; if it ran, we're done.
+  exit 0
+fi
+
+# Run the deterministic check on the working-tree diff. Capture output and exit.
+CHECK_OUT=$("$SCRIPT" --scope=local 2>&1 || true)
+if ! echo "$CHECK_OUT" | grep -q '^::error'; then
+  # Clean — both layers passed.
+  exit 0
+fi
+
+# Findings exist. Extract the annotation lines (file/line/rule/snippet) into a
+# concise markdown block suitable for feeding into the agent's next turn.
+FINDINGS=$(echo "$CHECK_OUT" \
+  | grep '^::error' \
+  | sed -E 's/^::error file=([^,]+),line=([^,]+),title=\[([^]]+)\][^:]*::(.*)$/- `\1:\2` — \3: \4/' \
+  | head -40)
+COUNT=$(echo "$FINDINGS" | grep -c '^-' || echo 0)
+
+# Cycle cap: after MAX_CYCLES, switch to advisory (surface, don't block).
+if [ "$CYCLE" -ge "$MAX_CYCLES" ]; then
+  echo "[trabuco-review] Cycle cap reached ($CYCLE/$MAX_CYCLES). Surfacing $COUNT finding(s) as advisory:" >&2
+  echo "$FINDINGS" >&2
+  echo "[trabuco-review] To continue iterating beyond the cap, reset session or run 'trabuco review disable' to silence." >&2
+  exit 0
+fi
+
+bump_cycle
+REASON=$(printf "Deterministic review check failed (cycle %d/%d). %d finding(s) to address before completing this turn:\n\n%s\n\nFix guidance: see .ai/prompts/JAVA_CODE_QUALITY.md. Suppress false positives with an inline '// trabuco-allow: <rule-id>' comment. Kill switch: 'trabuco review disable' or TRABUCO_REVIEW_HOOK=off." "$CYCLE" "$MAX_CYCLES" "$COUNT" "$FINDINGS")
+emit_block "$REASON"

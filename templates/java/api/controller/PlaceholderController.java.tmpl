@@ -70,6 +70,9 @@ public class PlaceholderController {
 
   @GetMapping
   public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
+    // Placeholder demo: returns the entire collection. For production, paginate
+    // with keyset (WHERE id > :afterId LIMIT :n) — see .ai/prompts/JAVA_CODE_QUALITY.md §5.5.
+    // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with paginated endpoint)
     var placeholders = service.findAll().stream()
       .map(p -> ImmutablePlaceholderResponse.builder()
         .id(p.id())
@@ -140,6 +143,9 @@ public class PlaceholderController {
 
   @GetMapping
   public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
+    // Placeholder demo: returns the entire collection. For production, paginate
+    // with keyset (WHERE id > :afterId LIMIT :n) — see .ai/prompts/JAVA_CODE_QUALITY.md §5.5.
+    // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with paginated endpoint)
     var placeholders = service.findAll().stream()
       .map(p -> ImmutablePlaceholderResponse.builder()
         .documentId(p.documentId())
@@ -244,6 +250,9 @@ public class PlaceholderController {
 
   @GetMapping
   public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
+    // Placeholder demo: returns the entire collection. For production, paginate
+    // with keyset (WHERE id > :afterId LIMIT :n) — see .ai/prompts/JAVA_CODE_QUALITY.md §5.5.
+    // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with paginated endpoint)
     var placeholders = StreamSupport.stream(repository.findAll().spliterator(), false)
       .map(record -> ImmutablePlaceholderResponse.builder()
         .id(record.id())
@@ -322,6 +331,9 @@ public class PlaceholderController {
 
   @GetMapping
   public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
+    // Placeholder demo: returns the entire collection. For production, paginate
+    // with keyset (WHERE id > :afterId LIMIT :n) — see .ai/prompts/JAVA_CODE_QUALITY.md §5.5.
+    // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with paginated endpoint)
     var placeholders = StreamSupport.stream(repository.findAll().spliterator(), false)
       .map(doc -> ImmutablePlaceholderResponse.builder()
         .documentId(doc.id())

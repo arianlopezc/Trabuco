@@ -331,6 +331,7 @@ type templateData struct {
 	TaskGuidesDir string // Always ".ai/prompts" — task playbooks live here, not in .claude/rules/ (on-demand, not auto-loaded)
 	Frontmatter   string // Optional YAML frontmatter body (without --- delimiters) to prepend for agents like Cursor
 	RulePaths     string // Optional YAML paths list for Claude Code rules (e.g., '  - "**/*.java"')
+	Agent         string // Agent ID being rendered: "claude", "cursor", "copilot", "codex", or "" for cross-agent renders
 }
 
 // renderTemplate renders a template with the project config

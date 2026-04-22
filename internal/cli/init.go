@@ -36,7 +36,8 @@ var (
 	flagJavaVersion   string
 	flagAIAgents      string
 	flagCI            string
-	flagIncludeClaude bool // Deprecated: use flagAIAgents instead
+	flagReview        string // "full" (default), "minimal", or "off"
+	flagIncludeClaude bool   // Deprecated: use flagAIAgents instead
 	flagStrict        bool
 	flagSkipBuild     bool
 )
@@ -69,6 +70,7 @@ func init() {
 	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 21, 25, or 26 (non-interactive)")
 	initCmd.Flags().StringVar(&flagAIAgents, "ai-agents", "", "Comma-separated AI agents: claude,cursor,copilot,codex (non-interactive)")
 	initCmd.Flags().StringVar(&flagCI, "ci", "", "CI provider to generate (github)")
+	initCmd.Flags().StringVar(&flagReview, "review", "full", "Review automation: full (subagents + hooks + skills), minimal (no Stop hook guard), off (no review artifacts). Only applies when Claude is among --ai-agents.")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", false, "Deprecated: use --ai-agents=claude instead")
 	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
 	initCmd.Flags().BoolVar(&flagSkipBuild, "skip-build", false, "Skip running 'mvn clean install' after generation")
@@ -198,6 +200,17 @@ func runInit(cmd *cobra.Command, args []string) {
 			return
 		}
 
+		// Validate review mode
+		validReview := map[string]bool{
+			config.ReviewModeFull:    true,
+			config.ReviewModeMinimal: true,
+			config.ReviewModeOff:     true,
+		}
+		if !validReview[flagReview] {
+			color.Red("\nError: Invalid --review value '%s'. Valid options: full, minimal, off\n", flagReview)
+			return
+		}
+
 		// Handle deprecated --include-claude flag
 		if flagIncludeClaude {
 			hasClaudeInList := false
@@ -239,6 +252,10 @@ func runInit(cmd *cobra.Command, args []string) {
 			MessageBroker:       flagMessageBroker,
 			AIAgents:            aiAgents,
 			CIProvider:          flagCI,
+			Review: config.ReviewConfig{
+				Mode:        flagReview,
+				GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			},
 		}
 
 		// Warn about Redis + Worker combination
@@ -257,6 +274,15 @@ func runInit(cmd *cobra.Command, args []string) {
 			color.Red("\nError: %v\n", err)
 			return
 		}
+	}
+
+	// Ensure review config is populated for both interactive and non-interactive
+	// paths. Interactive mode doesn't prompt for review mode — we default to full.
+	if cfg.Review.Mode == "" {
+		cfg.Review.Mode = config.ReviewModeFull
+	}
+	if cfg.Review.GeneratedAt == "" {
+		cfg.Review.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
 	// Display summary

@@ -1,0 +1,99 @@
+---
+name: review-performance
+description: Review datastore access patterns for performance bombs — N+1 queries, unbounded scans, offset pagination, missing indexes. Manual alternative to the performance-reviewer subagent.
+user-invocable: true
+allowed-tools: Read Grep Glob Bash
+argument-hint: "[file-or-branch]"
+paths:
+  - "**/*.java"
+  - "**/db/migration/*.sql"
+---
+
+# Performance Review
+
+Reviews {{if .HasModule "SQLDatastore"}}SQL{{end}}{{if and (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}/{{end}}{{if .HasModule "NoSQLDatastore"}}NoSQL{{end}} access patterns for silent performance bombs. Every rule here is from `.ai/prompts/JAVA_CODE_QUALITY.md` §5.5.
+
+## Changes to review
+
+!`git diff --cached --stat 2>/dev/null || git diff main..HEAD --stat 2>/dev/null || echo "No staged or branch changes found"`
+
+## Scope
+
+```bash
+CHANGED=$(git diff --name-only HEAD -- \
+{{- if .HasModule "SQLDatastore" }} 'SQLDatastore/**/*.java' 'SQLDatastore/**/*.sql'{{ end }} \
+{{- if .HasModule "NoSQLDatastore" }} 'NoSQLDatastore/**/*.java'{{ end }} \
+  'Shared/**/*.java' 2>/dev/null)
+echo "$CHANGED"
+```
+
+If nothing changed in datastore paths, report clean and stop.
+
+## Deterministic checks
+
+Run each across `$CHANGED`:
+
+1. **N+1** — loop of single-row reads:
+   ```bash
+   grep -nE 'for\s*\(.*\)\s*\{[^}]*\.findById\(' $CHANGED
+   grep -nE '\.stream\(\).*\.map\([^)]*\.findById' $CHANGED
+   ```
+2. **Unbounded scan**:
+   ```bash
+   grep -nE 'repository\.findAll\(\)' $CHANGED
+   ```
+3. **Offset pagination**:
+   ```bash
+   grep -nE '\bPageable\b|\bOFFSET\b|\.skip\(' $CHANGED
+   ```
+4. **Unbounded bulk write**:
+   ```bash
+   grep -nE -B1 -A5 '@Modifying' $CHANGED | grep '@Query' | grep -iv 'LIMIT'
+   ```
+5. **SQL concatenation**:
+   ```bash
+   grep -nE '@Query\([^)]*"[^"]*"\s*\+' $CHANGED
+   ```
+{{- if .HasModule "SQLDatastore"}}
+6. **Missing index for new WHERE/ORDER BY column** — manual cross-check against migrations.
+7. **Foreign keys** — project policy uses indexed columns only:
+   ```bash
+   grep -nE 'REFERENCES|FOREIGN KEY' $CHANGED
+   ```
+{{- end}}
+{{- if .HasModule "NoSQLDatastore"}}
+8. **NoSQL scan patterns**:
+   ```bash
+   grep -nE '\bKEYS\s*\*|\$where' $CHANGED
+   ```
+{{- end}}
+
+## Output format
+
+```markdown
+## Performance Review Summary
+
+### Critical (silent performance bombs)
+- `<file>:<line>` — <rule>, §5.5.<n>
+
+### Warnings
+- `<file>:<line>` — <rule>
+
+### Index advisories
+- New query requires composite index on `(col_a, col_b)` — add to next migration
+
+### Verdict
+- [ ] Clean
+- [ ] Changes requested
+```
+
+## Fix references
+
+See `.ai/prompts/JAVA_CODE_QUALITY.md` §5.5 for the full recipe for each rule. Canonical fixes:
+
+| Problem | Fix |
+|---|---|
+| N+1 | `findAllByIdIn(ids)`, chunked at ≤1000 |
+| Offset pagination | Keyset: `WHERE id > :afterId ORDER BY id ASC LIMIT :limit` |
+| Unbounded DML | `UPDATE … WHERE id IN (SELECT … LIMIT :n)` in drain loop |
+| `findAll().forEach` | Keyset drain loop with `findPage(afterId, limit)` |

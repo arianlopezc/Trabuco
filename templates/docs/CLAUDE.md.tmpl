@@ -45,6 +45,39 @@ This project enforces strict code quality standards. You MUST:
 | Denormalization | Snapshot hot fields; materialize aggregates; embed 1-to-few — documented with sync path |
 {{- end}}
 
+## Code Review Protocol (MANDATORY)
+
+After any code modification, you MUST verify the changes against project standards before completing the turn.
+
+{{- if eq .Agent "claude"}}
+
+**Primary mechanism — subagents:**
+
+1. After modifying code, invoke the `code-reviewer` subagent (via the Agent tool with `subagent_type: "code-reviewer"`, or by prompting "use the code-reviewer subagent").
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+2. If datastore code (repositories, queries, entities, migrations) changed, also invoke `performance-reviewer`.
+{{- end}}
+{{- if .HasModule "AIAgent"}}
+{{if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}3{{else}}2{{end}}. If AI-agent code (system prompts, guardrails, tools, agents, knowledge) changed, also invoke `prompt-reviewer`.
+{{- end}}
+
+Address findings and re-invoke until reviewers report clean — **up to 3 review cycles**. If findings persist after 3 cycles, surface them to the user rather than continuing to iterate.
+
+A Stop hook (`.claude/hooks/require-review.sh`) enforces this by blocking turn completion if the `code-reviewer` subagent was not invoked when Java files changed. The hook is single-shot: once the reviewer has run in a session, subsequent Stops pass silently.
+
+**Manual alternative — skills:** run `/review` for general review{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, `/review-performance` for datastore-focused checks{{- end}}{{- if .HasModule "AIAgent"}}, `/review-prompts` for AI-agent code{{- end}}.
+{{- else if eq .Agent "cursor"}}
+
+Run the `/review` slash command after modifying code{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, plus `/review-performance` when datastore code changed{{- end}}{{- if .HasModule "AIAgent"}}, plus `/review-prompts` when AI-agent code changed{{- end}}. Address findings and re-run until clean — up to 3 cycles.
+
+If your Cursor version supports custom agents, `code-reviewer`{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, `performance-reviewer`{{- end}}{{- if .HasModule "AIAgent"}}, `prompt-reviewer`{{- end}} are defined under `.claude/agents/` — the prompts are portable.
+{{- else}}
+
+Run the `/review` command after modifying code{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, plus `/review-performance` when datastore code changed{{- end}}{{- if .HasModule "AIAgent"}}, plus `/review-prompts` when AI-agent code changed{{- end}}. Address findings and re-run until clean — up to 3 cycles. The review prompts and patterns live under `.claude/skills/` and `.ai/prompts/`.
+{{- end}}
+
+**Disable review**: `trabuco review disable` (persistent) or `export TRABUCO_REVIEW_HOOK=off` (session-only).
+
 ## Build & Test Commands
 
 | Command | Description |

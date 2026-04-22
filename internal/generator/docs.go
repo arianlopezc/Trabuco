@@ -53,6 +53,7 @@ func (g *Generator) generateDocs() error {
 			PromptsDir:    promptsDir,
 			TaskGuidesDir: ".ai/prompts",
 			Frontmatter:   frontmatter,
+			Agent:         agent.ID,
 		}
 		if err := g.writeTemplateWithData("docs/CLAUDE.md.tmpl", agent.FilePath, data); err != nil {
 			return err
@@ -94,6 +95,14 @@ func (g *Generator) generateDocs() error {
 	if g.config.HasCIProvider("github") {
 		if err := g.writeTemplate("github/workflows/ci.yml.tmpl", ".github/workflows/ci.yml"); err != nil {
 			return err
+		}
+		// Emit the deterministic review check script when review is enabled.
+		// Mirrors what the code-reviewer / performance-reviewer subagents do,
+		// as a CI gate. Script is executable and the CI workflow invokes it.
+		if g.config.ReviewEnabled() {
+			if err := g.writeTemplateExecutable("github/scripts/review-checks.sh.tmpl", ".github/scripts/review-checks.sh"); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -284,6 +293,12 @@ func (g *Generator) generateClaudeCodeFiles() error {
 	}
 
 	if err := g.writeTemplateWithData("ai/prompts/testing-guide.md.tmpl", ".claude/rules/testing-guide.md", testRuleData); err != nil {
+		return err
+	}
+
+	// Review subagents, hooks, and module-gated review skills. Emission is gated
+	// on ReviewConfig.Mode — "off" short-circuits inside generateReviewArtifacts.
+	if err := g.generateReviewArtifacts(); err != nil {
 		return err
 	}
 
