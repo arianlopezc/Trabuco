@@ -1,0 +1,24 @@
+# Add an A2A skill endpoint
+
+Expose an Agent-to-Agent (A2A) protocol skill: JSON-RPC handler + async task manager wiring + `A2AController` registration.
+
+> **Naming note:** "A2A skill" is a concept from the Agent-to-Agent protocol (this is what another agent calls over the network). It is unrelated to Anthropic's Claude Code skill system (the file you're reading now). Keeping the distinction explicit avoids confusion.
+
+## Key steps (summary)
+
+1. **Define the skill contract**: name, input schema, output schema. Add to `AIAgent/src/main/resources/.well-known/agent.json` so discovering agents see it.
+2. **Handler**: implement in `AIAgent/src/main/java/.../aiagent/protocol/`. The method takes JSON-RPC params, returns a result or enqueues a long-running task.
+3. **Async vs sync**: if the work exceeds ~5 seconds, register a `TaskManager` entry so the caller can poll — don't block the JSON-RPC connection.
+4. **Registration**: add the handler to the `A2AController` route table so incoming JSON-RPC dispatches to it.
+5. **Tests**: integration test exercises the full JSON-RPC round-trip, including async task poll.
+
+## Project conventions you must follow
+
+- **JSON-RPC 2.0 envelope** — `{"jsonrpc":"2.0","method":"...","params":{...},"id":...}`. Errors follow the spec's `{"code","message"}` shape.
+- **Async for anything >5s**: block the connection only for quick ops.
+- **Scope + auth**: the `CallerIdentity` scope check applies to A2A calls same as tools.
+- **Agent card discoverability**: every skill is listed in `/.well-known/agent.json`.
+
+## Full step-by-step
+
+See `.ai/prompts/add-a2a-skill.md`.

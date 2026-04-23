@@ -60,14 +60,14 @@ If any command fails, fix the issue before proceeding.
 
 ## Code Review Protocol
 
-After any code modification, review against project standards before completing the turn. Use the review playbooks in `.ai/prompts/`:
+After any code modification, review against project standards before completing the turn. The review flow is invocable via slash commands (skills) OR by reading the reference playbooks directly.
 
-- `.ai/prompts/code-review.md` — general code-quality review
+- `/review` — general code-quality review (spec: `.ai/prompts/code-review.md`, `.ai/prompts/JAVA_CODE_QUALITY.md`)
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
-- `.ai/prompts/JAVA_CODE_QUALITY.md` §5.5 — datastore performance checks
+- `/review-performance` — datastore performance checks (spec: `.ai/prompts/JAVA_CODE_QUALITY.md` §5.5)
 {{- end}}
 {{- if .HasModule "AIAgent"}}
-- `.ai/prompts/add-guardrail-rule.md` — prompt/guardrail review patterns
+- `/review-prompts` — prompt/guardrail review (spec: `.ai/prompts/add-guardrail-rule.md`)
 {{- end}}
 
 Run the review, address findings, repeat — up to 3 cycles. If unresolved findings remain, surface them to the user rather than iterating indefinitely.
@@ -165,20 +165,21 @@ For the full coding standards, read: `.ai/prompts/JAVA_CODE_QUALITY.md`
 
 ## Using Placeholder Code as Patterns
 
-The generated code includes working `Placeholder*` classes as reference implementations. When creating new entities, endpoints, jobs, or events, follow these patterns:
+The generated code includes working `Placeholder*` classes as reference implementations. When creating new entities, endpoints, jobs, or events, follow these patterns. Each task also has a `/add-X` skill (in `.agents/skills/`) that wraps the reference guide for slash-command invocation.
 
-| Task | Look at | Then read |
-|------|---------|-----------|
-| Add entity | `Placeholder.java`, `PlaceholderRecord.java` | `.ai/prompts/add-entity.md` |
+| Task | Slash command | Look at | Full guide |
+|------|--------------|---------|-----------|
+| Add entity | `/add-entity` | `Placeholder.java`, `PlaceholderRecord.java` | `.ai/prompts/add-entity.md` |
 {{- if .HasModule "API"}}
-| Add endpoint | `PlaceholderController.java`, `PlaceholderService.java` | `.ai/prompts/add-endpoint.md` |
+| Add endpoint | `/add-endpoint` | `PlaceholderController.java`, `PlaceholderService.java` | `.ai/prompts/add-endpoint.md` |
 {{- end}}
 {{- if .HasModule "Worker"}}
-| Add job | `ProcessPlaceholderJobRequest.java`, handler | `.ai/prompts/add-job.md` |
+| Add job | `/add-job` | `ProcessPlaceholderJobRequest.java`, handler | `.ai/prompts/add-job.md` |
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-| Add event | `PlaceholderEvent.java`, listener | `.ai/prompts/add-event.md` |
+| Add event | `/add-event` | `PlaceholderEvent.java`, listener | `.ai/prompts/add-event.md` |
 {{- end}}
+| Add tests | `/add-test` | existing `*Test.java` files | `.ai/prompts/add-test.md` |
 
 **Do not delete placeholder classes until you have at least one real implementation** — they serve as compilation-verified examples.
 

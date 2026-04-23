@@ -65,16 +65,10 @@ func (g *Generator) generateReviewArtifacts() error {
 		if err := g.writeTemplate("claude/HOOKS.md.tmpl", ".claude/HOOKS.md"); err != nil {
 			return fmt.Errorf("failed to write HOOKS.md: %w", err)
 		}
-		if g.config.HasAnyDatastore() {
-			if err := g.writeTemplate("claude/skills/review-performance.md.tmpl", ".claude/skills/review-performance/SKILL.md"); err != nil {
-				return fmt.Errorf("failed to write review-performance skill: %w", err)
-			}
-		}
-		if g.config.HasModule(config.ModuleAIAgent) {
-			if err := g.writeTemplate("claude/skills/review-prompts.md.tmpl", ".claude/skills/review-prompts/SKILL.md"); err != nil {
-				return fmt.Errorf("failed to write review-prompts skill: %w", err)
-			}
-		}
+		// Skills (review / pr / commit / review-performance / review-prompts /
+		// the add-* workflow family) are emitted by generateSkills() below,
+		// which also fans them out to Codex / Copilot / Cursor from a single
+		// catalog so content can't drift across tools.
 	}
 
 	// Cross-tool Stop-hook adapters. Each adapter shares the same deterministic
@@ -106,6 +100,13 @@ func (g *Generator) generateReviewArtifacts() error {
 	// Runtime config — the kill-switch source read by every tool's adapter.
 	if err := g.writeTemplate("trabuco/review.config.json.tmpl", ".trabuco/review.config.json"); err != nil {
 		return fmt.Errorf("failed to write review.config.json: %w", err)
+	}
+
+	// Skills fan out across every selected AI agent from a single catalog.
+	// Gated on ReviewEnabled() inside the function — shares the review
+	// kill-switch so `trabuco review disable` hides skills too.
+	if err := g.generateSkills(); err != nil {
+		return fmt.Errorf("failed to generate skills: %w", err)
 	}
 
 	return nil

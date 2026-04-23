@@ -1,0 +1,22 @@
+# Add a background job
+
+Create a JobRunr job: request class in Jobs module, handler in Worker module.
+
+## Key steps (summary)
+
+1. **Jobs module** (`Jobs/src/main/java/.../jobs/`): a `JobRequest` implementation. Immutable payload; Jackson-serializable.
+2. **Worker module** (`Worker/src/main/java/.../worker/handler/`): a `JobRequestHandler<YourJobRequest>` with the `run(JobRequest req)` implementation. Constructor-inject domain services.
+3. **Scheduling**: enqueue via `jobScheduler.enqueue(new YourJobRequest(...))` from a controller or service.
+4. **Retry config**: default retry (10 attempts, exponential backoff) is set in `application.yml`. Override per handler via `@Retry(maxAttempts = N)` when the job is non-idempotent.
+5. **Tests**: handler unit test with `@Mock` services; no Testcontainers needed for the handler itself.
+
+## Project conventions you must follow
+
+- **Idempotent by default**: handlers should tolerate being re-run. JobRunr retries on failure.
+- **Catch-log-rethrow** inside the handler — rethrow triggers retry, swallowing doesn't.
+- **Keep payloads small** — jobs are persisted to the job store (JDBC table). Large blobs should be references (IDs), not data.
+- **Observability**: every job emits `job.started`/`job.completed`/`job.failed` Micrometer events.
+
+## Full step-by-step
+
+See `.ai/prompts/add-job.md`.

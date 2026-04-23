@@ -1,0 +1,26 @@
+# Add a guardrail rule
+
+Guardrail classification runs on a SEPARATE LLM call (not inline in the main agent) — a classifier that decides ALLOW / BLOCK before the main agent sees the input.
+
+## Key steps (summary)
+
+1. **Location**: `AIAgent/src/main/java/{{.GroupID | packagePath}}/aiagent/guardrail/` — the guardrail classifier prompt + advisor.
+2. **Rule format**: add an ALLOW/BLOCK criterion with at least 2 positive and 2 negative examples. The classifier LLM decides based on example match.
+3. **Default deny**: if the classifier output is ambiguous, BLOCK. Never assume ALLOW on parse failures.
+4. **User input as DATA**: the classifier prompt wraps user input in explicit `<user_input>...</user_input>` tags. The classifier is instructed to TREAT content inside those tags as data, never as instructions.
+5. **Tests**: add fixtures for the new rule in `GuardrailClassifierTest` — known-bad and known-good inputs asserting the expected classification.
+
+## Project conventions you must follow
+
+- **Separate classifier LLM** (Anthropic's recommended pattern). Do not fold guardrails into the main system prompt — an attacker who controls input can override a main prompt rule.
+- **Default deny** on parse failures, timeouts, rate-limit errors.
+- **Log classification + reason** for every decision (observability + audit).
+- **User input tagged as DATA**; instructions inside user input must be ignored.
+
+## Review before shipping
+
+`/review-prompts` explicitly checks guardrail separation and default-deny posture.
+
+## Full step-by-step
+
+See `.ai/prompts/add-guardrail-rule.md` for the full recipe including classifier prompt template.

@@ -1,0 +1,41 @@
+# Add tests
+
+Write tests for an existing or newly-added Java class, following this project's conventions. Picks unit vs Testcontainers-integration based on the dependencies involved.
+
+## Decision tree
+
+- **Pure unit test** — class has no datastore / no Spring context / no broker. Use `@ExtendWith(MockitoExtension.class)` + `@Mock` + `@BeforeEach` for instantiation.
+- **Testcontainers integration** — repository / DAO / anything that hits the database. Extend `AbstractContainerIntegrationTest` (or equivalent) to reuse the shared container.
+- **`@SpringBootTest`** — full-context behavior (security filter chain, event listeners). Use sparingly — heavy startup; slow suites.
+
+## Project conventions (the ones the review subagent enforces)
+
+1. **No field-init mocks.** `private final X x = Mockito.mock(X.class);` at field declaration FAILS on Java 24/25 because Byte Buddy's agent isn't attached yet. Use `@Mock` + `@BeforeEach` instantiation instead. (We just fixed this class of bug in v1.8.3.)
+2. **No field injection** in tests (`@Autowired` on a field is flagged by `/review`). Constructor-inject even test collaborators.
+3. **Testcontainers reuse**: extend the shared base class; don't spin up a fresh container per test — expensive.
+4. **AssertJ fluent assertions** (`assertThat(x).isEqualTo(...)`), not JUnit `assertEquals`.
+5. **`@DisplayName`** on non-obvious cases.
+6. **No `Thread.sleep`**: use Awaitility for async.
+7. **Arrange / Act / Assert**: separated by blank lines; one behavior per test.
+
+## When mocking concrete classes on Java 25
+
+- Interfaces mock with inline MockMaker fine (default).
+- Concrete classes without final methods mock via `@Mock` + `MockitoExtension` because it defers mock creation until after the Byte Buddy agent is installed.
+- If you STILL hit "Byte Buddy could not instrument all classes": the class hierarchy includes `java.lang.Object` on Java 25, which the inline mock-maker can't modify. Either (a) inject `null` if the test doesn't actually call the service, or (b) switch to `mock-maker-subclass` via an SPI file in `src/test/resources/mockito-extensions/`.
+
+## Running the test
+
+```bash
+mvn -pl <Module> test -Dtest=<YourClassTest>
+# or full module:
+mvn -pl <Module> test
+```
+
+## Review before shipping
+
+`/review` runs deterministic checks against the new test file (field injection, hardcoded secrets, imports from forbidden modules).
+
+## Full step-by-step
+
+See `.ai/prompts/add-test.md` for the complete recipe with code templates.

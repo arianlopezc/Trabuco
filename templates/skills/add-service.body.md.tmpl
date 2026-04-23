@@ -1,0 +1,34 @@
+# Add a business-logic service
+
+Create a new Spring `@Service` in the Shared module. Single responsibility, constructor injection, immutable I/O types.
+
+## Key steps (summary)
+
+1. **Package**: `Shared/src/main/java/{{.GroupID | packagePath}}/shared/service/NewService.java`
+2. **Signature**:
+   ```java
+   @Service
+   public class NewService {
+     private final NewRepository repo;
+     public NewService(NewRepository repo) { this.repo = repo; }
+     @CircuitBreaker(name = "default")
+     public ImmutableResult doThing(ImmutableRequest req) { ... }
+   }
+   ```
+3. **Circuit breaker**: `@CircuitBreaker(name="default")` on any method that touches an external service / datastore (resilience4j is wired in the parent POM).
+4. **Tests**: `@ExtendWith(MockitoExtension.class)` + `@Mock` for repo + `@BeforeEach` for service instantiation. No field-init `Mockito.mock(...)`.
+
+## Project conventions you must follow
+
+- **Constructor injection only** — final fields, no `@Autowired`.
+- **Immutable types** for inputs/outputs; use the builder.
+- **No `@Transactional` on private methods** — Spring can't proxy them; review subagent flags this.
+- **Circuit-breaker on I/O-touching methods** — don't paper over with try/catch; let the breaker fire.
+
+## Tests for this service
+
+Run `/add-test` pointing at the new service file.
+
+## Full step-by-step
+
+See `.ai/prompts/add-service.md` for the full recipe.

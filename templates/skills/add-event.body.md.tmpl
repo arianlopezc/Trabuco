@@ -1,0 +1,26 @@
+# Add an event type
+
+Add a new async event: contract in Events module, publisher, consumer/listener in EventConsumer.
+
+## Key steps (summary)
+
+1. **Events module** (`Events/src/main/java/.../events/`): immutable event class with Jackson annotations. Version the schema — adding fields only, never renaming or removing (forward-compat for replay).
+2. **Publisher**: inject `EventPublisher` into the service emitting the event; call `publisher.publish(event)`. For {{- if .UsesKafka }} Kafka, the topic is derived from the event class name.
+{{- else if .UsesRabbitMQ }} RabbitMQ, the exchange/queue are configured in `application.yml`.
+{{- else if .UsesSQS }} SQS, the queue ARN is in `application.yml`.
+{{- else if .UsesPubSub }} GCP Pub/Sub, the topic is in `application.yml`.
+{{- else }} the broker, the destination is configured in `application.yml`.
+{{- end }}
+3. **Consumer** (`EventConsumer/src/main/java/.../eventconsumer/listener/`): `@{{if .UsesKafka}}KafkaListener{{else if .UsesRabbitMQ}}RabbitListener{{else if .UsesSQS}}SqsListener{{else if .UsesPubSub}}ServiceActivator{{else}}Listener{{end}}` method. **Catch-log-rethrow** is REQUIRED here — rethrowing triggers retry/DLQ wiring.
+4. **Tests**: consumer test with embedded broker ({{if .UsesKafka}}spring-kafka-test{{else if .UsesRabbitMQ}}spring-rabbit-test{{else if .UsesSQS}}testcontainers localstack{{else if .UsesPubSub}}spring-integration-test{{else}}embedded test support{{end}}).
+
+## Project conventions you must follow
+
+- **Listeners catch-log-rethrow**; don't swallow. GlobalExceptionHandler doesn't cover non-HTTP paths.
+- **Event classes are immutable** and additive-only across versions.
+- **Publisher is injected, never `new`'d** — so tests can mock it.
+- **Correlation ID propagation**: read `X-Correlation-Id` header from the event envelope, set in MDC.
+
+## Full step-by-step
+
+See `.ai/prompts/add-event.md`.

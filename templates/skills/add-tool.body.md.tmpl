@@ -1,0 +1,34 @@
+# Add an AI-agent @Tool method
+
+Expose a new capability to the LLM. Spring AI `@Tool` method in `PlaceholderTools` (or a domain-specific tool class).
+
+## Key steps (summary)
+
+1. **Location**: `AIAgent/src/main/java/{{.GroupID | packagePath}}/aiagent/tool/`. Either extend `PlaceholderTools` or create a new `@Component` with `@Tool` methods.
+2. **Method signature**:
+   ```java
+   @Tool(description = "Short clear purpose. When to call. When NOT to call.")
+   public ResultType methodName(
+       @ToolParam(description = "what this arg is") String arg) {
+     // call your service, return serializable result
+   }
+   ```
+3. **Description clarity**: the LLM picks tools by description match. Front-load the use-case, state pre/post-conditions, call out side-effects.
+4. **Parameter bounding**: validate ranges, lengths, enum values. Don't trust LLM-synthesized inputs.
+5. **Scope enforcement**: if the tool performs state-changing actions, check the caller's `CallerIdentity` scope via `ScopeEnforcer` before acting.
+6. **Rate limiting**: expensive tools should be wrapped with the `RateLimiter` bean.
+
+## Project conventions you must follow
+
+- **Small, composable tools** — one verb per tool, not kitchen sinks.
+- **Serializable return types** (records, Maps, simple DTOs). Don't return JPA entities directly.
+- **No unbounded scans inside tools** — apply the same `/review-performance` rules as service code.
+- **Tool tests** call the method directly with known inputs; no LLM in the loop.
+
+## Review before shipping
+
+Run `/review-prompts` — it checks tool definitions against injection-resilience and scope-boundary rules.
+
+## Full step-by-step
+
+See `.ai/prompts/add-tool.md`.

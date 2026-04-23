@@ -129,6 +129,15 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
+	// Review subagents, hooks, and the skill catalog. Runs exactly once
+	// regardless of which AI agents are selected — generateReviewArtifacts
+	// and generateSkills each gate per-tool internally (HasAIAgent checks).
+	// Previously this was nested inside generateClaudeCodeFiles, which meant
+	// Codex/Copilot/Cursor-only projects silently got no skills.
+	if err := g.generateReviewArtifacts(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -158,6 +167,12 @@ func (g *Generator) generateAIDirectory() error {
 
 	// Generate code review guide (always - for proactive self-review)
 	if err := g.writeTemplateWithData("ai/prompts/code-review.md.tmpl", ".ai/prompts/code-review.md", aiData); err != nil {
+		return err
+	}
+
+	// Generate testing guide — universal, not module-gated. /add-test
+	// applies to any Java module, so the reference prompt ships always.
+	if err := g.writeTemplateWithData("ai/prompts/add-test.md.tmpl", ".ai/prompts/add-test.md", aiData); err != nil {
 		return err
 	}
 
@@ -193,7 +208,10 @@ func (g *Generator) generateAIDirectory() error {
 	if g.config.HasModule(config.ModuleAIAgent) {
 		aiAgentPrompts := []struct{ tmpl, out string }{
 			{"ai/prompts/add-tool.md.tmpl", ".ai/prompts/add-tool.md"},
-			{"ai/prompts/add-skill.md.tmpl", ".ai/prompts/add-skill.md"},
+			// "add-a2a-skill" — renamed from "add-skill" in v1.8.4 to avoid
+			// confusion with Anthropic's Claude skills. The content remains
+			// the Agent-to-Agent (A2A) protocol handler guide.
+			{"ai/prompts/add-a2a-skill.md.tmpl", ".ai/prompts/add-a2a-skill.md"},
 			{"ai/prompts/add-guardrail-rule.md.tmpl", ".ai/prompts/add-guardrail-rule.md"},
 			{"ai/prompts/add-knowledge-entry.md.tmpl", ".ai/prompts/add-knowledge-entry.md"},
 		}
@@ -248,19 +266,11 @@ func (g *Generator) generateClaudeCodeFiles() error {
 		return err
 	}
 
-	// Generate .claude/skills/ directory with skill templates
-	// Each skill must be in its own directory as SKILL.md
-	if err := g.writeTemplate("claude/skills/commit.md.tmpl", ".claude/skills/commit/SKILL.md"); err != nil {
-		return err
-	}
-
-	if err := g.writeTemplate("claude/skills/pr.md.tmpl", ".claude/skills/pr/SKILL.md"); err != nil {
-		return err
-	}
-
-	if err := g.writeTemplate("claude/skills/review.md.tmpl", ".claude/skills/review/SKILL.md"); err != nil {
-		return err
-	}
+	// Skills (commit / pr / review / review-performance / review-prompts /
+	// add-*) are emitted by generateSkills() in review.go. It reads a shared
+	// catalog and fans out to .claude/skills/, .agents/skills/,
+	// .github/skills/, and .cursor/rules/ from a single source of truth.
+	// generateClaudeCodeFiles() intentionally no longer touches skills.
 
 	// Generate path-scoped rules to .claude/rules/ (Claude Code's official auto-discovery location).
 	// Rules include `paths:` frontmatter so they only load when matching files are accessed,
@@ -288,12 +298,6 @@ func (g *Generator) generateClaudeCodeFiles() error {
 	}
 
 	if err := g.writeTemplateWithData("ai/prompts/testing-guide.md.tmpl", ".claude/rules/testing-guide.md", testRuleData); err != nil {
-		return err
-	}
-
-	// Review subagents, hooks, and module-gated review skills. Emission is gated
-	// on ReviewConfig.Mode — "off" short-circuits inside generateReviewArtifacts.
-	if err := g.generateReviewArtifacts(); err != nil {
 		return err
 	}
 

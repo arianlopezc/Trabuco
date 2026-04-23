@@ -1,0 +1,26 @@
+# Add a repository method
+
+Add a derived query or `@Query` method to a Spring Data repository. Performance-critical per `.ai/prompts/JAVA_CODE_QUALITY.md` §5.5.
+
+## Key steps (summary)
+
+1. **Derived method naming** (preferred): `findByOwnerIdAndStatus(Long ownerId, Status status)` — Spring Data synthesizes the query.
+2. **`@Query`** (when derived isn't expressive enough): JPQL for SQL; write parameterized queries — NO string concatenation (rule `perf.sql-concat`).
+3. **Batch reads**: for N-by-id lookups, add `findAllByIdIn(List<ID> ids)` — chunked at 1000 in the service. Never loop `findById` (rule `perf.n-plus-one`).
+4. **Pagination**: use keyset — `findPage(Long afterId, int limit)` with a `@Query("... WHERE id > :afterId ORDER BY id LIMIT :limit")`. NOT `Pageable` (rule `perf.offset-pagination`).
+5. **Bulk writes**: `@Modifying @Query("UPDATE ... WHERE ... LIMIT :n")` — always include a bound (rule `perf.unbounded-dml`).
+
+## Project conventions you must follow
+
+- **No `findAll()`** on growing tables. Use keyset drain loops (see `PlaceholderService.processAllBatched`).
+- **No `Pageable` / offset pagination**. Keyset only.
+- **Chunked `findByIds`** at ≤1000 IDs per call.
+- **Parameterized `@Query`** — no `"..." + param + "..."`.
+
+## Tests for this method
+
+`/add-test` on the repository — generates Testcontainers-backed integration tests with real SQL/NoSQL.
+
+## Full step-by-step
+
+See `.ai/prompts/add-repository-method.md` and `.ai/prompts/JAVA_CODE_QUALITY.md` §5.5.

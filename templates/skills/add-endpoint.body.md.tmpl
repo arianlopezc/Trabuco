@@ -1,0 +1,27 @@
+# Add a REST endpoint
+
+Add a new HTTP endpoint to the API module. One controller method + request/response DTOs + service method + tests.
+
+## Key steps (summary)
+
+1. **Controller** (`API/src/main/java/.../api/controller/`): define the method signature, `@RequestMapping`, `@Valid` the request DTO.
+2. **DTOs** (in `Model/src/main/java/.../model/dto/`): immutable request + response records. Use `@NotNull`, `@Size`, etc. for validation.
+3. **Service** (`Shared/src/main/java/.../shared/service/`): business logic. Constructor-inject the repository. Return immutable type.
+4. **Pagination**: list endpoints MUST use keyset (`afterId`, `limit`) — not `page`/`size` / `Pageable`. See `/add-repository-method`.
+5. **Tests**: `MockMvc` test in API module + service test in Shared.
+
+## Project conventions you must follow
+
+- **No try/catch in controllers** that only wraps `ResponseEntity`. `GlobalExceptionHandler` owns that. The review subagent flags redundant controller try/catch.
+- **Constructor injection only**.
+- **Keyset pagination** for list endpoints (`GET /entities?afterId=...&limit=...`).
+- **Validation at the boundary**: `@Valid @RequestBody`, never trust input.
+- **Scope rule**: controllers catch nothing. Listeners, JobRunr handlers, and `@Scheduled` jobs DO catch-log-rethrow (for retry/DLQ wiring). See `.ai/prompts/JAVA_CODE_QUALITY.md` §4.1.1.
+
+## Tests for this endpoint
+
+Run `/add-test` pointing at the new controller — produces `MockMvc` + Testcontainers scaffold.
+
+## Full step-by-step
+
+See `.ai/prompts/add-endpoint.md` for the complete recipe.

@@ -301,36 +301,37 @@ Repository tests use Testcontainers — Docker must be running.
 
 ## Task Guides
 
-For complex tasks, read the corresponding guide in `.ai/prompts/` before implementing:
+Each task below has a slash-command skill (invoke as `/add-X`) AND a full step-by-step guide under `{{.TaskGuidesDir}}/`. The skill is the quick entry point; the guide under `.ai/prompts/` is the authoritative reference with code templates.
 
-| Task | Guide | When to Use |
-|------|-------|-------------|
-| **Code quality** | `{{.PromptsDir}}/JAVA_CODE_QUALITY.md` | Before/after writing ANY Java code |
-| Add new entity | `{{.TaskGuidesDir}}/add-entity.md` | Creating a new domain object |
+| Task | Slash command | Full guide | When to Use |
+|------|--------------|-----------|-------------|
+| **Code quality spec** | — | `{{.PromptsDir}}/JAVA_CODE_QUALITY.md` | Reference; read before/after writing ANY Java code |
+| Add new entity | `/add-entity` | `{{.TaskGuidesDir}}/add-entity.md` | Creating a new domain object |
 {{- if .HasModule "API"}}
-| Add REST endpoint | `{{.TaskGuidesDir}}/add-endpoint.md` | Exposing new API functionality |
+| Add REST endpoint | `/add-endpoint` | `{{.TaskGuidesDir}}/add-endpoint.md` | Exposing new API functionality |
 {{- end}}
 {{- if .HasModule "Worker"}}
-| Add background job | `{{.TaskGuidesDir}}/add-job.md` | Async processing tasks |
+| Add background job | `/add-job` | `{{.TaskGuidesDir}}/add-job.md` | Async processing tasks |
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-| Add event type | `{{.TaskGuidesDir}}/add-event.md` | Event-driven features |
+| Add event type | `/add-event` | `{{.TaskGuidesDir}}/add-event.md` | Event-driven features |
 {{- end}}
 {{- if .HasModule "Shared"}}
-| Add service | `{{.TaskGuidesDir}}/add-service.md` | Creating business logic services |
+| Add service | `/add-service` | `{{.TaskGuidesDir}}/add-service.md` | Creating business logic services |
 {{- end}}
 {{- if .HasModule "SQLDatastore"}}
-| Add repository method | `{{.TaskGuidesDir}}/add-repository-method.md` | Custom queries, pagination, batch ops |
-| Add migration | `{{.TaskGuidesDir}}/add-migration.md` | Schema changes, indexes, columns |
+| Add repository method | `/add-repository-method` | `{{.TaskGuidesDir}}/add-repository-method.md` | Custom queries, pagination, batch ops |
+| Add migration | `/add-migration` | `{{.TaskGuidesDir}}/add-migration.md` | Schema changes, indexes, columns |
 {{- end}}
 {{- if .HasModule "AIAgent"}}
-| Add AI tool | `{{.TaskGuidesDir}}/add-tool.md` | Adding @Tool methods for the agent |
-| Add A2A skill | `{{.TaskGuidesDir}}/add-skill.md` | Exposing tools via A2A protocol |
-| Add guardrail rule | `{{.TaskGuidesDir}}/add-guardrail-rule.md` | Input classification rules |
-| Add knowledge entry | `{{.TaskGuidesDir}}/add-knowledge-entry.md` | Token-free FAQ answers |
+| Add AI tool | `/add-tool` | `{{.TaskGuidesDir}}/add-tool.md` | Adding @Tool methods for the agent |
+| Add A2A skill | `/add-a2a-skill` | `{{.TaskGuidesDir}}/add-a2a-skill.md` | Exposing tools via A2A protocol |
+| Add guardrail rule | `/add-guardrail-rule` | `{{.TaskGuidesDir}}/add-guardrail-rule.md` | Input classification rules |
+| Add knowledge entry | `/add-knowledge-entry` | `{{.TaskGuidesDir}}/add-knowledge-entry.md` | Token-free FAQ answers |
 {{- end}}
-| Extend project | `{{.PromptsDir}}/extending-the-project.md` | Adding auth, caching, pagination, etc. |
-| **Testing guide** | `{{.PromptsDir}}/testing-guide.md` | Writing tests for any module |
+| Add tests | `/add-test` | `{{.TaskGuidesDir}}/add-test.md` | Unit, integration, or Testcontainers tests |
+| Extend project | — | `{{.PromptsDir}}/extending-the-project.md` | Adding auth, caching, pagination, etc. |
+| **Testing guide** | — | `{{.PromptsDir}}/testing-guide.md` | Writing tests for any module |
 
 ## Boundaries
 

@@ -1,14 +1,3 @@
----
-name: review-prompts
-description: Review AI agent code — system prompts, guardrails, tools, agents, and knowledge entries — for injection resilience, role clarity, and guardrail coverage. Manual alternative to the prompt-reviewer subagent.
-user-invocable: true
-allowed-tools: Read Grep Glob Bash
-argument-hint: "[file-or-branch]"
-paths:
-  - "AIAgent/**/*.java"
-  - "AIAgent/**/*.md"
-  - "AIAgent/**/resources/**"
----
 
 # AI Prompt & Guardrail Review
 

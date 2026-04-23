@@ -1,0 +1,21 @@
+# Add a knowledge-base entry
+
+Add a keyword-matched FAQ answer that short-circuits the LLM for well-known questions. Saves tokens + latency on canned answers.
+
+## Key steps (summary)
+
+1. **Location**: `AIAgent/src/main/resources/knowledge/` — one JSON or YAML entry per topic.
+2. **Entry format**: each entry has `keywords` (match triggers), `answer` (the canned response), and optional `confidence_threshold` (how many keywords must match).
+3. **Matching logic**: the `KnowledgeRetriever` scores incoming queries against entries; if score ≥ threshold, returns the canned answer without calling the LLM.
+4. **Tests**: add a fixture to `KnowledgeRetrieverTest` with the query + expected answer.
+
+## Project conventions you must follow
+
+- **Keyword-based, not semantic** — this module deliberately ships without a vector DB. Keywords keep it cheap and deterministic.
+- **Short canned answers** (1–3 sentences). Link out for long content.
+- **Evergreen content only** — don't put time-sensitive facts here (rates, prices, dates) that'll rot.
+- **Audit log**: every canned answer is logged with the match score for later tuning.
+
+## Full step-by-step
+
+See `.ai/prompts/add-knowledge-entry.md`.

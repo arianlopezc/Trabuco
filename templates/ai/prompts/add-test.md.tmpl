@@ -1,0 +1,172 @@
+# Add Test
+
+Full step-by-step recipe for adding tests to this project. Invocable as the `/add-test` skill in Claude Code, Codex CLI, and Copilot; referenced by the `add-test` Cursor rule.
+
+## Prerequisites
+
+- You know what class you're testing (repository, service, controller, listener, handler, tool, guardrail, ...).
+- The class follows project conventions — constructor injection, immutable types, no static state.
+
+## 1. Decide the test shape
+
+| Class type | Test shape | Base / extension |
+|---|---|---|
+| Pure logic, no I/O | Unit | `@ExtendWith(MockitoExtension.class)` |
+| Service that calls a repo | Unit (mock the repo) | `@ExtendWith(MockitoExtension.class)` |
+| Repository / DAO | Testcontainers integration | Shared container base class |
+| REST controller | `MockMvc` / `@WebMvcTest` | `@WebMvcTest(Controller.class)` |
+| Event listener / JobRunr handler | Unit (mock deps) + optional embedded broker | per-broker test starter |
+| AI agent @Tool method | Unit — call directly, no LLM | plain JUnit |
+| Full Spring wiring | `@SpringBootTest` (sparingly) | `@SpringBootTest + @AutoConfigureMockMvc` |
+
+## 2. File location
+
+Mirror the main package, in the OWNING module's `src/test/java`:
+
+```
+MainModule/src/main/java/com/x/foo/Thing.java
+MainModule/src/test/java/com/x/foo/ThingTest.java
+```
+
+## 3. Unit test template (service-with-mocked-repo)
+
+```java
+package {{.GroupID}}.shared.service;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class ThingServiceTest {
+
+  @Mock
+  private ThingRepository repo;
+
+  private ThingService service;
+
+  @BeforeEach
+  void setUp() {
+    service = new ThingService(repo);
+  }
+
+  @Test
+  void findsById_whenPresent() {
+    when(repo.findById(1L)).thenReturn(Optional.of(record));
+    var result = service.findById(1L);
+    assertThat(result).isPresent();
+  }
+
+  @Test
+  void returnsEmpty_whenAbsent() {
+    when(repo.findById(999L)).thenReturn(Optional.empty());
+    assertThat(service.findById(999L)).isEmpty();
+  }
+}
+```
+
+### Why `@Mock` + `@BeforeEach` and NOT field-init mocks
+
+Java 24+ disables dynamic agent attachment by default, and Java 25's stricter `java.base` module restrictions make `Mockito.mock(ConcreteClass.class)` at field declaration fail with "Byte Buddy could not instrument all classes."
+
+- `@Mock` + `MockitoExtension` defers mock creation to after JUnit has wired everything, by which point the agent is attached. **Use this.**
+- Field-init `private final X x = Mockito.mock(X.class);` fires during class loading, before the agent — **this fails.**
+
+## 4. Testcontainers integration template
+
+```java
+package {{.GroupID}}.sqldatastore.repository;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+@Testcontainers
+@SpringBootTest
+class ThingRepositoryIntegrationTest {
+
+  @Container
+  static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15");
+
+  @DynamicPropertySource
+  static void jdbcProps(DynamicPropertyRegistry r) {
+    r.add("spring.datasource.url", postgres::getJdbcUrl);
+    r.add("spring.datasource.username", postgres::getUsername);
+    r.add("spring.datasource.password", postgres::getPassword);
+  }
+
+  // ... tests
+}
+```
+
+**Prefer extending a shared container base class** (if present) so the container is reused across tests — not re-spun per test class.
+
+## 5. MockMvc controller test template
+
+```java
+@WebMvcTest(ThingController.class)
+class ThingControllerTest {
+
+  @Autowired MockMvc mvc;
+  @MockBean ThingService service;
+
+  @Test
+  void getById_returns200() throws Exception {
+    when(service.findById(1L)).thenReturn(Optional.of(immutable));
+    mvc.perform(get("/things/1"))
+       .andExpect(status().isOk())
+       .andExpect(jsonPath("$.id").value(1));
+  }
+}
+```
+
+## 6. Assertions — prefer AssertJ
+
+```java
+assertThat(list).hasSize(3).contains(expected);
+assertThat(optional).isPresent().get().extracting(Thing::name).isEqualTo("x");
+assertThatThrownBy(() -> svc.bad()).isInstanceOf(NotFoundException.class);
+```
+
+Avoid JUnit `assertEquals` / `assertTrue` — AssertJ gives better failure messages.
+
+## 7. Run the test
+
+```bash
+# Single test
+mvn -pl SharedModule test -Dtest=ThingServiceTest
+
+# Single method
+mvn -pl SharedModule test -Dtest=ThingServiceTest#findsById_whenPresent
+
+# Whole module
+mvn -pl SharedModule test
+```
+
+## 8. Review before committing
+
+Run `/review` — it checks the new test file for:
+- Field injection (`@Autowired` on a field) — banned
+- Hardcoded secrets (AWS/OpenAI keys, generic password literals)
+- Imports from forbidden modules
+- `@Transactional` on private methods
+
+Tests pass + review clean = ready for PR (`/pr` to generate).
+
+## Anti-patterns to avoid
+
+- **Field-init mocks on Java 24+**: use `@Mock` + `@BeforeEach`.
+- **`Thread.sleep` for async**: use Awaitility.
+- **Shared mutable state across tests**: each test sets up its own fixtures.
+- **Testing implementation details** (verifying internal method calls): test behavior, not structure.
+- **`@SpringBootTest` when a unit test would do**: it's 10× slower to start.
+- **Mocking the thing you're testing**: if you find yourself doing this, the test-target boundary is wrong.

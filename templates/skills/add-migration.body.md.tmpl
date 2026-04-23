@@ -1,0 +1,22 @@
+# Add a Flyway migration
+
+Create a new versioned SQL migration under `SQLDatastore/src/main/resources/db/migration/`.
+
+## Key steps (summary)
+
+1. **File name**: `V<next>__<summary>.sql` — e.g., `V3__add_orders_index.sql`. Versions are monotonic integers; don't skip, don't renumber existing.
+2. **Idempotence where possible**: `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` — so a partial migration can be resumed.
+3. **Index EVERY FK-like column**: any column used in a `WHERE x = ?` or join-style lookup gets an index. This replaces the FK constraint we deliberately don't declare.
+4. **No `FOREIGN KEY` / `REFERENCES`** — this project enforces FK-like invariants at the application layer. The review subagent + `review-checks.sh` flag migrations that declare FKs.
+5. **Bounded DML**: every `UPDATE` or `DELETE` in a migration must have a `LIMIT` (or explicit rationale). Unbounded DML during deploy = lock-table-and-pray.
+
+## Project conventions you must follow
+
+- **No foreign keys** (`sql.foreign-key` rule). Index the column, enforce in code.
+- **Bounded `UPDATE`/`DELETE`** (`sql.unbounded-dml`). Add `LIMIT N` or split into batched jobs.
+- **Schema backward-compat**: prefer `ALTER TABLE ... ADD COLUMN ... NULL` over `NOT NULL` + backfill. Two-phase if strictness is needed.
+- **Commit test migrations as CI fixtures**, not as part of production versioning.
+
+## Full step-by-step
+
+See `.ai/prompts/add-migration.md` for the complete recipe including backfill strategies and rollback guidance.

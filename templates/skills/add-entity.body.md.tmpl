@@ -1,0 +1,31 @@
+# Add a domain entity
+
+Create a new domain object: immutable entity + request DTO + datastore record + repository wiring + tests. All following this project's conventions (ImmutableX builder pattern, constructor injection, no field injection).
+
+## Key steps (summary)
+
+1. **Model**: add `ImmutableEntity` + `ImmutablePlaceholderRequest`-style DTO under `Model/src/main/java/{{.GroupID | packagePath}}/model/`.
+2. {{- if .HasModule "SQLDatastore" }}
+**SQLDatastore**: add `EntityRecord` (JPA) + repository interface extending `CrudRepository` / `JpaRepository`. Derived or `@Query` methods — use keyset pagination (`findPage(afterId, limit)`), NOT `Pageable`.
+{{- else if .HasModule "NoSQLDatastore" }}
+**NoSQLDatastore**: add `EntityDocument` + repository extending `MongoRepository` / similar. Use cursor or keyset drain for bulk reads.
+{{- else }}
+**Datastore**: add a datastore module (SQLDatastore or NoSQLDatastore) before creating entities that need persistence.
+{{- end }}
+3. **Shared**: add `EntityService` with constructor injection, `@CircuitBreaker(name="default")`, returns `ImmutableEntity`.
+4. **Tests**: `EntityServiceTest` with `@Mock` repo + `MockitoExtension` (no field-init `Mockito.mock(...)` — Java 25 breaks it).
+
+## Project conventions you must follow
+
+- **Immutables + builder** for all entity classes; never expose mutable setters across module boundaries.
+- **Constructor injection only**; `@Autowired` on fields is flagged by the review subagent.
+- **Keyset pagination** for any listing method on a growing table. Offset/`Pageable` is banned (see `/review-performance`).
+- **No foreign keys** in migrations — app-layer invariants, indexed ID columns for FK-like lookups.
+
+## Tests for this entity
+
+Run `/add-test` on the new service class to get test scaffolding with the correct `MockitoExtension` + Testcontainers pattern.
+
+## Full step-by-step
+
+See `.ai/prompts/add-entity.md` for the complete recipe with code examples, migration template, and the review checklist.
