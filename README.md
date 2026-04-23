@@ -106,7 +106,7 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 
 ## Installation
 
-> **Installing the CLI is a prerequisite for all installation paths below — including the Claude Code plugin.** The plugin spawns `trabuco mcp` from your `PATH` and does not download the binary itself.
+Pick any method below to install the CLI. If you also want the [Claude Code Plugin](#claude-code-plugin), install the CLI first — the plugin spawns `trabuco mcp` from your `PATH` and does not download the binary itself.
 
 ### npx (recommended for MCP use)
 
@@ -144,14 +144,25 @@ Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your PATH.
 
 If you use Claude Code, install the Trabuco plugin to drive the CLI conversationally — native Claude Code skills, specialist subagents, and grounded architecture advice instead of flag memorization or raw MCP tool names.
 
-**Prerequisite:** Install the CLI first using any method above. The plugin does NOT install or download the binary — it spawns `trabuco mcp` from your `PATH`. If the binary is missing, the plugin's MCP server fails to start and every `/trabuco:*` skill errors.
+**The plugin requires the `trabuco` CLI.** It is metadata only — skills, subagents, hooks, and an MCP server declaration. It does NOT download, bundle, or install the `trabuco` binary. When Claude Code loads the plugin, it spawns `trabuco mcp` from your shell `PATH`. If the binary is missing, the MCP server fails to start and every `/trabuco:*` skill errors out.
 
-```
-/plugin marketplace add arianlopezc/Trabuco
-/plugin install trabuco@trabuco-marketplace
-```
+**Install order:**
 
-After install, restart your session so the plugin's MCP server and hooks load. On start, the plugin's SessionStart hook verifies the CLI is present and reports the detected version; if it's missing, the assistant is told up front so it can walk you through installing it.
+1. **Install the CLI** using any method above (`npx`, `npm`, `curl | bash`, or `go install`).
+2. **Verify it's on PATH:**
+   ```bash
+   trabuco version
+   ```
+3. **Install the plugin:**
+   ```
+   /plugin marketplace add arianlopezc/Trabuco
+   /plugin install trabuco@trabuco-marketplace
+   ```
+4. **Restart your Claude Code session.** MCP servers and hooks are loaded on session start; they don't activate mid-session.
+
+**If you installed the plugin first, no harm done.** Install the CLI, then restart Claude Code. On the next SessionStart, the plugin's hook detects the binary and activates normally.
+
+**The plugin will tell you if the CLI is missing.** Its SessionStart hook runs `command -v trabuco` on boot. If it fails, the hook injects a message into the assistant's context explaining what's missing and how to install it — the assistant can then walk you through installation if you try a `/trabuco:*` skill before the binary is present.
 
 **What the plugin ships:**
 
@@ -163,12 +174,20 @@ After install, restart your session so the plugin's MCP server and hooks load. O
 | **Hooks** | Session-start binary detection, post-tool-use next-steps printers for `init_project`, `generate_workspace`, and `migrate_project` |
 | **MCP server** | All 14 CLI tools + 4 expert prompts + 3 reference resources available natively inside Claude Code |
 
-**Manual install from a release tarball:** Each Trabuco release attaches `trabuco-plugin-vX.Y.Z.zip` as an asset. Download, extract anywhere, then:
+**Manual install from a release tarball** (offline or restricted environments) — each Trabuco release attaches `trabuco-plugin-vX.Y.Z.zip` as an asset. Download, extract, then:
 
 ```
 /plugin marketplace add /path/to/extracted/trabuco-plugin-vX.Y.Z
 /plugin install trabuco@trabuco-marketplace
 ```
+
+**Troubleshooting — `/trabuco:*` skills return errors after install:**
+
+- Run `trabuco version` in a terminal. If the command is not found, the binary is missing from `PATH`. Re-run one of the CLI install methods above.
+- Confirm you restarted your Claude Code session AFTER installing both the CLI and the plugin. MCP servers only spawn at session start.
+- If you installed via `go install`, make sure `~/go/bin` (macOS/Linux) or `%USERPROFILE%\go\bin` (Windows) is on your shell `PATH`.
+- If you installed via `npm install -g trabuco-mcp`, make sure your npm global bin directory is on `PATH` (`npm prefix -g` shows the location).
+- If you installed via `curl | bash`, the install script places the binary in `~/.local/bin` by default — ensure that's on `PATH`.
 
 **For Cursor, Copilot, and Codex users:** the plugin is Claude-Code-specific. Use the CLI's built-in MCP server directly — see [CLI MCP Server](#cli-mcp-server) below.
 
