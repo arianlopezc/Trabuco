@@ -1,0 +1,18 @@
+{
+  "$schema": "https://claude.ai/plugins/marketplace.schema.json",
+  "name": "trabuco-marketplace",
+  "description": "The Trabuco plugin: conversational Java/Spring Boot scaffolding and AI-agent-native project extension, driven by the Trabuco CLI.",
+  "owner": {
+    "name": "Arian Lopez",
+    "url": "https://github.com/arianlopezc"
+  },
+  "plugins": [
+    {
+      "name": "trabuco",
+      "source": "./plugin",
+      "description": "Exposes Trabuco CLI functionality (architecture advice, module catalog, scaffolding, doctor, migration) as Claude Code skills + subagents, grounded in Trabuco's opinionated Java conventions.",
+      "version": "1.9.0",
+      "tags": ["java", "spring-boot", "ai-agent", "scaffolding"]
+    }
+  ]
+}

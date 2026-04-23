@@ -1,0 +1,20 @@
+{
+  "name": "trabuco",
+  "version": "1.9.0",
+  "description": "Conversational Java/Spring Boot project generation and extension. Exposes the Trabuco CLI's architecture advisor, module catalog, and scaffolding tools inside Claude Code. Grounded in Trabuco's opinionated conventions — keyset pagination, constructor injection, no FK constraints, Testcontainers patterns, A2A/MCP-ready AI agent module.",
+  "author": {
+    "name": "Arian Lopez",
+    "url": "https://github.com/arianlopezc/Trabuco"
+  },
+  "homepage": "https://github.com/arianlopezc/Trabuco",
+  "license": "MIT",
+  "keywords": [
+    "java",
+    "spring-boot",
+    "maven",
+    "microservices",
+    "ai-agent",
+    "scaffolding",
+    "mcp"
+  ]
+}

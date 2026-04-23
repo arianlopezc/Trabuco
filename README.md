@@ -13,7 +13,7 @@
 
 Starting a new Java project is slow — even with a coding agent helping. You set up Maven modules, wire databases and tests, copy boilerplate from that one project that "mostly works," and then spend the first hour explaining every architectural convention to Claude Code, Cursor, Copilot, or Codex from scratch. Hours pass before you write a single line of business logic. Trabuco exists because your time — and your agent's context window — is better spent building features, not fighting configuration or re-teaching conventions.
 
-Trabuco is a command-line tool that generates both halves of a modern Java codebase: a complete, production-ready multi-module Maven project *and* the AI context that teaches coding agents how to work in it. Run `trabuco init`, answer a few prompts (or pass flags for automation), and you get a fully wired Spring Boot codebase alongside task-specific prompts, quality specifications, per-agent rule files, and workflow hooks already configured for Claude Code, Codex, Cursor, and GitHub Copilot. No templates to download, no manual setup, and no session spent bootstrapping your agent's understanding of the project.
+Trabuco is a command-line tool — and a [Claude Code plugin](#claude-code-plugin) — that generates both halves of a modern Java codebase: a complete, production-ready multi-module Maven project *and* the AI context that teaches coding agents how to work in it. Run `trabuco init` (or inside Claude Code, type `/trabuco:new-project` and describe what you need in plain English), answer a few prompts (or pass flags for automation), and you get a fully wired Spring Boot codebase alongside task-specific prompts, quality specifications, per-agent rule files, and workflow hooks already configured for Claude Code, Codex, Cursor, and GitHub Copilot. No templates to download, no manual setup, and no session spent bootstrapping your agent's understanding of the project.
 
 The generated code is production-grade by default. Spring Boot 3.4 with Spring Data JDBC (no JPA surprises), Flyway migrations, Testcontainers for real integration tests, Resilience4j circuit breakers, Google Java Format enforced by Spotless, ArchUnit rules that fail the build on layer violations, correlation-ID tracing, Prometheus metrics, OpenAPI + Swagger UI, and a global exception handler with sanitized responses. PostgreSQL, MySQL, MongoDB, or Redis — all configured with Docker Compose. JobRunr for background jobs; Kafka, RabbitMQ, AWS SQS, or GCP Pub/Sub for event-driven processing. The modular layout — **Model**, **SQLDatastore** / **NoSQLDatastore**, **Shared**, **API**, **Worker**, **EventConsumer** — has clean compile-time boundaries so `API` physically cannot import `Worker` code. Every opinion is deliberate: keyset pagination, no foreign-key constraints, Immutables at module boundaries, constructor injection only, bulk-bounded writes.
 
@@ -24,6 +24,7 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 ## Table of Contents
 
 - [Features](#features)
+- [Claude Code Plugin](#claude-code-plugin)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Migrating Legacy Projects](#migrating-legacy-projects)
@@ -76,6 +77,7 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 
 ## Features
 
+- **Claude Code plugin** — Drive scaffolding, extension, and architecture advice conversationally via `/trabuco:*` skills and specialist subagents. One install: `/plugin marketplace add arianlopezc/Trabuco`. See [Claude Code Plugin](#claude-code-plugin) below.
 - **AI-powered migration** *(experimental)* — Transform existing Spring Boot projects into Trabuco's architecture with `trabuco migrate`
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
 - **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
@@ -101,6 +103,38 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 - **AI Agent module** — Production-ready AI agent with Spring AI: tool calling, LLM guardrails, multi-agent orchestration, MCP server, A2A protocol, and knowledge base
 - **AI-friendly** — Generates context files, coding rules, quality specs, and task prompts for Claude, Cursor, GitHub Copilot, and Codex
 - **CLI MCP server** — `trabuco mcp` exposes all CLI functionality as structured tools for AI coding agents
+
+## Claude Code Plugin
+
+If you use Claude Code, install the Trabuco plugin for a conversational experience that exposes the full CLI surface as native Claude Code skills, specialist subagents, and grounded architecture advice — no flag memorization, no raw MCP tool names, no context-switching into the shell.
+
+```
+/plugin marketplace add arianlopezc/Trabuco
+/plugin install trabuco@trabuco-marketplace
+```
+
+After install, restart your session so the plugin's MCP server and hooks load.
+
+**What the plugin ships:**
+
+| Layer | Contents |
+|---|---|
+| **Skills** (7) | `/trabuco:new-project`, `/trabuco:design-system`, `/trabuco:add-module`, `/trabuco:extend`, `/trabuco:doctor`, `/trabuco:migrate`, `/trabuco:suggest` |
+| **Specialist subagents** (3) | `trabuco-architect` (architecture reasoning), `trabuco-ai-agent-expert` (AIAgent module deep dive), `trabuco-migration-expert` (legacy project feasibility + planning) |
+| **Grounding docs** | Trabuco philosophy, module catalog interpretation, pattern recipes, limitations, when-not-to-use — so the assistant won't recommend what Trabuco can't deliver |
+| **Hooks** | Session-start binary detection, post-tool-use next-steps printers for `init_project`, `generate_workspace`, and `migrate_project` |
+| **MCP server** | All 14 CLI tools + 4 expert prompts + 3 reference resources available natively inside Claude Code |
+
+**Prerequisite:** The plugin requires the `trabuco` CLI on `PATH` — it spawns `trabuco mcp` under the hood. Install the CLI first using any method in the [Installation](#installation) section below.
+
+**Manual install from a release tarball:** Each Trabuco release attaches `trabuco-plugin-vX.Y.Z.zip` as an asset. Download, extract anywhere, then:
+
+```
+/plugin marketplace add /path/to/extracted/trabuco-plugin
+/plugin install trabuco@trabuco-marketplace
+```
+
+**For Cursor, Copilot, and Codex users:** the plugin is Claude-Code-specific. Use the CLI's built-in MCP server directly — see [CLI MCP Server](#cli-mcp-server) below.
 
 ## Installation
 

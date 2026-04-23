@@ -1,7 +1,7 @@
 {
   "name": "trabuco-mcp",
   "version": "0.0.0",
-  "description": "Generate production-ready Java projects via AI coding agents — MCP server for Trabuco CLI",
+  "description": "Generate production-ready Java projects via AI coding agents — MCP server for Trabuco CLI. A native Claude Code plugin is also available: /plugin marketplace add arianlopezc/Trabuco",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -119,6 +119,35 @@ jobs:
           create_mcpb linux arm64 linux "trabuco-linux-arm64"
           create_mcpb windows amd64 win32 "trabuco-windows-amd64.exe"
 
+      - name: Package Claude Code plugin
+        env:
+          TAG: ${{ steps.version.outputs.TAG }}
+        run: |
+          STAGE="trabuco-plugin-${TAG}"
+          mkdir -p "${STAGE}"
+          # Copy the plugin directory contents under the staging dir so the
+          # extracted path is self-contained and points directly at plugin root.
+          cp -R plugin/. "${STAGE}/"
+          # Include the marketplace manifest so `/plugin marketplace add <path>`
+          # can resolve the plugin offline from the extracted tree. The bundled
+          # copy has its `source` rewritten to "." so it resolves inside the
+          # extracted archive instead of pointing at a sibling `plugin/` dir.
+          mkdir -p "${STAGE}/.claude-plugin"
+          STAGE="${STAGE}" python3 - <<'PY'
+          import json, os
+          stage = os.environ['STAGE']
+          with open('.claude-plugin/marketplace.json') as f:
+              m = json.load(f)
+          for p in m.get('plugins', []):
+              p['source'] = '.'
+          with open(f'{stage}/.claude-plugin/marketplace.json', 'w') as f:
+              json.dump(m, f, indent=2)
+              f.write('\n')
+          PY
+          zip -r "dist/trabuco-plugin-${TAG}.zip" "${STAGE}"
+          tar -czf "dist/trabuco-plugin-${TAG}.tar.gz" "${STAGE}"
+          rm -rf "${STAGE}"
+
       - name: List files
         run: ls -la dist/
 
@@ -173,7 +202,7 @@ jobs:
           server = {
               '\$schema': 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
               'name': 'io.github.arianlopezc/trabuco',
-              'description': 'Generate and manage production-ready Java multi-module Maven projects via AI coding agents',
+              'description': 'Generate and manage production-ready Java multi-module Maven projects via AI coding agents. Includes a native Claude Code plugin: /plugin marketplace add arianlopezc/Trabuco',
               'title': 'Trabuco',
               'version': sys.argv[1],
               'websiteUrl': 'https://github.com/arianlopezc/Trabuco',
