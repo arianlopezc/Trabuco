@@ -202,7 +202,7 @@ jobs:
           server = {
               '\$schema': 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
               'name': 'io.github.arianlopezc/trabuco',
-              'description': 'Generate and manage production-ready Java multi-module Maven projects via AI coding agents. Includes a native Claude Code plugin: /plugin marketplace add arianlopezc/Trabuco',
+              'description': 'Production Java Maven scaffolder (CLI + Claude Code plugin) for AI coding agents',
               'title': 'Trabuco',
               'version': sys.argv[1],
               'websiteUrl': 'https://github.com/arianlopezc/Trabuco',

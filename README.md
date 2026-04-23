@@ -24,8 +24,8 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 ## Table of Contents
 
 - [Features](#features)
-- [Claude Code Plugin](#claude-code-plugin)
 - [Installation](#installation)
+  - [Claude Code Plugin](#claude-code-plugin)
 - [Quick Start](#quick-start)
 - [Migrating Legacy Projects](#migrating-legacy-projects)
   - [How It Works](#how-it-works)
@@ -104,39 +104,9 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 - **AI-friendly** — Generates context files, coding rules, quality specs, and task prompts for Claude, Cursor, GitHub Copilot, and Codex
 - **CLI MCP server** — `trabuco mcp` exposes all CLI functionality as structured tools for AI coding agents
 
-## Claude Code Plugin
-
-If you use Claude Code, install the Trabuco plugin for a conversational experience that exposes the full CLI surface as native Claude Code skills, specialist subagents, and grounded architecture advice — no flag memorization, no raw MCP tool names, no context-switching into the shell.
-
-```
-/plugin marketplace add arianlopezc/Trabuco
-/plugin install trabuco@trabuco-marketplace
-```
-
-After install, restart your session so the plugin's MCP server and hooks load.
-
-**What the plugin ships:**
-
-| Layer | Contents |
-|---|---|
-| **Skills** (7) | `/trabuco:new-project`, `/trabuco:design-system`, `/trabuco:add-module`, `/trabuco:extend`, `/trabuco:doctor`, `/trabuco:migrate`, `/trabuco:suggest` |
-| **Specialist subagents** (3) | `trabuco-architect` (architecture reasoning), `trabuco-ai-agent-expert` (AIAgent module deep dive), `trabuco-migration-expert` (legacy project feasibility + planning) |
-| **Grounding docs** | Trabuco philosophy, module catalog interpretation, pattern recipes, limitations, when-not-to-use — so the assistant won't recommend what Trabuco can't deliver |
-| **Hooks** | Session-start binary detection, post-tool-use next-steps printers for `init_project`, `generate_workspace`, and `migrate_project` |
-| **MCP server** | All 14 CLI tools + 4 expert prompts + 3 reference resources available natively inside Claude Code |
-
-**Prerequisite:** The plugin requires the `trabuco` CLI on `PATH` — it spawns `trabuco mcp` under the hood. Install the CLI first using any method in the [Installation](#installation) section below.
-
-**Manual install from a release tarball:** Each Trabuco release attaches `trabuco-plugin-vX.Y.Z.zip` as an asset. Download, extract anywhere, then:
-
-```
-/plugin marketplace add /path/to/extracted/trabuco-plugin
-/plugin install trabuco@trabuco-marketplace
-```
-
-**For Cursor, Copilot, and Codex users:** the plugin is Claude-Code-specific. Use the CLI's built-in MCP server directly — see [CLI MCP Server](#cli-mcp-server) below.
-
 ## Installation
+
+> **Installing the CLI is a prerequisite for all installation paths below — including the Claude Code plugin.** The plugin spawns `trabuco mcp` from your `PATH` and does not download the binary itself.
 
 ### npx (recommended for MCP use)
 
@@ -169,6 +139,38 @@ go install github.com/arianlopezc/Trabuco/cmd/trabuco@latest
 ```
 
 Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your PATH.
+
+### Claude Code Plugin
+
+If you use Claude Code, install the Trabuco plugin to drive the CLI conversationally — native Claude Code skills, specialist subagents, and grounded architecture advice instead of flag memorization or raw MCP tool names.
+
+**Prerequisite:** Install the CLI first using any method above. The plugin does NOT install or download the binary — it spawns `trabuco mcp` from your `PATH`. If the binary is missing, the plugin's MCP server fails to start and every `/trabuco:*` skill errors.
+
+```
+/plugin marketplace add arianlopezc/Trabuco
+/plugin install trabuco@trabuco-marketplace
+```
+
+After install, restart your session so the plugin's MCP server and hooks load. On start, the plugin's SessionStart hook verifies the CLI is present and reports the detected version; if it's missing, the assistant is told up front so it can walk you through installing it.
+
+**What the plugin ships:**
+
+| Layer | Contents |
+|---|---|
+| **Skills** (7) | `/trabuco:new-project`, `/trabuco:design-system`, `/trabuco:add-module`, `/trabuco:extend`, `/trabuco:doctor`, `/trabuco:migrate`, `/trabuco:suggest` |
+| **Specialist subagents** (3) | `trabuco-architect` (architecture reasoning), `trabuco-ai-agent-expert` (AIAgent module deep dive), `trabuco-migration-expert` (legacy project feasibility + planning) |
+| **Grounding docs** | Trabuco philosophy, module catalog interpretation, pattern recipes, limitations, when-not-to-use — so the assistant won't recommend what Trabuco can't deliver |
+| **Hooks** | Session-start binary detection, post-tool-use next-steps printers for `init_project`, `generate_workspace`, and `migrate_project` |
+| **MCP server** | All 14 CLI tools + 4 expert prompts + 3 reference resources available natively inside Claude Code |
+
+**Manual install from a release tarball:** Each Trabuco release attaches `trabuco-plugin-vX.Y.Z.zip` as an asset. Download, extract anywhere, then:
+
+```
+/plugin marketplace add /path/to/extracted/trabuco-plugin-vX.Y.Z
+/plugin install trabuco@trabuco-marketplace
+```
+
+**For Cursor, Copilot, and Codex users:** the plugin is Claude-Code-specific. Use the CLI's built-in MCP server directly — see [CLI MCP Server](#cli-mcp-server) below.
 
 ## Quick Start
 
