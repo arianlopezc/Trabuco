@@ -100,6 +100,16 @@
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
             </dependency>
+            <!-- checker-qual: pin to resolve dependencyConvergence conflicts
+                 between transitive consumers (e.g., postgresql driver pulls a
+                 newer version than Google Cloud Pub/Sub's proto libraries).
+                 It's a compile-time annotation library; any recent version
+                 is safe across all consumers. -->
+            <dependency>
+                <groupId>org.checkerframework</groupId>
+                <artifactId>checker-qual</artifactId>
+                <version>3.48.3</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

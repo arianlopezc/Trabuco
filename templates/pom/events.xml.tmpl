@@ -66,6 +66,14 @@
         <dependency>
             <groupId>com.google.cloud</groupId>
             <artifactId>spring-cloud-gcp-starter-pubsub</artifactId>
+            <exclusions>
+                <!-- Exclude javax.annotation (banned — Pub/Sub's proto-generated
+                     classes pull it transitively via google-cloud-pubsub) -->
+                <exclusion>
+                    <groupId>javax.annotation</groupId>
+                    <artifactId>javax.annotation-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- Jackson Java 8 date/time support -->
