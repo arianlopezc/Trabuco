@@ -31,6 +31,34 @@ jobs:
           path: trabuco
           retention-days: 1
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # Integration tests: review-checks.sh rule coverage + Stop-hook adapter
+  # contract tests (Claude/Cursor/Codex) + full round-trip scenarios. These
+  # exercise the review-automation machinery the main `build` job skips
+  # because they're tagged `//go:build integration` and exec generated shell
+  # scripts. Run on a single JDK (21) — the scripts themselves are JDK-agnostic.
+  # ─────────────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration Tests (review + hooks)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Run integration-tagged tests
+        run: go test -tags=integration -v ./internal/generator/...
+
   test-generated-project:
     name: Test Generated Project
     needs: build
@@ -507,3 +535,50 @@ jobs:
 
           echo ""
           echo "All prompts contain expected module-specific content ✓"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Archetype × JDK matrix: generate representative project shapes on the
+  # JDKs users actually run, then execute `mvn clean install` with the full
+  # test suite (no -DskipTests). Existing jobs above compile with -DskipTests
+  # on Java 21 only, which is why v1.8.1/v1.8.2 shipped with Mockito/Jacoco/
+  # banned-deps failures that only surface on Java 24/25 at test time.
+  #
+  # Scope: 4 archetypes × 3 JDKs = 12 parallel shards. Keep JDKs in sync
+  # with `flagJavaVersion` accepted values in internal/cli/init.go.
+  # ─────────────────────────────────────────────────────────────────────────
+  archetype-matrix:
+    name: Archetype ${{ matrix.archetype }} on JDK ${{ matrix.java }}
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['21', '24', '25']
+        archetype:
+          - api-minimal
+          - crud-sql
+          - aiagent-pubsub
+          - full-fat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trabuco-cli
+
+      - name: Make CLI executable
+        run: chmod +x ./trabuco
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ matrix.java }}
+
+      - name: Run archetype build + tests
+        env:
+          TRABUCO_BIN: ${{ github.workspace }}/trabuco
+          ARCHETYPE: ${{ matrix.archetype }}
+        # bash explicit so CI doesn't depend on the exec bit being preserved
+        run: bash scripts/e2e/test_full_build.sh "$ARCHETYPE"

@@ -1,14 +1,23 @@
 package {{.GroupID}}.aiagent.tool;
-{{if .HasModule "Shared"}}
-import {{.GroupID}}.shared.service.PlaceholderService;
-import org.mockito.Mockito;
-{{- end}}
+
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
+/**
+ * Unit tests for {@link PlaceholderTools}.
+{{- if .HasModule "Shared"}}
+ *
+ * <p>The placeholder tool methods return hardcoded data and don't touch the
+ * injected {@code PlaceholderService} — so this test passes {@code null} rather
+ * than creating a mock. When you replace the placeholder methods with real
+ * domain logic that calls the service, swap {@code null} for a proper mock
+ * (see {@code PlaceholderServiceTest} for the {@code @Mock} +
+ * {@link org.mockito.junit.jupiter.MockitoExtension} pattern used elsewhere).
+{{- end}}
+ */
 class PlaceholderToolsTest {
 {{if .HasModule "Shared"}}
-    private final PlaceholderTools tools = new PlaceholderTools(Mockito.mock(PlaceholderService.class));
+    private final PlaceholderTools tools = new PlaceholderTools(null);
 {{- else}}
     private final PlaceholderTools tools = new PlaceholderTools();
 {{- end}}

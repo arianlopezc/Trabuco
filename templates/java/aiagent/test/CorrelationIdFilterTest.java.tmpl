@@ -1,33 +1,46 @@
 package {{.GroupID}}.aiagent;
 
+import {{.GroupID}}.aiagent.security.CorrelationIdFilter;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@AutoConfigureMockMvc
+/**
+ * Unit tests for {@link CorrelationIdFilter}. Instantiates the filter directly
+ * with mock servlet objects — no Spring context is needed because the filter
+ * has no injected dependencies. Keeping this as a pure unit test avoids pulling
+ * in the full application context (Flyway, JDBC, auto-config) just to exercise
+ * a request header handler.
+ */
 class CorrelationIdFilterTest {
 
-    @Autowired
-    private MockMvc mvc;
+    private final CorrelationIdFilter filter = new CorrelationIdFilter();
 
     @Test
     void generatesCorrelationId() throws Exception {
-        mvc.perform(get("/capabilities"))
-            .andExpect(status().isOk())
-            .andExpect(header().exists("X-Correlation-ID"));
+        var request = new MockHttpServletRequest("GET", "/capabilities");
+        var response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getHeader(CorrelationIdFilter.CORRELATION_ID_HEADER))
+            .as("response must carry a generated correlation id")
+            .isNotBlank();
     }
 
     @Test
     void preservesProvidedCorrelationId() throws Exception {
-        mvc.perform(get("/capabilities")
-                .header("X-Correlation-ID", "test-trace-123"))
-            .andExpect(status().isOk())
-            .andExpect(header().string("X-Correlation-ID", "test-trace-123"));
+        var request = new MockHttpServletRequest("GET", "/capabilities");
+        request.addHeader(CorrelationIdFilter.CORRELATION_ID_HEADER, "test-trace-123");
+        var response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getHeader(CorrelationIdFilter.CORRELATION_ID_HEADER))
+            .as("inbound correlation id must be propagated to the response")
+            .isEqualTo("test-trace-123");
     }
 }

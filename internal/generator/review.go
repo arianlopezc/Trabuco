@@ -94,6 +94,15 @@ func (g *Generator) generateReviewArtifacts() error {
 		}
 	}
 
+	// Deterministic review script — shared by all Stop-hook adapters (Claude,
+	// Cursor, Codex) for Layer 2 enforcement, and by the GitHub Actions CI
+	// workflow when that provider is enabled. Emit whenever review is on:
+	// without this file, every hook silently loses Layer 2 (rule scan) and
+	// falls back to Layer 1 only — a footgun we hit during e2e testing.
+	if err := g.writeTemplateExecutable("github/scripts/review-checks.sh.tmpl", ".github/scripts/review-checks.sh"); err != nil {
+		return fmt.Errorf("failed to write review-checks.sh: %w", err)
+	}
+
 	// Runtime config — the kill-switch source read by every tool's adapter.
 	if err := g.writeTemplate("trabuco/review.config.json.tmpl", ".trabuco/review.config.json"); err != nil {
 		return fmt.Errorf("failed to write review.config.json: %w", err)

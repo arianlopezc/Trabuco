@@ -18,6 +18,11 @@
         <maven.compiler.source>{{.JavaVersion}}</maven.compiler.source>
         <maven.compiler.target>{{.JavaVersion}}</maven.compiler.target>
         <spring-boot.version>3.4.2</spring-boot.version>
+        <!-- Mockito: override Spring Boot's managed version (5.14.2) which does
+             not support Java 24/25 class-file bytecode. Mockito 5.17+ adds Java
+             25 support; pinning to a newer 5.x keeps mocks working when the
+             developer's runtime JVM is newer than {{.JavaVersion}}. -->
+        <mockito.version>5.19.0</mockito.version>
         <testcontainers.version>2.0.3</testcontainers.version>
 {{- if or (.HasModule "Jobs") (.HasModule "Worker")}}
         <jobrunr.version>8.4.0</jobrunr.version>
@@ -32,10 +37,18 @@
         <spring-ai.version>1.0.5</spring-ai.version>
         <resilience4j.version>2.2.0</resilience4j.version>
 {{- end}}
-        <jacoco.version>0.8.12</jacoco.version>
+        <!-- Jacoco 0.8.12 cannot instrument class-file major version 69 (Java 25)
+             — its agent fails during runtime instrumentation of JDK classes with
+             `Unsupported class file major version 69`, producing log noise and
+             missing coverage data. 0.8.14 adds Java 25 class-file support. -->
+        <jacoco.version>0.8.14</jacoco.version>
         <maven-enforcer.version>3.5.0</maven-enforcer.version>
         <spotless.version>2.44.4</spotless.version>
-        <archunit.version>1.4.0</archunit.version>
+        <!-- ArchUnit 1.4.0 ships an ASM that can't parse class-file major
+             version 69 (Java 25) — it logs "Unsupported class file major version"
+             per JDK class and falls back to a degraded importer, producing
+             stack-trace spam in test logs. 1.4.1+ bundles a newer ASM. -->
+        <archunit.version>1.4.2</archunit.version>
     </properties>
 
     <modules>
@@ -110,6 +123,23 @@
                 <artifactId>checker-qual</artifactId>
                 <version>3.48.3</version>
             </dependency>
+            <!-- Mockito: Spring Boot 3.4.2 manages mockito-core at 5.14.2
+                 which only supports JVM class files through Java 23. Developers
+                 running a newer JDK (24/25) locally hit Byte Buddy "could not
+                 instrument" errors when tests try to mock concrete classes.
+                 Pin a newer Mockito explicitly — the `<mockito.version>` property
+                 by itself does not override the version that Spring Boot's
+                 spring-boot-dependencies BOM locks in. -->
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-junit-jupiter</artifactId>
+                <version>${mockito.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -128,6 +158,20 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.2.5</version>
+                    <configuration>
+                        <!-- Java 21 deprecated dynamic Java-agent attachment
+                             and Java 24+ disables it by default. Mockito's
+                             inline mock-maker attaches Byte Buddy as a
+                             dynamic agent to mock concrete classes — without
+                             this flag, tests that mock non-interface types
+                             fail with "Byte Buddy could not instrument all
+                             classes" when the developer's runtime JVM is
+                             newer than the compile target.
+                             `@{argLine}` is late-binding so Jacoco's
+                             prepare-agent can still prepend coverage
+                             instrumentation. -->
+                        <argLine>@{argLine} -XX:+EnableDynamicAgentLoading</argLine>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.jacoco</groupId>

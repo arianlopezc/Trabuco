@@ -21,6 +21,7 @@ var (
 	addNoBackup      bool
 	addSkipDoctor    bool
 	addSkipBuild     bool
+	addRunTests      bool
 )
 
 var addCmd = &cobra.Command{
@@ -57,6 +58,7 @@ func init() {
 	addCmd.Flags().BoolVar(&addNoBackup, "no-backup", false, "Skip creating backup (not recommended)")
 	addCmd.Flags().BoolVar(&addSkipDoctor, "skip-doctor", false, "Skip doctor validation (not recommended)")
 	addCmd.Flags().BoolVar(&addSkipBuild, "skip-build", false, "Skip running 'mvn clean install' after adding module")
+	addCmd.Flags().BoolVar(&addRunTests, "run-tests", false, "Run the full test suite during the post-add build (omits -DskipTests). Used by e2e CI jobs.")
 }
 
 func runAdd(cmd *cobra.Command, args []string) {
@@ -250,7 +252,7 @@ func runAdd(cmd *cobra.Command, args []string) {
 		}
 	} else {
 		// Run Maven build
-		if err := runMavenBuild(projectPath); err != nil {
+		if err := runMavenBuild(projectPath, addRunTests); err != nil {
 			yellow.Printf("\nMaven build failed: %v\n", err)
 			fmt.Println("You can try running it manually:")
 			fmt.Println("  mvn clean install")

@@ -40,6 +40,7 @@ var (
 	flagIncludeClaude bool   // Deprecated: use flagAIAgents instead
 	flagStrict        bool
 	flagSkipBuild     bool
+	flagRunTests      bool
 )
 
 var initCmd = &cobra.Command{
@@ -74,6 +75,7 @@ func init() {
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", false, "Deprecated: use --ai-agents=claude instead")
 	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
 	initCmd.Flags().BoolVar(&flagSkipBuild, "skip-build", false, "Skip running 'mvn clean install' after generation")
+	initCmd.Flags().BoolVar(&flagRunTests, "run-tests", false, "Run the full test suite during the post-generation build (omits -DskipTests). Used by e2e CI jobs.")
 }
 
 func runInit(cmd *cobra.Command, args []string) {
@@ -374,7 +376,7 @@ func runInit(cmd *cobra.Command, args []string) {
 		fmt.Printf("  mvn clean install\n")
 	} else {
 		// Run Maven build
-		if err := runMavenBuild(projectDir); err != nil {
+		if err := runMavenBuild(projectDir, flagRunTests); err != nil {
 			yellow.Printf("\nMaven build failed: %v\n", err)
 			fmt.Println("You can try running it manually:")
 			fmt.Printf("  cd %s && mvn clean install\n", cfg.ProjectName)
@@ -399,8 +401,11 @@ func runSpotlessFormat(projectDir string) {
 	_ = cmd.Run() // Best-effort: ignore errors since build will catch issues
 }
 
-// runMavenBuild executes 'mvn clean install -DskipTests' in the given directory
-func runMavenBuild(projectDir string) error {
+// runMavenBuild executes 'mvn clean install' in the given directory. When
+// runTests is false it appends -DskipTests (the default for interactive init,
+// where we just want to verify packaging); when true the full test suite runs
+// — used by e2e CI jobs that must catch runtime-JVM regressions.
+func runMavenBuild(projectDir string, runTests bool) error {
 	cyan := color.New(color.FgCyan)
 
 	cyan.Println("Building project with Maven...")
@@ -408,6 +413,12 @@ func runMavenBuild(projectDir string) error {
 
 	// Format code before building
 	runSpotlessFormat(projectDir)
+
+	mvnArgs := []string{"clean", "install", "-q"}
+	if !runTests {
+		mvnArgs = append(mvnArgs, "-DskipTests")
+	}
+	spinnerLabel := "Running mvn " + strings.Join(mvnArgs, " ") + "..."
 
 	// Create spinner animation
 	done := make(chan bool)
@@ -420,14 +431,14 @@ func runMavenBuild(projectDir string) error {
 				fmt.Print("\r")
 				return
 			default:
-				fmt.Printf("\r  %s Running mvn clean install -DskipTests...", frames[i%len(frames)])
+				fmt.Printf("\r  %s %s", frames[i%len(frames)], spinnerLabel)
 				i++
 				time.Sleep(100 * time.Millisecond)
 			}
 		}
 	}()
 
-	cmd := exec.Command("mvn", "clean", "install", "-DskipTests", "-q")
+	cmd := exec.Command("mvn", mvnArgs...)
 	cmd.Dir = projectDir
 
 	// Capture output for error reporting

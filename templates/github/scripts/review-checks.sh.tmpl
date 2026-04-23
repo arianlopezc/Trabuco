@@ -239,9 +239,12 @@ run_grep_check "Unbounded scan (findAll) on a repository" \
   "perf.unbounded-scan" \
   '\.findAll[[:space:]]*\([[:space:]]*\)'
 
+# Pageable is required to be *used* (followed by a variable name, e.g.,
+# `Pageable page`) so that a bare `import ...Pageable;` line doesn't flag.
+# Imports end the identifier with `;` — they never contain `Pageable ` + letter.
 run_grep_check "Offset pagination (Pageable / OFFSET / skip)" \
   "perf.offset-pagination" \
-  '\bPageable\b|\bOFFSET\b|\.skip\('
+  '\bPageable[[:space:]]+[A-Za-z_]|\bOFFSET\b|\.skip\('
 
 run_grep_check "SQL string concatenation in @Query" \
   "perf.sql-concat" \
@@ -289,10 +292,32 @@ if [ -n "${SQL_FILES// /}" ]; then
     'REFERENCES|FOREIGN KEY' \
     $SQL_FILES
 
-  run_grep_check "Unbounded UPDATE/DELETE in migration" \
-    "sql.unbounded-dml" \
-    '^[^-]*\b(UPDATE|DELETE)\b(?![^;]*\b[Ll][Ii][Mm][Ii][Tt]\b)' \
-    $SQL_FILES
+  # Unbounded UPDATE/DELETE: the prior ERE pattern used a PCRE lookahead
+  # `(?!...)` that grep -E silently rejects, so the rule was a no-op. Rewritten
+  # as awk so we can enforce "statement mentions UPDATE/DELETE and does not
+  # mention LIMIT" line-by-line without depending on grep dialect.
+  echo "::group::[sql.unbounded-dml] Unbounded UPDATE/DELETE in migration"
+  sql_dml_findings=0
+  for f in $SQL_FILES; do
+    [ -f "$f" ] || continue
+    while IFS= read -r hit; do
+      [ -z "$hit" ] && continue
+      ln=${hit%%:*}; snippet=${hit#*:}
+      if is_suppressed "$f" "$ln" "sql.unbounded-dml"; then continue; fi
+      echo "  $f:$ln:$snippet"
+      echo "::error file=$f,line=$ln,title=[sql.unbounded-dml] Unbounded UPDATE/DELETE in migration::$snippet"
+      sql_dml_findings=$((sql_dml_findings+1))
+    done < <(awk '
+      # Strip trailing "-- …" inline comments; skip full-line comment rows.
+      { line=$0; sub(/--.*/, "", line) }
+      line ~ /^[[:space:]]*$/ { next }
+      # Match any DELETE or UPDATE statement not followed by LIMIT.
+      line ~ /[Dd][Ee][Ll][Ee][Tt][Ee]|[Uu][Pp][Dd][Aa][Tt][Ee]/ \
+        && line !~ /[Ll][Ii][Mm][Ii][Tt]/ { print NR ":" line }
+    ' "$f")
+  done
+  if [ "$sql_dml_findings" -gt 0 ]; then FAIL=1; FINDINGS=$((FINDINGS+sql_dml_findings)); else echo "  ok"; fi
+  echo "::endgroup::"
 fi
 {{- end}}
 {{- if .HasModule "NoSQLDatastore"}}

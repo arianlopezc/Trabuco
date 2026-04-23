@@ -1003,3 +1003,60 @@ func TestGenerator_Generate_NoAIAgent_NoSpringAI(t *testing.T) {
 		t.Error("Parent POM should NOT include spring-ai-bom when AIAgent is not selected")
 	}
 }
+
+// Stop-hook adapters invoke .github/scripts/review-checks.sh for Layer 2.
+// The script used to be emitted only when --ci=github was selected, which
+// meant hooks silently degraded to Layer 1 in projects without CI opt-in —
+// a real bug we caught during e2e validation. This test locks in the fix:
+// review-checks.sh must be emitted whenever review is enabled, regardless
+// of CI provider choice.
+func TestGenerator_Generate_ReviewScriptEmittedWithoutCI(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "trabuco-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(oldWd)
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "review-no-ci",
+		GroupID:     "com.test.reviewnoci",
+		ArtifactID:  "review-no-ci",
+		JavaVersion: "21",
+		Modules:     []string{"Model", "API"},
+		AIAgents:    []string{"claude"},
+		Review:      config.ReviewConfig{Mode: config.ReviewModeFull},
+		// NOTE: CIProvider intentionally empty — user did not opt into GitHub CI.
+	}
+
+	gen, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	scriptPath := filepath.Join("review-no-ci", ".github", "scripts", "review-checks.sh")
+	info, err := os.Stat(scriptPath)
+	if os.IsNotExist(err) {
+		t.Fatal("review-checks.sh should be emitted when review is enabled, regardless of CI provider")
+	}
+	if err != nil {
+		t.Fatalf("stat review-checks.sh: %v", err)
+	}
+	// Must be executable — Stop hooks invoke it with bash, but the adapters
+	// themselves check for the -x bit before running.
+	if info.Mode()&0o111 == 0 {
+		t.Errorf("review-checks.sh should be executable, got mode %v", info.Mode())
+	}
+
+	// And conversely: ci.yml must NOT be emitted, since user didn't opt in.
+	ciPath := filepath.Join("review-no-ci", ".github", "workflows", "ci.yml")
+	if _, err := os.Stat(ciPath); err == nil {
+		t.Errorf("ci.yml should NOT be emitted without CIProvider='github'")
+	}
+}

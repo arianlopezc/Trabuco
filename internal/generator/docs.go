@@ -91,18 +91,13 @@ func (g *Generator) generateDocs() error {
 		}
 	}
 
-	// Generate CI workflow when a CI provider is configured
+	// Generate CI workflow when a CI provider is configured. The review script
+	// itself is emitted by generateReviewArtifacts() regardless of CI provider —
+	// hooks need it for Layer 2 enforcement whether or not the user opts into
+	// GitHub Actions.
 	if g.config.HasCIProvider("github") {
 		if err := g.writeTemplate("github/workflows/ci.yml.tmpl", ".github/workflows/ci.yml"); err != nil {
 			return err
-		}
-		// Emit the deterministic review check script when review is enabled.
-		// Mirrors what the code-reviewer / performance-reviewer subagents do,
-		// as a CI gate. Script is executable and the CI workflow invokes it.
-		if g.config.ReviewEnabled() {
-			if err := g.writeTemplateExecutable("github/scripts/review-checks.sh.tmpl", ".github/scripts/review-checks.sh"); err != nil {
-				return err
-			}
 		}
 	}
 
