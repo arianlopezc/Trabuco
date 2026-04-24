@@ -124,26 +124,16 @@ jobs:
           TAG: ${{ steps.version.outputs.TAG }}
         run: |
           STAGE="trabuco-plugin-${TAG}"
-          mkdir -p "${STAGE}"
-          # Copy the plugin directory contents under the staging dir so the
-          # extracted path is self-contained and points directly at plugin root.
-          cp -R plugin/. "${STAGE}/"
-          # Include the marketplace manifest so `/plugin marketplace add <path>`
-          # can resolve the plugin offline from the extracted tree. The bundled
-          # copy has its `source` rewritten to "." so it resolves inside the
-          # extracted archive instead of pointing at a sibling `plugin/` dir.
+          mkdir -p "${STAGE}/plugin"
+          # Mirror the repo-root layout inside the archive:
+          #   <stage>/.claude-plugin/marketplace.json   (source: "./plugin")
+          #   <stage>/plugin/...                        (plugin contents)
+          # Claude Code's marketplace schema rejects source:"." — the plugin
+          # must live in a proper subdirectory beneath marketplace.json, so
+          # the archive layout mirrors the in-repo layout exactly.
+          cp -R plugin/. "${STAGE}/plugin/"
           mkdir -p "${STAGE}/.claude-plugin"
-          STAGE="${STAGE}" python3 - <<'PY'
-          import json, os
-          stage = os.environ['STAGE']
-          with open('.claude-plugin/marketplace.json') as f:
-              m = json.load(f)
-          for p in m.get('plugins', []):
-              p['source'] = '.'
-          with open(f'{stage}/.claude-plugin/marketplace.json', 'w') as f:
-              json.dump(m, f, indent=2)
-              f.write('\n')
-          PY
+          cp .claude-plugin/marketplace.json "${STAGE}/.claude-plugin/marketplace.json"
           zip -r "dist/trabuco-plugin-${TAG}.zip" "${STAGE}"
           tar -czf "dist/trabuco-plugin-${TAG}.tar.gz" "${STAGE}"
           rm -rf "${STAGE}"
