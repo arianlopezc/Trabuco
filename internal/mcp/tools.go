@@ -42,6 +42,7 @@ func registerAllTools(s *server.MCPServer, version string) {
 	registerListProviders(s)
 	registerDesignSystem(s)
 	registerGenerateWorkspace(s, version)
+	registerSyncProject(s, version)
 }
 
 // ---------- Project Management Tools ----------

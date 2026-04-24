@@ -36,6 +36,7 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 - [Managing Existing Projects](#managing-existing-projects)
   - [Project Health Check](#project-health-check)
   - [Adding Modules](#adding-modules)
+  - [Syncing AI Tooling](#syncing-ai-tooling)
 - [CLI MCP Server](#cli-mcp-server)
   - [Configuration](#configuration)
   - [Available Tools](#available-tools)
@@ -507,6 +508,64 @@ By default, `add` creates a backup in `.trabuco-backup/` before modifying files.
 | NoSQLDatastore | SQLDatastore | — |
 | Worker | — | Jobs, Model |
 | EventConsumer | — | Events, Model |
+
+### Syncing AI Tooling
+
+Trabuco's AI-tooling layer evolves across releases: new skills, new subagents, new task prompts, new review rules, new hooks. Projects generated on older CLIs keep their original files and miss anything the CLI added afterwards — the coding agents working on those projects run with a stale tool belt.
+
+`trabuco sync` closes that gap. It's additive-only: given a project's `.trabuco.json` and the currently-installed CLI, it identifies every AI-tooling file the current CLI would generate that's missing from the project, and creates those files on `--apply`.
+
+```bash
+# Dry-run — shows what would be added, no writes
+trabuco sync
+
+# Actually create the missing files
+trabuco sync --apply
+
+# Machine-readable plan (for CI, scripting, or agent consumption)
+trabuco sync --json
+```
+
+**What sync touches (in-jurisdiction):**
+
+- `.ai/**` — prompts, task guides, quality specs
+- `.claude/**` — settings, skills, subagents, hooks, rules
+- `.cursor/**`, `.codex/**`, `.agents/**` — per-agent files
+- `.github/instructions/**`, `.github/skills/**`, `.github/scripts/review-checks.sh`, `.github/workflows/copilot-setup-steps.yml`, `.github/copilot-instructions.md` — Copilot and cross-tool files
+- `.trabuco/review.config.json` — review runtime config
+- `CLAUDE.md`, `AGENTS.md` — top-level agent context files
+
+**What sync NEVER touches (out of jurisdiction):**
+
+- Java source (`**/src/**`), Flyway migrations, Maven POMs
+- `application.yml`, `application.properties`, profile configs
+- `docker-compose.yml`, `.env*`, `.dockerignore`
+- CI workflow (`.github/workflows/ci.yml`) — only `copilot-setup-steps.yml` is in scope
+- `.run/` IntelliJ configs, `README.md`, `.trabuco.json`
+- `.ai/checkpoint.json` — live session state, explicitly excluded
+- Any Git internals
+
+Sync uses a whitelist of path prefixes, validated at both planning and write time. Business code is physically unreachable from this command — even if a future change added a registry entry for a Java source path, write-time validation would refuse.
+
+**Operational guarantees:**
+
+- **Additive only.** Existing files are never modified or deleted, regardless of how stale their content is. To refresh a file like `CLAUDE.md` with newer content, delete the file and re-run `trabuco sync --apply`.
+- **Idempotent.** Running `trabuco sync --apply` twice in a row always succeeds; the second run is a no-op.
+- **Atomic per-file.** Each file is written via tmpfile + rename, so a crash during sync cannot leave a partial file in the project.
+- **Zero drift from init.** The expected state is produced by running the current generator against a temporary directory, so what sync considers "missing" is exactly what `trabuco init` would emit for the same project configuration.
+
+**Typical flow after upgrading the CLI:**
+
+```bash
+# Upgrade the CLI (npm, curl, go install — your choice)
+npm install -g trabuco-mcp@latest
+
+# In your existing project
+cd my-project
+trabuco sync                # see what's new
+trabuco sync --apply        # bring the AI layer up to date
+trabuco doctor              # sanity-check the project after
+```
 
 ## CLI MCP Server
 

@@ -36,4 +36,5 @@ func init() {
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(reviewCmd)
+	rootCmd.AddCommand(syncCmd)
 }
