@@ -1,24 +1,17 @@
 package {{.GroupID}}.api.config;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
-import java.time.Instant;
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.validation.FieldError;
-import org.springframework.web.HttpMediaTypeNotSupportedException;
-import org.springframework.web.HttpRequestMethodNotSupportedException;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
@@ -32,177 +25,30 @@ import org.springframework.amqp.AmqpException;
 {{- end}}
 
 /**
- * Global exception handler for REST API.
+ * Global exception handler for the REST API.
  *
- * <p>SECURITY: Prevents stack traces from being leaked to clients.
- * All exceptions are logged server-side and clients receive sanitized error responses.
+ * <p>Emits RFC 7807 Problem Details ({@code application/problem+json}) for
+ * every error response. This handler extends {@link ResponseEntityExceptionHandler}
+ * to inherit Spring's built-in mappings for framework exceptions
+ * (validation, malformed JSON, missing parameters, type mismatches, unsupported
+ * methods/media types, missing resources). Only project-specific exceptions
+ * — datastore integrity, broker errors, and the catch-all fallback — are
+ * declared here.
+ *
+ * <p>SECURITY: stack traces and root-cause messages may contain schema
+ * details, table names, or internal state; they are logged server-side and
+ * never leak into the response body. Clients receive a sanitized
+ * Problem Detail.
+ *
+ * <p>Customizing problem types: each handler sets a {@code type} URI that
+ * identifies the problem class. Replace the {@code urn:problem-type:*}
+ * placeholders with HTTPS URLs to your own documentation when you publish
+ * the API.
  */
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-
-  /** Handle validation errors from @Valid annotations. */
-  @ExceptionHandler(MethodArgumentNotValidException.class)
-  public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
-    Map<String, String> errors = new HashMap<>();
-    ex.getBindingResult().getAllErrors().forEach(error -> {
-      String fieldName = ((FieldError) error).getField();
-      String errorMessage = error.getDefaultMessage();
-      errors.put(fieldName, errorMessage);
-    });
-
-    logger.warn("Validation failed: {}", errors);
-
-    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.BAD_REQUEST.value())
-        .error("Validation Failed")
-        .message("One or more fields have invalid values")
-        .details(errors)
-        .build());
-  }
-
-  /** Handle malformed JSON request bodies. */
-  @ExceptionHandler(HttpMessageNotReadableException.class)
-  public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
-    logger.warn("Malformed JSON request: {}", ex.getMessage());
-
-    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.BAD_REQUEST.value())
-        .error("Bad Request")
-        .message("Malformed JSON request body")
-        .build());
-  }
-
-  /** Handle missing required request parameters. */
-  @ExceptionHandler(MissingServletRequestParameterException.class)
-  public ResponseEntity<ErrorResponse> handleMissingServletRequestParameter(MissingServletRequestParameterException ex) {
-    logger.warn("Missing request parameter: {}", ex.getParameterName());
-
-    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.BAD_REQUEST.value())
-        .error("Bad Request")
-        .message("Required parameter '" + ex.getParameterName() + "' is missing")
-        .build());
-  }
-
-  /** Handle type mismatches in request parameters. */
-  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-  public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException ex) {
-    logger.warn("Type mismatch for parameter '{}': {}", ex.getName(), ex.getMessage());
-
-    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.BAD_REQUEST.value())
-        .error("Bad Request")
-        .message("Parameter '" + ex.getName() + "' has an invalid type")
-        .build());
-  }
-
-  /** Handle constraint violations from @Validated on path/query params. */
-  @ExceptionHandler(ConstraintViolationException.class)
-  public ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException ex) {
-    Map<String, String> errors = new HashMap<>();
-    ex.getConstraintViolations().forEach(violation -> {
-      String path = violation.getPropertyPath().toString();
-      String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
-      errors.put(field, violation.getMessage());
-    });
-
-    logger.warn("Constraint violations: {}", errors);
-
-    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.BAD_REQUEST.value())
-        .error("Validation Failed")
-        .message("One or more constraints were violated")
-        .details(errors)
-        .build());
-  }
-
-  /** Handle requests for resources that do not exist. */
-  @ExceptionHandler(NoResourceFoundException.class)
-  public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
-    logger.warn("Resource not found: {}", ex.getMessage());
-
-    return ResponseEntity.status(HttpStatus.NOT_FOUND)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.NOT_FOUND.value())
-        .error("Not Found")
-        .message("The requested resource was not found")
-        .build());
-  }
-
-  /** Handle unsupported HTTP methods. */
-  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-  public ResponseEntity<ErrorResponse> handleHttpRequestMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
-    logger.warn("Method not supported: {}", ex.getMethod());
-
-    return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.METHOD_NOT_ALLOWED.value())
-        .error("Method Not Allowed")
-        .message("HTTP method '" + ex.getMethod() + "' is not supported for this endpoint")
-        .build());
-  }
-
-  /** Handle unsupported media types. */
-  @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
-  public ResponseEntity<ErrorResponse> handleHttpMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex) {
-    logger.warn("Unsupported media type: {}", ex.getContentType());
-
-    return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.UNSUPPORTED_MEDIA_TYPE.value())
-        .error("Unsupported Media Type")
-        .message("Content type '" + ex.getContentType() + "' is not supported")
-        .build());
-  }
-
-  /** Handle ResponseStatusException (dynamic status codes). */
-  @ExceptionHandler(ResponseStatusException.class)
-  public ResponseEntity<ErrorResponse> handleResponseStatusException(ResponseStatusException ex) {
-    HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
-
-    if (status.is5xxServerError()) {
-      logger.error("Response status error: {} {}", status.value(), ex.getReason(), ex);
-    } else {
-      logger.warn("Response status error: {} {}", status.value(), ex.getReason());
-    }
-
-    return ResponseEntity.status(status)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(status.value())
-        .error(status.getReasonPhrase())
-        .message(ex.getReason() != null ? ex.getReason() : status.getReasonPhrase())
-        .build());
-  }
-
-  /** Handle illegal argument exceptions. */
-  @ExceptionHandler(IllegalArgumentException.class)
-  public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
-    logger.warn("Invalid argument: {}", ex.getMessage());
-
-    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.BAD_REQUEST.value())
-        .error("Bad Request")
-        .message(ex.getMessage())
-        .build());
-  }
 
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 
@@ -211,16 +57,16 @@ public class GlobalExceptionHandler {
    * SECURITY: the root-cause message may contain table/column names and is logged only.
    */
   @ExceptionHandler(DuplicateKeyException.class)
-  public ResponseEntity<ErrorResponse> handleDuplicateKey(DuplicateKeyException ex) {
+  public ProblemDetail handleDuplicateKey(DuplicateKeyException ex, HttpServletRequest request) {
     logger.warn("Duplicate key violation: {}", ex.getMostSpecificCause().getMessage());
 
-    return ResponseEntity.status(HttpStatus.CONFLICT)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.CONFLICT.value())
-        .error("Conflict")
-        .message("A resource with the provided value already exists")
-        .build());
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.CONFLICT,
+      "A resource with the provided value already exists");
+    problem.setTitle("Conflict");
+    problem.setType(URI.create("urn:problem-type:duplicate-resource"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
   }
 
   /**
@@ -228,123 +74,114 @@ public class GlobalExceptionHandler {
    * SECURITY: the root-cause message may contain schema details and is logged only.
    */
   @ExceptionHandler(DataIntegrityViolationException.class)
-  public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+  public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
     logger.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
 
-    return ResponseEntity.status(HttpStatus.CONFLICT)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.CONFLICT.value())
-        .error("Conflict")
-        .message("The request violates a data integrity constraint")
-        .build());
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.CONFLICT,
+      "The request violates a data integrity constraint");
+    problem.setTitle("Conflict");
+    problem.setType(URI.create("urn:problem-type:data-integrity-violation"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
   }
 {{- end}}
-
 {{- if .HasModule "EventConsumer"}}
 {{- if .UsesKafka}}
+
   /**
    * Handle Kafka messaging exceptions.
-   * Returns 503 Service Unavailable when the message broker is unreachable or misconfigured.
+   * Returns 503 Service Unavailable when the broker is unreachable or misconfigured.
    */
   @ExceptionHandler(KafkaException.class)
-  public ResponseEntity<ErrorResponse> handleKafkaException(KafkaException ex) {
+  public ProblemDetail handleKafkaException(KafkaException ex, HttpServletRequest request) {
     logger.error("Kafka messaging error: {}", ex.getMessage(), ex);
 
-    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.SERVICE_UNAVAILABLE.value())
-        .error("Service Unavailable")
-        .message("Unable to publish event. The messaging service is temporarily unavailable.")
-        .build());
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.SERVICE_UNAVAILABLE,
+      "Unable to publish event. The messaging service is temporarily unavailable.");
+    problem.setTitle("Service Unavailable");
+    problem.setType(URI.create("urn:problem-type:messaging-unavailable"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
   }
 {{- else if .UsesRabbitMQ}}
+
   /**
    * Handle RabbitMQ messaging exceptions.
-   * Returns 503 Service Unavailable when the message broker is unreachable or misconfigured.
+   * Returns 503 Service Unavailable when the broker is unreachable or misconfigured.
    */
   @ExceptionHandler(AmqpException.class)
-  public ResponseEntity<ErrorResponse> handleAmqpException(AmqpException ex) {
+  public ProblemDetail handleAmqpException(AmqpException ex, HttpServletRequest request) {
     logger.error("RabbitMQ messaging error: {}", ex.getMessage(), ex);
 
-    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.SERVICE_UNAVAILABLE.value())
-        .error("Service Unavailable")
-        .message("Unable to publish event. The messaging service is temporarily unavailable.")
-        .build());
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.SERVICE_UNAVAILABLE,
+      "Unable to publish event. The messaging service is temporarily unavailable.");
+    problem.setTitle("Service Unavailable");
+    problem.setType(URI.create("urn:problem-type:messaging-unavailable"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
   }
 {{- end}}
 {{- end}}
 
   /**
-   * Handle all other unexpected exceptions.
-   * SECURITY: Do not expose internal error details to clients.
+   * Handle constraint violations from {@code @Validated} on path/query
+   * parameters. Spring's base handler doesn't cover this case; we surface
+   * the offending fields in a {@code violations} extension property.
    */
-  @ExceptionHandler(Exception.class)
-  public ResponseEntity<ErrorResponse> handleAllExceptions(Exception ex) {
-    // Log the full stack trace server-side for debugging
-    logger.error("Unexpected error occurred", ex);
+  @ExceptionHandler(ConstraintViolationException.class)
+  public ProblemDetail handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest request) {
+    Map<String, String> violations = new HashMap<>();
+    ex.getConstraintViolations().forEach(v -> {
+      String path = v.getPropertyPath().toString();
+      String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+      violations.put(field, v.getMessage());
+    });
 
-    // Return sanitized error response to client
-    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-      .body(ErrorResponse.builder()
-        .timestamp(Instant.now())
-        .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-        .error("Internal Server Error")
-        .message("An unexpected error occurred. Please try again later.")
-        .build());
+    logger.warn("Constraint violations: {}", violations);
+
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.BAD_REQUEST,
+      "One or more constraints were violated");
+    problem.setTitle("Validation Failed");
+    problem.setType(URI.create("urn:problem-type:constraint-violation"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    problem.setProperty("violations", violations);
+    return problem;
   }
 
-  /** Error response DTO. */
-  public record ErrorResponse(
-    Instant timestamp,
-    int status,
-    String error,
-    String message,
-    Map<String, String> details
-  ) {
-    public static Builder builder() {
-      return new Builder();
-    }
+  /**
+   * Handle illegal argument exceptions raised by application code.
+   */
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
+    logger.warn("Invalid argument: {}", ex.getMessage());
 
-    public static class Builder {
-      private Instant timestamp;
-      private int status;
-      private String error;
-      private String message;
-      private Map<String, String> details;
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.BAD_REQUEST,
+      ex.getMessage() != null ? ex.getMessage() : "Invalid argument");
+    problem.setTitle("Bad Request");
+    problem.setType(URI.create("urn:problem-type:invalid-argument"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
+  }
 
-      public Builder timestamp(Instant timestamp) {
-        this.timestamp = timestamp;
-        return this;
-      }
+  /**
+   * Catch-all for unexpected exceptions.
+   * SECURITY: full stack trace is logged server-side; the response is sanitized.
+   */
+  @ExceptionHandler(Exception.class)
+  public ProblemDetail handleAllExceptions(Exception ex, HttpServletRequest request) {
+    logger.error("Unexpected error occurred", ex);
 
-      public Builder status(int status) {
-        this.status = status;
-        return this;
-      }
-
-      public Builder error(String error) {
-        this.error = error;
-        return this;
-      }
-
-      public Builder message(String message) {
-        this.message = message;
-        return this;
-      }
-
-      public Builder details(Map<String, String> details) {
-        this.details = details;
-        return this;
-      }
-
-      public ErrorResponse build() {
-        return new ErrorResponse(timestamp, status, error, message, details);
-      }
-    }
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+      "An unexpected error occurred. Please try again later.");
+    problem.setTitle("Internal Server Error");
+    problem.setType(URI.create("urn:problem-type:internal-error"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
   }
 }

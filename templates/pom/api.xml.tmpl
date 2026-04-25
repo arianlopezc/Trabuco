@@ -111,6 +111,26 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
+        <!-- Bucket4j rate limiting (declarative, configured via application.yml).
+             The starter ships off by default — set bucket4j.enabled=true and
+             configure filters in application.yml to enforce per-IP / per-key
+             rate limits on the servlet filter chain. -->
+        <dependency>
+            <groupId>com.giffing.bucket4j.spring.boot.starter</groupId>
+            <artifactId>bucket4j-spring-boot-starter</artifactId>
+            <version>${bucket4j.version}</version>
+        </dependency>
+
+        <!-- OpenTelemetry SDK + auto-instrumentation. Auto-instruments
+             Spring MVC, JDBC, Kafka, RabbitMQ, etc. when OTEL_TRACES_EXPORTER
+             (or OTEL_METRICS_EXPORTER / OTEL_LOGS_EXPORTER) is set to "otlp".
+             Defaults emit nothing — no collector required for local dev. -->
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-spring-boot-starter</artifactId>
+            <version>${opentelemetry.version}</version>
+        </dependency>
+
         <!-- SpringDoc OpenAPI (Swagger UI) -->
         <dependency>
             <groupId>org.springdoc</groupId>

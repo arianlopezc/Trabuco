@@ -13,6 +13,21 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:local}
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+  # Virtual threads (Project Loom) — Java 21+ / Spring Boot 3.2+
+  # When enabled, Tomcat handles each request on a virtual thread, @Async runs
+  # on virtual threads, and the default TaskExecutor is virtual-thread-backed.
+  # I/O-bound services (DB, HTTP, broker) gain large concurrency improvements.
+  # Caveat: avoid `synchronized` blocks that wrap I/O; prefer ReentrantLock
+  # (see JAVA_CODE_QUALITY.md §concurrency).
+  threads:
+    virtual:
+      enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
+  # RFC 7807 Problem Details — Spring 6's standardized error response shape.
+  # Exception handlers in this module emit application/problem+json instead of
+  # bespoke error envelopes. See GlobalExceptionHandler for custom mappings.
+  mvc:
+    problemdetails:
+      enabled: true
 {{- if .HasModule "SQLDatastore"}}
 
   # Database configuration
@@ -167,6 +182,32 @@ security:
     referrer-policy: ${REFERRER_POLICY:strict-origin-when-cross-origin}
     permissions-policy: ${PERMISSIONS_POLICY:geolocation=(), microphone=(), camera=()}
 
+# Rate limiting (Bucket4j Spring Boot Starter)
+#
+# Off by default. Set bucket4j.enabled=true and uncomment the filter block
+# below to enforce per-IP rate limits on the servlet filter chain. Each filter
+# matches a URL pattern and applies one or more rate-limit bandwidths per
+# cache-key. The default in-memory cache is sufficient for single-instance
+# deployments; for horizontal scaling, add bucket4j-redis and configure a
+# distributed cache so all instances share rate-limit state.
+#
+# Reference: https://github.com/MarcGiffing/bucket4j-spring-boot-starter
+bucket4j:
+  enabled: ${BUCKET4J_ENABLED:false}
+  # filters:
+  #   - cache-name: rate-limit-by-ip
+  #     filter-method: servlet
+  #     filter-order: 100
+  #     url: /.*
+  #     rate-limits:
+  #       - cache-key: "getRemoteAddr()"
+  #         bandwidths:
+  #           - capacity: 1000
+  #             time: 1
+  #             unit: minutes
+  #         skip-condition: "getRemoteAddr() == '127.0.0.1'"
+  #     http-response-body: "{\"type\":\"urn:problem-type:rate-limit-exceeded\",\"title\":\"Too Many Requests\",\"status\":429}"
+
 # Actuator endpoints
 # SECURITY: In production, consider restricting to health only or securing with authentication
 management:
@@ -255,6 +296,40 @@ app:
     topic:
       placeholder-events: ${PUBSUB_TOPIC_PLACEHOLDER:placeholder-events}
 {{- end}}
+
+# OpenTelemetry — distributed tracing, metrics, logs.
+#
+# Default: traces export to stdout (`logging` exporter) so spans are visible
+# during `mvn spring-boot:run` with no collector required. Metrics and logs
+# exporters default off — they would otherwise emit a continuous noise floor
+# without an aggregation backend.
+#
+# To export to a real collector (Jaeger, Tempo, Grafana Cloud, Honeycomb,
+# Datadog, etc.) in dev or production:
+#   1. Set OTEL_TRACES_EXPORTER=otlp (and/or OTEL_METRICS_EXPORTER=otlp).
+#   2. Point OTEL_EXPORTER_OTLP_ENDPOINT at the collector
+#      (default: http://localhost:4318 for OTLP/HTTP).
+#
+# To silence the dev-time stdout traces, set OTEL_TRACES_EXPORTER=none.
+#
+# Auto-instrumentation covers Spring MVC handlers, Spring Data JDBC, RestClient,
+# Kafka/RabbitMQ producer & consumer, JobRunr handlers, and the JVM itself.
+# W3C Trace Context (`traceparent` header) propagates across services.
+#
+# Reference: https://opentelemetry.io/docs/zero-code/java/spring-boot-starter/
+otel:
+  service:
+    name: ${spring.application.name}
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}
+      protocol: ${OTEL_EXPORTER_OTLP_PROTOCOL:http/protobuf}
+  traces:
+    exporter: ${OTEL_TRACES_EXPORTER:logging}
+  metrics:
+    exporter: ${OTEL_METRICS_EXPORTER:none}
+  logs:
+    exporter: ${OTEL_LOGS_EXPORTER:none}
 
 # Logging
 logging:

@@ -90,6 +90,15 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
+        <!-- OpenTelemetry — auto-instruments JobRunr handlers, JDBC, downstream
+             HTTP and broker clients. Off by default (no exporter configured);
+             set OTEL_TRACES_EXPORTER=otlp + OTEL_EXPORTER_OTLP_ENDPOINT to enable. -->
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-spring-boot-starter</artifactId>
+            <version>${opentelemetry.version}</version>
+        </dependency>
+
         <!-- Structured JSON logging (logback-spring.xml uses LogstashEncoder for non-local profiles) -->
         <dependency>
             <groupId>net.logstash.logback</groupId>

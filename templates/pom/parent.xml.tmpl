@@ -32,6 +32,14 @@
 {{- end}}
 {{- if .HasModule "API"}}
         <springdoc.version>2.7.0</springdoc.version>
+        <bucket4j.version>0.12.7</bucket4j.version>
+{{- end}}
+{{- if or (or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")) (.HasAIAgentModule)}}
+        <!-- OpenTelemetry — instrumentation BOM for HTTP, JDBC, Kafka,
+             RabbitMQ, JobRunr, and the JVM. Off by default; users enable
+             by setting OTEL_TRACES_EXPORTER=otlp and pointing
+             OTEL_EXPORTER_OTLP_ENDPOINT at a collector. -->
+        <opentelemetry.version>2.11.0</opentelemetry.version>
 {{- end}}
 {{- if .HasAIAgentModule}}
         <spring-ai.version>1.0.5</spring-ai.version>
@@ -106,6 +114,32 @@
                 <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+{{- end}}
+{{- if or (or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")) (.HasAIAgentModule)}}
+            <!-- OpenTelemetry instrumentation BOM — pins instrumentation modules. -->
+            <dependency>
+                <groupId>io.opentelemetry.instrumentation</groupId>
+                <artifactId>opentelemetry-instrumentation-bom</artifactId>
+                <version>${opentelemetry.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- OTel ships several modules on independent alpha-version cycles
+                 that the instrumentation BOM does not pin (semconv, api-incubator,
+                 contrib resource detectors). Maven enforcer's
+                 dependencyConvergence rule rejects the resulting mismatches, so
+                 each one is pinned explicitly here. Versions are aligned with
+                 the highest variant any transitive path requests. -->
+            <dependency>
+                <groupId>io.opentelemetry.semconv</groupId>
+                <artifactId>opentelemetry-semconv</artifactId>
+                <version>1.29.0-alpha</version>
+            </dependency>
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-api-incubator</artifactId>
+                <version>1.45.0-alpha</version>
             </dependency>
 {{- end}}
             <dependency>
@@ -212,7 +246,20 @@
                                 <exclude>javax.*:*</exclude>
                                 <exclude>junit:junit</exclude>
                             </excludes>
-                            <message>Use jakarta.* instead of javax.* and JUnit 5 instead of JUnit 4</message>
+                            <includes>
+                                <!-- JCache (JSR-107) was never migrated to jakarta.* — it's a
+                                     separate JSR, not part of Jakarta EE. Bucket4j and many other
+                                     caching libraries depend on javax.cache:cache-api transitively. -->
+                                <include>javax.cache:cache-api</include>
+                                <!-- Bean Validation 2.0 (JSR-380, javax.validation:validation-api)
+                                     was migrated to jakarta.validation:jakarta.validation-api in
+                                     Jakarta EE 9, but some libraries (e.g. OpenTelemetry's
+                                     spring-boot-autoconfigure) still pull the legacy artifact
+                                     for backward compatibility. The runtime uses jakarta.* —
+                                     the legacy javax.* JAR sits unused on the classpath. -->
+                                <include>javax.validation:validation-api</include>
+                            </includes>
+                            <message>Use jakarta.* instead of javax.* and JUnit 5 instead of JUnit 4 (javax.cache:cache-api is allowed — JCache JSR-107 was not migrated to jakarta.*)</message>
                         </bannedDependencies>
                         <dependencyConvergence/>
                     </rules>

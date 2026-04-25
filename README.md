@@ -99,6 +99,10 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 - **Docker Compose** — Local development stack included
 - **IntelliJ run configs** — Just open and run
 - **GitHub Actions CI** — Opt-in CI workflow that adapts to your modules with `--ci github`
+- **Virtual threads on by default** — Project Loom enabled in Spring Boot 3.4 (`spring.threads.virtual.enabled=true`); I/O-heavy services scale concurrency without code changes
+- **RFC 7807 Problem Details** — every error response is `application/problem+json` via Spring 6's `ProblemDetail`
+- **Bucket4j rate limiting** — declarative per-IP / per-key limits via `application.yml`, ships off by default with sample policy
+- **OpenTelemetry observability** — auto-instruments Spring MVC, JDBC, Kafka/RabbitMQ, JobRunr; traces export to stdout in dev, OTLP in prod
 - **Code quality enforcement** — Google Java Format (Spotless), Maven Enforcer, and auto-formatting hooks
 - **Architecture tests** — ArchUnit rules enforce constructor injection, layer boundaries, and no cyclic dependencies
 - **AI Agent module** — Production-ready AI agent with Spring AI: tool calling, LLM guardrails, multi-agent orchestration, MCP server, A2A protocol, and knowledge base

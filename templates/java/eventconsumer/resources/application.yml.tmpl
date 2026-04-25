@@ -5,6 +5,13 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:local}
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+  # Virtual threads (Project Loom) — Java 21+ / Spring Boot 3.2+
+  # Event listeners are I/O-bound (broker fetches, DB writes, downstream calls);
+  # virtual threads let one consumer service many in-flight messages without
+  # exhausting the OS-thread pool. See JAVA_CODE_QUALITY.md.
+  threads:
+    virtual:
+      enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
 {{- if .UsesKafka}}
 
   kafka:
@@ -97,6 +104,26 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+# OpenTelemetry — see API/application.yml for the full configuration guide.
+# Default: traces export to stdout (`logging` exporter) so listener and
+# producer/consumer spans are visible during local runs. Metrics and logs
+# are off by default. Switch OTEL_TRACES_EXPORTER to `otlp` and point
+# OTEL_EXPORTER_OTLP_ENDPOINT at a collector when ready; `none` disables the
+# dev-time stdout traces.
+otel:
+  service:
+    name: ${spring.application.name}
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}
+      protocol: ${OTEL_EXPORTER_OTLP_PROTOCOL:http/protobuf}
+  traces:
+    exporter: ${OTEL_TRACES_EXPORTER:logging}
+  metrics:
+    exporter: ${OTEL_METRICS_EXPORTER:none}
+  logs:
+    exporter: ${OTEL_LOGS_EXPORTER:none}
 
 logging:
   level:
