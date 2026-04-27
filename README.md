@@ -19,7 +19,9 @@ The generated code is production-grade by default. Spring Boot 3.4 with Spring D
 
 Alongside the code, Trabuco lays down an AI collaboration layer that the major coding agents load natively. The `.ai/prompts/` directory ships task-specific guides (`add-entity`, `add-endpoint`, `add-service`, `add-event`, `add-job`, `add-tool`) plus `JAVA_CODE_QUALITY.md` — an authoritative specification covering architecture boundaries, exception handling, datastore performance (bulk I/O, keyset drain loops, denormalization), and testing standards. Per-agent rule files — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex, `.cursor/rules/java.mdc` for Cursor, `.github/instructions/java.instructions.md` for Copilot — wire those conventions into each tool's native discovery. Claude also gets `.claude/skills/` for commit, PR, and review workflows; Codex and Cursor get hooks; Copilot gets setup steps. Every architectural convention lives in two places: enforced by the generated code and explained to the agents that will extend it.
 
-Trabuco goes further. The **AI Agent module** ships production scaffolding for building AI agents *themselves* on Spring AI: tool calling, LLM input/output guardrails, multi-agent orchestration, knowledge-base integration, MCP server endpoint, the A2A (Agent-to-Agent) protocol, streaming responses, webhook callbacks, scope-based authorization, rate limiting, and correlation-ID tracing — wired, testable, and ready from the first commit. Trabuco itself is also an MCP server: run `trabuco mcp` and your coding agents invoke scaffolding operations natively (`init_project`, `add_module`, `design_system`, `scan_project`, `suggest_architecture`, `migrate_project`). And for legacy codebases, `trabuco migrate` uses Claude to analyze your entities, services, controllers, and repositories, then reorganizes them into Trabuco's architecture — converting JPA to Spring Data JDBC, replacing Quartz with JobRunr, generating all the configuration, and checkpointing each stage so it can resume after interruption.
+Trabuco goes further. The **AI Agent module** ships production scaffolding for building AI agents *themselves* on Spring AI: tool calling, LLM input/output guardrails, multi-agent orchestration, knowledge-base integration, MCP server endpoint, the A2A (Agent-to-Agent) protocol, streaming responses, webhook callbacks, scope-based authorization, rate limiting, and correlation-ID tracing — wired, testable, and ready from the first commit. Trabuco itself is also an MCP server: run `trabuco mcp` and your coding agents invoke scaffolding operations natively (`init_project`, `add_module`, `design_system`, `suggest_architecture`).
+
+> **Migrating an existing Spring Boot project** is supported in **1.10** via `trabuco migrate`: an orchestrated 14-phase migration that transforms a Maven-based Spring Boot 2.x or 3.x repo in place into a Trabuco-shaped multi-module project. Each phase is owned by a specialist that proposes structured changes you approve at a gate before they're committed; per-phase git tags provide atomic rollback. Start with `trabuco migrate assess /path/to/repo`. Full guide: [`docs/migration-guide.md`](docs/migration-guide.md). Design details: [`docs/MIGRATION_REDESIGN_PLAN.md`](docs/MIGRATION_REDESIGN_PLAN.md).
 
 ## Table of Contents
 
@@ -27,12 +29,6 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 - [Installation](#installation)
   - [Claude Code Plugin](#claude-code-plugin)
 - [Quick Start](#quick-start)
-- [Migrating Legacy Projects](#migrating-legacy-projects)
-  - [How It Works](#how-it-works)
-  - [Authentication](#authentication)
-  - [Migration Options](#migration-options)
-  - [Checkpoints and Recovery](#checkpoints-and-recovery)
-  - [What Gets Migrated](#what-gets-migrated)
 - [Managing Existing Projects](#managing-existing-projects)
   - [Project Health Check](#project-health-check)
   - [Adding Modules](#adding-modules)
@@ -79,7 +75,6 @@ Trabuco goes further. The **AI Agent module** ships production scaffolding for b
 ## Features
 
 - **Claude Code plugin** — Drive scaffolding, extension, and architecture advice conversationally via `/trabuco:*` skills and specialist subagents. One install: `/plugin marketplace add arianlopezc/Trabuco`. See [Claude Code Plugin](#claude-code-plugin) below.
-- **AI-powered migration** *(experimental)* — Transform existing Spring Boot projects into Trabuco's architecture with `trabuco migrate`
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
 - **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
 - **Project health checks** — Validate project structure and consistency with `trabuco doctor`
@@ -173,11 +168,11 @@ If you use Claude Code, install the Trabuco plugin to drive the CLI conversation
 
 | Layer | Contents |
 |---|---|
-| **Skills** (7) | `/trabuco:new-project`, `/trabuco:design-system`, `/trabuco:add-module`, `/trabuco:extend`, `/trabuco:doctor`, `/trabuco:migrate`, `/trabuco:suggest` |
-| **Specialist subagents** (3) | `trabuco-architect` (architecture reasoning), `trabuco-ai-agent-expert` (AIAgent module deep dive), `trabuco-migration-expert` (legacy project feasibility + planning) |
+| **Skills** (6) | `/trabuco:new-project`, `/trabuco:design-system`, `/trabuco:add-module`, `/trabuco:extend`, `/trabuco:doctor`, `/trabuco:suggest` |
+| **Specialist subagents** (2) | `trabuco-architect` (architecture reasoning), `trabuco-ai-agent-expert` (AIAgent module deep dive) |
 | **Grounding docs** | Trabuco philosophy, module catalog interpretation, pattern recipes, limitations, when-not-to-use — so the assistant won't recommend what Trabuco can't deliver |
-| **Hooks** | Session-start binary detection, post-tool-use next-steps printers for `init_project`, `generate_workspace`, and `migrate_project` |
-| **MCP server** | All 14 CLI tools + 4 expert prompts + 3 reference resources available natively inside Claude Code |
+| **Hooks** | Session-start binary detection, post-tool-use next-steps printers for `init_project` and `generate_workspace` |
+| **MCP server** | All 12 CLI tools + 4 expert prompts + 3 reference resources available natively inside Claude Code |
 
 **Manual install from a release tarball** (offline or restricted environments) — each Trabuco release attaches `trabuco-plugin-vX.Y.Z.zip` as an asset. Download, extract, then:
 
@@ -234,157 +229,6 @@ Your API is now running at `http://localhost:8080`. Try the health endpoint:
 ```bash
 curl http://localhost:8080/health
 ```
-
-## Migrating Legacy Projects
-
-> **⚠️ Experimental Feature**
->
-> The `trabuco migrate` command is under active development. While functional, results should be reviewed and may require manual adjustments. We recommend running with `--dry-run` first and testing thoroughly before relying on migrated code in production.
->
-> Set `TRABUCO_ACKNOWLEDGE_EXPERIMENTAL=true` to suppress the experimental warning in CI/CD pipelines.
-
-The `trabuco migrate` command uses AI to analyze existing Spring Boot projects and transform them into Trabuco's multi-module architecture. It's designed for projects that have grown organically and need restructuring — or for teams adopting Trabuco's patterns for existing codebases.
-
-```bash
-# Basic migration
-trabuco migrate /path/to/legacy-app
-
-# Specify output directory
-trabuco migrate /path/to/legacy-app -o ./migrated-app
-
-# Dry run — analyze without generating files
-trabuco migrate --dry-run /path/to/legacy-app
-```
-
-### How It Works
-
-Migration happens in 10 stages, each with checkpoints for recovery:
-
-| Stage | Description |
-|-------|-------------|
-| 1. Discovery | Scans your project structure, parses `pom.xml`, categorizes Java classes |
-| 2. Dependency Analysis | Identifies compatible, replaceable, and unsupported dependencies |
-| 3. Entity Extraction | Converts JPA entities to Spring Data JDBC format with Flyway migrations |
-| 4. Repository Migration | Transforms repositories to Spring Data JDBC/MongoDB patterns |
-| 5. Service Extraction | Moves services to Shared module with constructor injection |
-| 6. Controller Migration | Restructures REST controllers for the API module |
-| 7. Jobs Migration | Converts `@Scheduled` and Quartz jobs to JobRunr format |
-| 8. Events Migration | Transforms event listeners to Kafka/RabbitMQ patterns |
-| 9. Configuration | Generates `docker-compose.yml`, `.env.example`, AI agent files |
-| 10. Final Assembly | Creates parent POM, README, and project metadata |
-
-Before making changes, the AI shows you what it found and estimates the cost. In interactive mode (default), you confirm each major decision.
-
-### Authentication
-
-Trabuco uses Claude (Anthropic's AI) for intelligent code transformation. You need an API key:
-
-**Option 1: Anthropic (recommended)**
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-trabuco migrate /path/to/legacy-app
-```
-
-**Option 2: OpenRouter (alternative)**
-
-[OpenRouter](https://openrouter.ai) provides access to Claude models without an Anthropic account:
-
-```bash
-export OPENROUTER_API_KEY=sk-or-...
-trabuco migrate --provider=openrouter /path/to/legacy-app
-```
-
-You can also pass the key directly:
-```bash
-trabuco migrate --api-key=sk-ant-... /path/to/legacy-app
-```
-
-### Migration Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-o, --output` | Output directory | `./<project-name>-trabuco` |
-| `--dry-run` | Analyze only, don't generate files | `false` |
-| `--interactive` | Confirm each major decision | `true` |
-| `--resume` | Resume from last checkpoint | `false` |
-| `--rollback` | Rollback migration completely | `false` |
-| `--rollback-to` | Rollback to specific stage | — |
-| `--provider` | AI provider: `anthropic`, `openrouter` | `anthropic` |
-| `--model` | Model to use | `claude-sonnet-4-5` |
-| `--include-tests` | Migrate test files | `false` |
-| `--skip-build` | Skip Maven build after migration | `false` |
-| `-v, --verbose` | Verbose output | `false` |
-| `--debug` | Save all AI interactions | `false` |
-
-### Checkpoints and Recovery
-
-Migration creates checkpoints in `.trabuco-migrate/` within your source project. If something goes wrong:
-
-```bash
-# Resume from where you left off
-trabuco migrate --resume /path/to/legacy-app
-
-# Rollback to a specific stage
-trabuco migrate --rollback-to=entities /path/to/legacy-app
-
-# Rollback completely (removes output directory)
-trabuco migrate --rollback /path/to/legacy-app
-```
-
-Checkpoints track:
-- Completed stages and their outputs
-- AI decisions made (for transparency)
-- Token usage and estimated cost
-- Errors encountered
-
-### What Gets Migrated
-
-**Automatically converted:**
-
-| From | To |
-|------|----|
-| `@Entity` (JPA) | `@Table` (Spring Data JDBC) |
-| `@OneToMany`, `@ManyToOne` | Explicit foreign key fields |
-| Lombok `@Data`, `@Getter`, `@Setter` | Explicit getters/setters |
-| `JpaRepository` | `CrudRepository` (JDBC) |
-| `@Scheduled` methods | JobRunr `JobRequest` + `JobRequestHandler` |
-| Quartz jobs | JobRunr jobs |
-| `@KafkaListener`, `@RabbitListener` | Trabuco EventConsumer patterns |
-
-**Dependency replacements:**
-
-| Legacy | Trabuco Alternative |
-|--------|---------------------|
-| Hibernate / JPA | Spring Data JDBC |
-| Quartz Scheduler | JobRunr |
-| Lombok | Explicit code or Immutables |
-| Spring Data JPA | Spring Data JDBC |
-| javax.* | jakarta.* (Spring Boot 3.x) |
-
-**Requires manual attention:**
-- Complex JPA relationships (inheritance, embedded collections)
-- Native SQL queries with JPA-specific syntax
-- Custom Hibernate types
-- AspectJ weaving
-
-The AI flags these during migration and explains what needs manual review.
-
-### Cost Transparency
-
-Before migration begins, Trabuco estimates the cost based on:
-- Number of files to process
-- Estimated input/output tokens
-- Current model pricing
-
-Example output:
-```
-Estimated Migration Cost:
-  Files to process: 47
-  Est. tokens:      ~70,500
-  Est. cost:        $0.35 - $0.65
-```
-
-Actual cost is tracked during migration and saved in the checkpoint.
 
 ## Managing Existing Projects
 
@@ -668,8 +512,6 @@ Once configured, your AI agent can use these tools:
 | `get_project_info` | Read project metadata and available actions |
 | `check_docker` | Check if Docker is installed and running |
 | `get_version` | Get the Trabuco CLI version |
-| `scan_project` | Analyze a legacy Java project for migration feasibility (no AI required) |
-| `migrate_project` | AI-powered migration of a legacy project to Trabuco structure |
 | `auth_status` | Check which AI providers have credentials configured |
 | `list_providers` | List supported AI providers with pricing and model info |
 | `list_modules` | List all available modules with descriptions and dependency info |

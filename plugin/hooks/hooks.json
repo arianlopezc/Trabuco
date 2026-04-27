@@ -28,15 +28,6 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/post-generate-workspace.sh\""
           }
         ]
-      },
-      {
-        "matcher": "mcp__trabuco__migrate_project",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/post-migrate-project.sh\""
-          }
-        ]
       }
     ]
   }

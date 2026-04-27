@@ -34,8 +34,6 @@ Available tools:
   list_modules    List available modules
   check_docker    Check Docker status
   get_version     Get Trabuco version
-  scan_project    Analyze a legacy project (no AI)
-  migrate_project AI-powered migration (long-running)
   auth_status     Check configured AI providers
   list_providers  List supported providers with pricing`,
 	Run: func(cmd *cobra.Command, args []string) {

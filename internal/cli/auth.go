@@ -24,7 +24,8 @@ var (
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Manage LLM provider credentials",
-	Long: `Manage authentication credentials for LLM providers used by trabuco migrate.
+	Long: `Manage authentication credentials for LLM providers used by Trabuco
+features that call out to LLMs (e.g., the upcoming 1.10 migration feature).
 
 Trabuco securely stores your API keys in the system keychain (macOS Keychain,
 Linux Secret Service, or Windows Credential Manager) with fallback to an
@@ -273,8 +274,8 @@ func runAuthLogin(cmd *cobra.Command, args []string) {
 
 	green.Println("✓ Credentials saved successfully!")
 	fmt.Println()
-	fmt.Println("You can now run:")
-	fmt.Println("  trabuco migrate /path/to/project")
+	fmt.Println("These credentials will be used by Trabuco features that call out to LLMs")
+	fmt.Println("(the upcoming 1.10 migration feature is the primary consumer).")
 }
 
 func runAuthStatus(cmd *cobra.Command, args []string) {

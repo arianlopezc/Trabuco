@@ -1,6 +1,7 @@
 package java
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,6 +121,33 @@ func (r *DetectionResult) GetCompatibleVersions() []int {
 		}
 	}
 	return versions
+}
+
+// RuntimeJavaMajor probes the `java` command on PATH (the JDK Maven will
+// use) and returns its major version, the raw `java -version` first line,
+// and a non-nil error if `java` is missing or unparseable. Callers use
+// this to verify the build runtime matches the project's target Java
+// version — a mismatch surfaces as obscure failures (e.g. ArchUnit
+// rejecting newer system class file versions, or Maven plugins that
+// crash on JDKs they predate).
+func RuntimeJavaMajor() (int, string, error) {
+	cmd := exec.Command("java", "-version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, "", fmt.Errorf("java -version: %w", err)
+	}
+	lines := strings.Split(string(output), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
+		return 0, "", fmt.Errorf("java -version produced no output")
+	}
+	major, full, err := ParseVersion(lines[0])
+	if err != nil {
+		return 0, lines[0], err
+	}
+	if major == 0 {
+		return 0, lines[0], fmt.Errorf("could not parse major version from %q", lines[0])
+	}
+	return major, full, nil
 }
 
 // detectFromJavaCommand runs java -version and parses the output

@@ -2,7 +2,7 @@
 name: add-module
 description: Add a Trabuco module to an existing project. Detects current project state, recommends compatible modules, and wires them in. Use when the user has an existing Trabuco project and wants to extend it (add AIAgent, add EventConsumer, add NoSQL, etc.).
 user-invocable: true
-allowed-tools: [mcp__trabuco__get_project_info, mcp__trabuco__scan_project, mcp__trabuco__list_modules, mcp__trabuco__add_module, mcp__trabuco__run_doctor]
+allowed-tools: [mcp__trabuco__get_project_info, mcp__trabuco__list_modules, mcp__trabuco__add_module, mcp__trabuco__run_doctor]
 argument-hint: "[module name]"
 ---
 
@@ -10,7 +10,7 @@ argument-hint: "[module name]"
 
 ## Flow
 
-1. **Detect project**: call `mcp__trabuco__get_project_info` with the current working directory. If it doesn't return a Trabuco project (no `.trabuco.json`), fall back to `mcp__trabuco__scan_project` to verify it's at least a compatible Java project. If neither, tell the user this skill requires a Trabuco project and suggest `/trabuco:new-project` instead.
+1. **Detect project**: call `mcp__trabuco__get_project_info` with the current working directory. If it doesn't return a Trabuco project (no `.trabuco.json`), tell the user this skill requires a Trabuco project and suggest `/trabuco:new-project` instead.
 
 2. **Confirm current state**: show the user what modules are currently installed and which provider/broker is in use. This is for their confirmation before additions.
 
