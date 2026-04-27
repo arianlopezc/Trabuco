@@ -46,18 +46,20 @@ func (g *Generator) Generate() error {
 	return nil
 }
 
-// WrapLegacy moves all top-level source/build files into a legacy/ Maven
-// module so the user's existing code keeps building under the new
-// multi-module parent. This is destructive (mv operations); the
-// orchestrator's pre-tag is the rollback safety net.
+// WrapLegacy moves the user's existing Maven source layout into a
+// legacy/ module so the multi-module parent compiles. Standard call
+// order is Generate() first (which wrote a fresh parent pom.xml,
+// renaming the user's original to pom.xml.pre-trabuco-backup) then
+// WrapLegacy() (which moves the backup + src/ into legacy/).
 //
-// Files moved: src/, pom.xml (renamed to legacy/pom.xml with parent
-// reference patched in), Maven wrapper artifacts (mvnw, .mvn/, target/),
-// any other top-level Maven build files.
+// Files moved into legacy/:
+//   - src/ → legacy/src/
+//   - pom.xml.pre-trabuco-backup → legacy/legacy-original-pom.xml
 //
-// Files NOT moved (kept at root): .git/, .gitignore, README.md,
-// .trabuco-migration/, our newly-generated parent pom.xml, our
-// newly-generated module/ directories, .ai/, .claude/, .cursor/, etc.
+// A new legacy/pom.xml is written that inherits from the parent and
+// preserves the user's plugin/dep declarations from the original POM
+// (best-effort: the legacy original is also preserved verbatim for
+// reference).
 func (g *Generator) WrapLegacy() error {
 	legacyDir := filepath.Join(g.RepoRoot, "legacy")
 	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
@@ -71,20 +73,19 @@ func (g *Generator) WrapLegacy() error {
 		}
 	}
 
-	// Move existing pom.xml to legacy/legacy-original-pom.xml so we have
-	// it as a record, then write a fresh legacy/pom.xml with parent ref.
+	// Move the user's original pom.xml (backed up by Generate as
+	// pom.xml.pre-trabuco-backup) into the legacy module. If for some
+	// reason the backup doesn't exist (e.g., Generate was skipped or the
+	// repo started without a pom), proceed with a stub legacy pom.
+	backup := filepath.Join(g.RepoRoot, "pom.xml.pre-trabuco-backup")
 	legacyOrigPOM := filepath.Join(legacyDir, "legacy-original-pom.xml")
-	if data, err := os.ReadFile(filepath.Join(g.RepoRoot, "pom.xml")); err == nil {
-		// Save a copy for reference.
-		_ = os.WriteFile(legacyOrigPOM, data, 0o644)
-		// Remove root pom.xml — we'll write a fresh parent next.
-		// (Generate() above already wrote a NEW parent pom.xml, but it's
-		// possible the legacy root pom.xml wasn't removed yet if this is
-		// called before Generate. The standard order is Generate first,
-		// then WrapLegacy.)
+	if _, err := os.Stat(backup); err == nil {
+		if err := os.Rename(backup, legacyOrigPOM); err != nil {
+			return fmt.Errorf("move legacy original pom: %w", err)
+		}
 	}
 
-	if err := g.writeLegacyModulePOM(legacyDir, legacyOrigPOM); err != nil {
+	if err := g.writeLegacyModulePOM(legacyDir); err != nil {
 		return err
 	}
 
@@ -181,16 +182,59 @@ func (g *Generator) writeModuleSkeleton(module string) error {
 	return os.WriteFile(pomPath, []byte(body), 0o644)
 }
 
-// writeLegacyModulePOM creates legacy/pom.xml — a Maven module that wraps
-// the user's existing root pom.xml. The original root pom is saved as
-// legacy/legacy-original-pom.xml for reference; the new legacy/pom.xml
-// inherits from the parent and references the legacy source as-is.
-func (g *Generator) writeLegacyModulePOM(legacyDir, origPOMPath string) error {
-	// For 1.10.0 we use a minimal legacy module pom that compiles the
-	// legacy source as-is. The user's original pom (saved alongside)
-	// serves as the source of truth for dependency resolution.
-	body := fmt.Sprintf(legacyModulePOMTemplate, g.GroupID, g.ProjectName+"-parent")
+// writeLegacyModulePOM creates legacy/pom.xml. If the user's original POM
+// was preserved at legacy/legacy-original-pom.xml, we extract its
+// <dependencies> and <build><plugins> and embed them in the new legacy
+// module POM so the legacy source still has its build/runtime
+// requirements satisfied. We also import the spring-boot-dependencies
+// BOM to restore the version-management the original spring-boot-starter-
+// parent provided (the legacy module's parent is now the Trabuco parent,
+// which has no BOM). Otherwise we write a minimal stub.
+func (g *Generator) writeLegacyModulePOM(legacyDir string) error {
+	depsBlock, pluginsBlock, depMgmtBlock := "", "", ""
+	origPOMPath := filepath.Join(legacyDir, "legacy-original-pom.xml")
+	if data, err := os.ReadFile(origPOMPath); err == nil {
+		orig := string(data)
+		depsBlock = extractXMLBlock(orig, "dependencies")
+		pluginsBlock = extractXMLBlock(orig, "plugins")
+		if v := extractSpringBootParentVersion(orig); v != "" {
+			depMgmtBlock = fmt.Sprintf(springBootBOMImport, v)
+		}
+	}
+	body := fmt.Sprintf(legacyModulePOMTemplate,
+		g.GroupID, g.ProjectName+"-parent",
+		depMgmtBlock, depsBlock, pluginsBlock,
+	)
 	return os.WriteFile(filepath.Join(legacyDir, "pom.xml"), []byte(body), 0o644)
+}
+
+// extractSpringBootParentVersion finds <parent>...spring-boot-starter-parent
+// ...<version>X</version> and returns X. Empty if not present.
+func extractSpringBootParentVersion(xml string) string {
+	parent := extractXMLBlock(xml, "parent")
+	if parent == "" || !strings.Contains(parent, "spring-boot-starter-parent") {
+		return ""
+	}
+	v := extractXMLBlock(parent, "version")
+	v = strings.TrimPrefix(v, "<version>")
+	v = strings.TrimSuffix(v, "</version>")
+	return strings.TrimSpace(v)
+}
+
+// extractXMLBlock returns the first <tag>...</tag> block from xml, or
+// empty if not found. Whitespace-tolerant; doesn't validate XML.
+func extractXMLBlock(xml, tag string) string {
+	open := "<" + tag + ">"
+	close := "</" + tag + ">"
+	i := strings.Index(xml, open)
+	if i == -1 {
+		return ""
+	}
+	j := strings.Index(xml[i:], close)
+	if j == -1 {
+		return ""
+	}
+	return xml[i : i+j+len(close)]
 }
 
 // appendModuleToParent updates root pom.xml's <modules> section to add
@@ -317,10 +361,37 @@ const legacyModulePOMTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     module — or retains it with @Deprecated markers if the user opted
     to preserve unmigrated artifacts.</description>
 
-    <!-- Original user pom.xml is preserved in legacy-original-pom.xml
-         for dependency reference. -->
+    <!-- Original user pom.xml is preserved at legacy/legacy-original-pom.xml
+         for full reference; the dependencies and build plugins below were
+         extracted from it best-effort so the legacy source still compiles.
+         The dependencyManagement BOM import (when present) restores the
+         version-management spring-boot-starter-parent provided in the
+         original POM. -->
+
+    %s
+
+    %s
+
+    <build>
+        %s
+    </build>
 </project>
 `
+
+// springBootBOMImport is the dependencyManagement block that imports
+// spring-boot-dependencies BOM at the version we extracted from the
+// user's original spring-boot-starter-parent.
+const springBootBOMImport = `<dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>%s</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>`
 
 const editorConfig = `# Trabuco-generated EditorConfig
 root = true

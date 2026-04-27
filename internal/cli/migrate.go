@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -328,7 +329,8 @@ func printStatus(s *state.State) error {
 
 // terminalGate is the CLI-mode Gate implementation: presents the diff
 // and approval prompt as terminal output and reads a line of stdin for
-// the user's choice.
+// the user's choice. Uses bufio.Reader (not fmt.Scanln) so empty
+// lines and trailing whitespace don't corrupt the read.
 type terminalGate struct{}
 
 func (terminalGate) Present(ctx context.Context, phase types.Phase, out *specialists.Output) (types.GateAction, string, error) {
@@ -337,6 +339,15 @@ func (terminalGate) Present(ctx context.Context, phase types.Phase, out *special
 	fmt.Printf("\nItems: %d\n", len(out.Items))
 	for _, item := range out.Items {
 		fmt.Printf("  [%s] %s\n", item.State, item.Description)
+		if item.BlockerCode != "" {
+			fmt.Printf("    blocker: %s — %s\n", item.BlockerCode, truncForGate(item.BlockerNote, 200))
+		}
+		if len(item.FileWrites) > 0 {
+			fmt.Printf("    file_writes: %d\n", len(item.FileWrites))
+			for _, fw := range item.FileWrites {
+				fmt.Printf("      %s %s\n", fw.Operation, fw.Path)
+			}
+		}
 	}
 	if len(out.Decisions) > 0 {
 		fmt.Println("\nDecisions required:")
@@ -344,25 +355,41 @@ func (terminalGate) Present(ctx context.Context, phase types.Phase, out *special
 			fmt.Printf("  - %s: %s\n    choices: %s\n", d.ID, d.Question, strings.Join(d.Choices, ", "))
 		}
 	}
-	fmt.Print("\n[a]pprove / [e]dit and approve / [r]eject? ")
-	var choice string
-	if _, err := fmt.Scanln(&choice); err != nil {
-		return "", "", err
-	}
-	switch strings.ToLower(strings.TrimSpace(choice)) {
-	case "a", "approve":
-		return types.GateApprove, "", nil
-	case "e", "edit":
-		fmt.Print("Provide guidance for the specialist: ")
-		var hint string
-		if _, err := fmt.Scanln(&hint); err != nil {
-			return "", "", err
+
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Print("\n[a]pprove / [e]dit and approve / [r]eject? ")
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return "", "", fmt.Errorf("read stdin: %w", err)
 		}
-		return types.GateEditAndApprove, hint, nil
-	case "r", "reject":
-		return types.GateReject, "", nil
-	default:
-		return "", "", fmt.Errorf("unrecognized choice %q", choice)
+		choice := strings.ToLower(strings.TrimSpace(line))
+		switch choice {
+		case "a", "approve":
+			return types.GateApprove, "", nil
+		case "e", "edit":
+			fmt.Print("Provide guidance for the specialist (single line): ")
+			hint, err := reader.ReadString('\n')
+			if err != nil {
+				return "", "", err
+			}
+			return types.GateEditAndApprove, strings.TrimSpace(hint), nil
+		case "r", "reject":
+			return types.GateReject, "", nil
+		case "":
+			fmt.Println("(empty input — please type a, e, or r)")
+			continue
+		default:
+			fmt.Printf("(unrecognized %q — please type a, e, or r)\n", choice)
+			continue
+		}
 	}
+}
+
+func truncForGate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 

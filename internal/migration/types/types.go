@@ -117,13 +117,21 @@ type SourceEvidence struct {
 // OutputItem is a single unit of specialist output. A specialist's full
 // output is a slice of these.
 type OutputItem struct {
-	ID           string          `json:"id"`
-	State        ItemState       `json:"state"`
-	Description  string          `json:"description"`
+	ID             string          `json:"id"`
+	State          ItemState       `json:"state"`
+	Description    string          `json:"description"`
 	SourceEvidence *SourceEvidence `json:"source_evidence,omitempty"`
 
-	// Patch is the proposed change in unified diff format, present when
-	// State is ItemApplied.
+	// FileWrites are the file-system changes that, taken together, make up
+	// this item's patch. Specialists declare what files to create / replace
+	// / delete; the orchestrator applies them after parse-validation. This
+	// is more reliable than asking the LLM to produce well-formed unified
+	// diffs (which it often gets wrong on context lines and line counts).
+	FileWrites []FileWrite `json:"file_writes,omitempty"`
+
+	// Patch is a free-form string payload the specialist can use for
+	// out-of-band data delivery. The assessor uses it to embed the full
+	// Assessment JSON; module specialists generally don't use it.
 	Patch string `json:"patch,omitempty"`
 
 	// BlockerCode is set when State is ItemBlocked.
@@ -138,6 +146,24 @@ type OutputItem struct {
 	// Reason is the human-readable rationale for ItemNotApplicable.
 	Reason string `json:"reason,omitempty"`
 }
+
+// FileWrite is one file-system change. The orchestrator applies these
+// after the specialist returns. Path is relative to repo root and must
+// not traverse outside the repo (orchestrator enforces).
+type FileWrite struct {
+	Path      string        `json:"path"`
+	Operation FileOperation `json:"operation"`
+	Content   string        `json:"content,omitempty"` // present for create/replace
+}
+
+// FileOperation enumerates the allowed file-write actions.
+type FileOperation string
+
+const (
+	OpCreate  FileOperation = "create"  // create a new file (fails if exists)
+	OpReplace FileOperation = "replace" // replace an existing file's content
+	OpDelete  FileOperation = "delete"  // delete an existing file
+)
 
 // BlockerCode is the fixed enum of reasons a specialist could not migrate
 // an artifact. New codes require an explicit code change — the orchestrator

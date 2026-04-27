@@ -189,10 +189,15 @@ func (o *Orchestrator) RunPhase(ctx context.Context, phase types.Phase, hint str
 		}
 	}
 
-	// Apply patches (specialists do NOT commit; orchestrator does).
-	// In this 1.10.0 baseline, applied items contain unified-diff patches
-	// that the specialist already wrote into the working tree as part of
-	// its file edits. The validation funnel verifies the result builds.
+	// Apply file writes from each applied item. Specialists declare
+	// the changes; the orchestrator materializes them. Rollback to
+	// pre-tag if the validation funnel later fails.
+	if err := applyFileWrites(o.repoRoot, out); err != nil {
+		_ = vcs.ResetHard(o.repoRoot, preTag)
+		rec.State = types.PhaseFailed
+		_ = o.SaveState(s)
+		return "", fmt.Errorf("apply file writes: %w (rolled back to %s)", err, preTag)
+	}
 
 	// Run the validation funnel (compile + tests). ArchUnit deferred
 	// during migration phases.

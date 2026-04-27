@@ -212,3 +212,15 @@ func AssessmentPath(repoRoot string) string {
 func CompletionReportPath(repoRoot string) string {
 	return filepath.Join(MigrationDirPath(repoRoot), "completion-report.md")
 }
+
+// WriteRawLLM persists a specialist's raw LLM response under
+// .trabuco-migration/phase-N-{name}-raw.txt for debugging. Best-effort —
+// callers ignore errors so debug instrumentation never masks a real
+// specialist failure.
+func WriteRawLLM(repoRoot string, phase types.Phase, name, content string) error {
+	if err := os.MkdirAll(MigrationDirPath(repoRoot), 0o755); err != nil {
+		return err
+	}
+	path := filepath.Join(MigrationDirPath(repoRoot), fmt.Sprintf("phase-%d-%s-raw.txt", int(phase), name))
+	return os.WriteFile(path, []byte(content), 0o644)
+}

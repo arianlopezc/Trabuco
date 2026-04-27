@@ -96,6 +96,10 @@ func (s *Specialist) Run(ctx context.Context, in *specialists.Input) (*specialis
 		return nil, fmt.Errorf("LLM call: %w", err)
 	}
 
+	// Persist raw LLM output for debugging. Best-effort; failure here
+	// must not mask the real result.
+	_ = state.WriteRawLLM(in.RepoRoot, s.spec.Phase, s.spec.Name, resp.Content)
+
 	out, err := parseOutput(resp.Content, s.spec.Phase)
 	if err != nil {
 		return nil, fmt.Errorf("parse LLM output: %w (content: %s)", err, truncate(resp.Content, 1000))
@@ -167,7 +171,13 @@ No surrounding prose, no Markdown fences, no commentary — just the JSON.
         "lines": "<start-end, e.g. 12-58>",
         "content_hash": "<sha256 of the byte range, hex>"
       },
-      "patch": "<unified-diff format, only when state=applied>",
+      "file_writes": [
+        {
+          "path": "<path relative to repo root>",
+          "operation": "create" | "replace" | "delete",
+          "content": "<full file content; required for create/replace, omit for delete>"
+        }
+      ],
       "blocker_code": "<one of the fixed BlockerCode enum values, only when state=blocked>",
       "blocker_note": "<concrete file:line context, only when state=blocked>",
       "alternatives": ["<alternative 1>", "<alternative 2>"],
@@ -182,14 +192,58 @@ No surrounding prose, no Markdown fences, no commentary — just the JSON.
 }
 ` + "```" + `
 
-Constraints:
+# Assessor exception (Phase 0 ONLY)
+
+The Phase 0 assessor is the ONLY specialist that uses ` + "`patch`" + ` instead of
+` + "`file_writes`" + `. It emits exactly ONE OutputItem with state="applied",
+description="initial assessment", and ` + "`patch`" + ` set to the JSON-stringified
+Assessment struct. The assessor MUST NOT use file_writes — its prompt
+overrides this section. All other phases (1-13) MUST use file_writes
+exclusively and leave ` + "`patch`" + ` empty.
+
+# How to express changes via file_writes (phases 1-13)
+
+For every item with state=applied, your patch is expressed as one or more
+file_writes. Each file_write has:
+- path: relative to repo root (no leading slash, no traversal like '..')
+- operation: "create", "replace", or "delete"
+- content: the FULL file content for create/replace (do NOT use diff
+  syntax; do NOT abbreviate with '...'); omit for delete
+
+Examples:
+
+Adding a new entity:
+  { "path": "model/src/main/java/com/x/model/User.java",
+    "operation": "create",
+    "content": "package com.x.model;\n\npublic record User(...) {}\n" }
+
+Marking the legacy class @Deprecated:
+  { "path": "legacy/src/main/java/com/x/User.java",
+    "operation": "replace",
+    "content": "<full new content with @Deprecated added>" }
+
+Deleting an obsolete file:
+  { "path": "legacy/src/main/java/com/x/Old.java",
+    "operation": "delete" }
+
+# Constraints
+
 - Every item with state=applied MUST include source_evidence pointing at
-  REAL file paths and line ranges in the source repo. You will be REJECTED
-  if source_evidence is fabricated or doesn't match the actual file content.
+  REAL file paths and line ranges in the assessment artifact. You will be
+  REJECTED if source_evidence is fabricated or doesn't match actual file
+  content.
+- file_writes paths must be inside the repo (no '..' traversal, no leading
+  '/'). The orchestrator rejects unsafe paths.
+- For replace operations, you MUST provide the FULL new content. Do not
+  abbreviate, do not use '...' or 'rest of file unchanged'. The new content
+  REPLACES the entire file.
+- For create operations, the file must NOT already exist. Use replace
+  instead if it does.
 - BlockerCode MUST be one of the fixed enum values from the plan. Inventing
   new codes will cause the orchestrator to reject your output.
 - If your phase has no work to do (no source artifacts match its scope),
   return ONE item with state=not_applicable and an explanation in 'reason'.
+  Do NOT include file_writes when state=not_applicable.
 - Do NOT propose changes that aren't grounded in source evidence. The
   orchestrator's diff-inspection layer will reject scope creep.
 `
