@@ -63,6 +63,36 @@ func (s *Specialist) Name() string { return "assessor" }
 // produces assessment.json AND a single OutputItem so the orchestrator
 // can present the assessment as a gate to the user.
 func (s *Specialist) Run(ctx context.Context, in *specialists.Input) (*specialists.Output, error) {
+	// Hard gate: Trabuco 1.10's skeleton-builder is Maven-only, and the
+	// validation funnel runs `mvn` directly. A Gradle/SBT/etc. source
+	// repo cannot be migrated end-to-end yet — block at Phase 0 with a
+	// clear message instead of letting the user discover the problem
+	// when Phase 1 produces a half-converted tree. We pre-scan here
+	// rather than relying on the LLM because the answer is mechanical.
+	snap, err := scanner.Scan(in.RepoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("source pre-scan: %w", err)
+	}
+	if snap.BuildSystem != "maven" {
+		return &specialists.Output{
+			Phase: types.PhaseAssessment,
+			Items: []types.OutputItem{
+				{
+					ID:          "non-maven-source",
+					State:       types.ItemBlocked,
+					Description: fmt.Sprintf("source build system is %q; Trabuco 1.10 supports Maven only", snap.BuildSystem),
+					BlockerCode: types.BlockerNonMavenBuildSystem,
+					BlockerNote: fmt.Sprintf("Detected build system %q at %s. The skeleton-builder generates a multi-module Maven structure and the validation funnel invokes `mvn` directly; running on a non-Maven source produces a half-converted project. Convert the source to Maven first (e.g. `gradle init --type pom` for Gradle), commit the conversion, then re-run `trabuco migrate assess`.", snap.BuildSystem, in.RepoRoot),
+					Alternatives: []string{
+						"convert the source to Maven (gradle init --type pom, or hand-port build.gradle to pom.xml) and re-run",
+						"wait for Trabuco 1.11+ which is planned to support Gradle source directly",
+					},
+				},
+			},
+			Summary: fmt.Sprintf("Migration blocked: source build system is %q. Trabuco 1.10 requires Maven source.", snap.BuildSystem),
+		}, nil
+	}
+
 	out, err := s.llm.Run(ctx, in)
 	if err != nil {
 		return nil, err

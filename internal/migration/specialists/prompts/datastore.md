@@ -63,3 +63,18 @@ For each repository in the assessment:
 - Tests are deferred to the test specialist (Phase 11) — write
   characterization-test stubs in test-specialist's territory but don't
   rewrite tests yourself.
+
+## Dependency hygiene gotcha
+
+`org.flywaydb:flyway-core` IS BOM-managed by spring-boot-dependencies
+(no version needed). But database-specific Flyway artifacts split off in
+Flyway 10:
+- `flyway-database-postgresql`
+- `flyway-database-mysql`
+- `flyway-mongodb`
+These are NOT in Spring Boot 3.2's BOM. If you add one, give it an
+explicit `<version>` (10.x compatible with Flyway-core 10.x). Easier:
+for Spring Boot 3.2 + Postgres, just use `flyway-core` alone — it
+includes Postgres support up through Flyway 9, which is what
+spring-boot-dependencies pins. Add the database-specific artifact only
+if the legacy used Flyway 10+.

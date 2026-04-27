@@ -21,7 +21,7 @@ Alongside the code, Trabuco lays down an AI collaboration layer that the major c
 
 Trabuco goes further. The **AI Agent module** ships production scaffolding for building AI agents *themselves* on Spring AI: tool calling, LLM input/output guardrails, multi-agent orchestration, knowledge-base integration, MCP server endpoint, the A2A (Agent-to-Agent) protocol, streaming responses, webhook callbacks, scope-based authorization, rate limiting, and correlation-ID tracing — wired, testable, and ready from the first commit. Trabuco itself is also an MCP server: run `trabuco mcp` and your coding agents invoke scaffolding operations natively (`init_project`, `add_module`, `design_system`, `suggest_architecture`).
 
-> **Migration of legacy projects** is being redesigned for the upcoming **1.10.0** release. The previous beta `trabuco migrate` command and `migrate_project` / `scan_project` MCP tools have been removed. The new feature — orchestrator agent + specialized subagents, dependency-aware phasing, in-place transformation — is captured in [`docs/MIGRATION_REDESIGN_PLAN.md`](docs/MIGRATION_REDESIGN_PLAN.md).
+> **Migrating an existing Spring Boot project** is supported in **1.10** via `trabuco migrate`: an orchestrated 14-phase migration that transforms a Maven-based Spring Boot 2.x or 3.x repo in place into a Trabuco-shaped multi-module project. Each phase is owned by a specialist that proposes structured changes you approve at a gate before they're committed; per-phase git tags provide atomic rollback. Start with `trabuco migrate assess /path/to/repo`. Full guide: [`docs/migration-guide.md`](docs/migration-guide.md). Design details: [`docs/MIGRATION_REDESIGN_PLAN.md`](docs/MIGRATION_REDESIGN_PLAN.md).
 
 ## Table of Contents
 

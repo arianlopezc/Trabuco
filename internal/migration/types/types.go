@@ -221,6 +221,7 @@ const (
 	BlockerMultiLanguageBuild    BlockerCode = "MULTI_LANGUAGE_BUILD"
 	BlockerKotlinPartial         BlockerCode = "KOTLIN_PARTIAL"
 	BlockerSecretInSource        BlockerCode = "SECRET_IN_SOURCE"
+	BlockerNonMavenBuildSystem   BlockerCode = "NON_MAVEN_BUILD_SYSTEM"
 )
 
 // Deployment / CI-CD
@@ -291,6 +292,7 @@ var knownBlockerCodes = map[BlockerCode]struct{}{
 	BlockerMultiLanguageBuild:          {},
 	BlockerKotlinPartial:               {},
 	BlockerSecretInSource:              {},
+	BlockerNonMavenBuildSystem:         {},
 	BlockerDockerfileGranularityChange: {},
 	BlockerDeploymentTopologyChange:    {},
 	BlockerJavaVersionMismatchCI:       {},

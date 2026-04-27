@@ -139,10 +139,67 @@ func runMavenTests(repoRoot string, modules []string) (string, bool) {
 }
 
 // runArchUnit triggers ArchUnit-specific tests by name. Trabuco generates
-// these in the Shared module under the `trabuco-arch` JUnit tag; activation
-// re-enables them, and the funnel runs them as a separate step.
+// these in the Shared module under the `trabuco-arch` JUnit tag;
+// activation re-enables them, and the funnel runs them as a separate
+// step.
+//
+// Scope to modules that actually contain a boundary test file. Without
+// scoping, `mvn test -Dgroups=trabuco-arch` runs on the entire reactor
+// and surefire fails on any module that lacks a JUnit engine on its test
+// classpath ("groups/excludedGroups require ... a specific engine
+// required on classpath"). Empty modules like model/ are common, so
+// always-full-reactor breaks fixtures with sparse tests.
 func runArchUnit(repoRoot string) (string, bool) {
-	return runMaven(repoRoot, "test", "-q", "-Dgroups=trabuco-arch")
+	modules := findArchUnitModules(repoRoot)
+	if len(modules) == 0 {
+		// No boundary tests in the project — skip the step entirely.
+		// Running surefire with -Dgroups against the whole reactor would
+		// fail on every module that lacks a JUnit engine on classpath
+		// (typical for empty model/ modules), so a no-op is correct here.
+		return "no ArchitectureTest files found — step skipped", true
+	}
+	args := []string{"test", "-q", "-Dgroups=trabuco-arch", "-DfailIfNoTests=false",
+		"-pl", joinModulePaths(modules), "-am"}
+	return runMaven(repoRoot, args...)
+}
+
+// findArchUnitModules walks repoRoot looking for *ArchitectureTest*.java
+// files under any first-level module's src/test/. Returns the list of
+// module names (top-level dirs that contain such a file).
+func findArchUnitModules(repoRoot string) []string {
+	entries, err := os.ReadDir(repoRoot)
+	if err != nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var modules []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, ".") || name == "target" || name == "legacy" {
+			continue
+		}
+		testRoot := filepath.Join(repoRoot, name, "src", "test")
+		_ = filepath.Walk(testRoot, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || info.IsDir() {
+				return nil
+			}
+			if !strings.HasSuffix(path, ".java") {
+				return nil
+			}
+			if !strings.Contains(filepath.Base(path), "ArchitectureTest") {
+				return nil
+			}
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				modules = append(modules, name)
+			}
+			return nil
+		})
+	}
+	return modules
 }
 
 // runMaven runs mvn with the given args, using the repo's mvnw if present.

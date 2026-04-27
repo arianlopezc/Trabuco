@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/arianlopezc/Trabuco/internal/java"
@@ -156,12 +157,26 @@ func (o *Orchestrator) RunPhase(ctx context.Context, phase types.Phase, hint str
 		return "", err
 	}
 
+	// Compose UserHint: explicit edit-and-approve hint takes priority,
+	// but always append pending decisions for this phase so the
+	// specialist can apply user choices on a re-run after `migrate
+	// decision`. Without this the LLM has to dig through state.json's
+	// decisions array on its own — error-prone.
+	userHint := hint
+	if dh := pendingDecisionHint(s, phase); dh != "" {
+		if userHint != "" {
+			userHint = userHint + "\n\n" + dh
+		} else {
+			userHint = dh
+		}
+	}
+
 	// Invoke the specialist.
 	in := &specialists.Input{
 		RepoRoot: o.repoRoot,
 		Phase:    phase,
 		State:    s,
-		UserHint: hint,
+		UserHint: userHint,
 	}
 	if err := writeJSON(state.PhaseInputPath(o.repoRoot, phase), in); err != nil {
 		return "", fmt.Errorf("write phase input: %w", err)
@@ -210,12 +225,21 @@ func (o *Orchestrator) RunPhase(ctx context.Context, phase types.Phase, hint str
 	}
 
 	// Run the validation funnel (compile + tests). ArchUnit deferred
-	// during migration phases.
-	mode := validation.ModeMigration
-	if phase == types.PhaseActivation {
-		mode = validation.ModeActivation
+	// during migration phases. We skip the funnel when no item declared
+	// any file_writes — Phase 0 (assessor) produces only the assessment
+	// catalog, and a phase whose items are all blocked / requires_decision
+	// hasn't changed code, so there's nothing to compile-check.
+	// Phase 12 (activation) runs through regardless because the activator
+	// itself rewrites the parent POM in-process; its file changes happen
+	// on disk before this point.
+	res := validation.Result{Passed: true}
+	if phase == types.PhaseActivation || hasFileWrites(out) {
+		mode := validation.ModeMigration
+		if phase == types.PhaseActivation {
+			mode = validation.ModeActivation
+		}
+		res = validation.Run(o.repoRoot, mode, affectedModules(o.repoRoot, out))
 	}
-	res := validation.Run(o.repoRoot, mode, affectedModules(o.repoRoot, out))
 	if !res.Passed {
 		// Auto-rollback to pre-tag, surface failure as a blocker.
 		_ = vcs.ResetHard(o.repoRoot, preTag)
@@ -305,6 +329,11 @@ func (o *Orchestrator) Rollback(toPhase types.Phase) error {
 }
 
 // RecordDecision persists a user's answer to a requires-decision item.
+// It scans every phase-N-output.json for an item whose ID matches d.ID
+// so it can backfill Phase / Question / Choices from the originating
+// requires_decision item — the user only needs to supply id + choice on
+// the CLI. If a decision with the same ID already exists it's replaced
+// (re-running `migrate decision` should idempotently update, not duplicate).
 func (o *Orchestrator) RecordDecision(d state.DecisionRecord) error {
 	if err := state.AcquireLock(o.repoRoot, "cli"); err != nil {
 		return err
@@ -315,9 +344,93 @@ func (o *Orchestrator) RecordDecision(d state.DecisionRecord) error {
 	if err != nil {
 		return err
 	}
+	if d.Phase == 0 || d.Question == "" {
+		if found := lookupDecisionContext(o.repoRoot, d.ID); found != nil {
+			if d.Phase == 0 {
+				d.Phase = found.Phase
+			}
+			if d.Question == "" {
+				d.Question = found.Question
+			}
+			if len(d.Choices) == 0 {
+				d.Choices = found.Choices
+			}
+		}
+	}
 	d.DecidedAt = time.Now().UTC()
-	s.Decisions = append(s.Decisions, d)
+
+	// Replace existing record with the same ID; otherwise append.
+	replaced := false
+	for i, prev := range s.Decisions {
+		if prev.ID == d.ID {
+			s.Decisions[i] = d
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		s.Decisions = append(s.Decisions, d)
+	}
 	return o.SaveState(s)
+}
+
+// lookupDecisionContext searches every phase-N-output.json under
+// .trabuco-migration/ for an item with the given ID and returns its
+// originating phase + question + choices. Returns nil if not found.
+func lookupDecisionContext(repoRoot, id string) *state.DecisionRecord {
+	for _, p := range types.AllPhases() {
+		path := state.PhaseOutputPath(repoRoot, p)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var out specialists.Output
+		if err := json.Unmarshal(data, &out); err != nil {
+			continue
+		}
+		for _, item := range out.Items {
+			if item.ID != id {
+				continue
+			}
+			return &state.DecisionRecord{
+				Phase:    p,
+				Question: item.Question,
+				Choices:  item.Choices,
+			}
+		}
+		for _, d := range out.Decisions {
+			if d.ID == id {
+				return &state.DecisionRecord{
+					Phase:    p,
+					Question: d.Question,
+					Choices:  d.Choices,
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// pendingDecisionHint composes a UserHint string from every recorded
+// decision attached to the given phase. Returns "" if no decisions
+// match the phase. This is what RunPhase passes into the specialist
+// when it re-attempts a previously-blocked or requires_decision phase.
+func pendingDecisionHint(s *state.State, phase types.Phase) string {
+	var lines []string
+	for _, d := range s.Decisions {
+		if d.Phase != phase || d.Choice == "" {
+			continue
+		}
+		line := fmt.Sprintf("- decision %q: user chose %q", d.ID, d.Choice)
+		if d.Question != "" {
+			line += fmt.Sprintf(" (question: %s)", d.Question)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "The user has recorded decisions for previous requires_decision items in this phase. Apply each choice in your next output:\n" + strings.Join(lines, "\n")
 }
 
 // Status returns the current state for inspection (used by the migrate_status
@@ -361,6 +474,17 @@ func preflightRuntimeJava(s *state.State) error {
 			"    - run trabuco from a container/CI image pinned to JDK %d (matches what the generated CI workflow does)",
 		types.BlockerJavaVersionMismatchRuntime, gotMajor, gotFull, wantMajor, wantMajor, wantMajor, wantMajor,
 	)
+}
+
+// hasFileWrites reports whether any item declared file_writes — used
+// to decide whether the validation funnel needs to run.
+func hasFileWrites(out *specialists.Output) bool {
+	for _, item := range out.Items {
+		if len(item.FileWrites) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func isNotApplicable(out *specialists.Output) bool {
