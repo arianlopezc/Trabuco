@@ -11,16 +11,13 @@ package registry
 
 import (
 	"github.com/arianlopezc/Trabuco/internal/migration/specialists"
+	"github.com/arianlopezc/Trabuco/internal/migration/specialists/assessor"
 )
 
-// Wired specialists go below as blank imports. Each specialist package
-// contains an init() that registers itself with the default registry.
-//
-// Example (uncomment as M2-M10 land):
-//	_ "github.com/arianlopezc/Trabuco/internal/migration/specialists/assessor"
-//	_ "github.com/arianlopezc/Trabuco/internal/migration/specialists/skeleton"
-//	_ "github.com/arianlopezc/Trabuco/internal/migration/specialists/model"
-//	... etc.
-
-// keep specialists import alive for blank-import hygiene.
-var _ = specialists.NewRegistry
+// init() registers every specialist with specialists.Default(). Each
+// milestone (M2-M10) appends its specialist registration here.
+func init() {
+	r := specialists.Default()
+	r.Register(assessor.New())
+	// M3+ specialists register themselves below as they land.
+}
