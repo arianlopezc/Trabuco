@@ -3,7 +3,7 @@
     "trabuco": {
       "command": "trabuco",
       "args": ["mcp"],
-      "description": "Trabuco CLI's MCP server. Exposes 12 tools (init_project, add_module, suggest_architecture, design_system, generate_workspace, run_doctor, get_project_info, list_modules, list_providers, check_docker, get_version, auth_status, sync_project), 4 expert prompts (trabuco_expert, design_microservices, extend_project, trabuco_ai_agent_expert), and 3 resources (trabuco://modules, trabuco://patterns, trabuco://limitations). Migration is being redesigned for 1.10.0; the previous beta migrate_project + scan_project tools have been removed. Requires `trabuco` binary on PATH — install from https://github.com/arianlopezc/Trabuco/releases."
+      "description": "Trabuco CLI's MCP server. Exposes scaffolding tools (init_project, add_module, suggest_architecture, design_system, generate_workspace, run_doctor, get_project_info, list_modules, list_providers, check_docker, get_version, auth_status, sync_project), the 14-phase migration of legacy Spring Boot projects (migrate_assess, migrate_skeleton, migrate_module, migrate_config, migrate_deployment, migrate_tests, migrate_activate, migrate_finalize, migrate_status, migrate_rollback, migrate_decision, migrate_resume), 4 expert prompts (trabuco_expert, design_microservices, extend_project, trabuco_ai_agent_expert), and 3 resources (trabuco://modules, trabuco://patterns, trabuco://limitations). Requires the `trabuco` binary on PATH — install from https://github.com/arianlopezc/Trabuco/releases (curl https://github.com/arianlopezc/Trabuco/releases/latest/download/install.sh | bash)."
     }
   }
 }

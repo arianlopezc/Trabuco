@@ -34,7 +34,7 @@ EOF
 }
 
 if ! command -v trabuco >/dev/null 2>&1; then
-  emit_context "Trabuco plugin: the \`trabuco\` CLI is NOT installed on this machine. The plugin's MCP server cannot start and all /trabuco:* skills will fail. Before using any Trabuco feature, instruct the user to install it — see https://github.com/arianlopezc/Trabuco for install instructions (typically: brew install or a prebuilt binary). Do NOT attempt to call mcp__trabuco__* tools until installed."
+  emit_context "Trabuco plugin: the \`trabuco\` CLI is NOT installed on this machine. The plugin's MCP server cannot start and all /trabuco:* skills will fail. Before using any Trabuco feature, instruct the user to install it. The supported install paths are: (1) one-liner installer — \`curl -sSL https://github.com/arianlopezc/Trabuco/releases/latest/download/install.sh | bash\`; (2) download the prebuilt binary for their platform from https://github.com/arianlopezc/Trabuco/releases/latest and put it on PATH; (3) build from source — \`go install github.com/arianlopezc/Trabuco/cmd/trabuco@latest\`. There is no Homebrew formula. Do NOT attempt to call mcp__trabuco__* tools until installed."
   exit 0
 fi
 

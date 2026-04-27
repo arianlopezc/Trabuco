@@ -50,7 +50,14 @@ Trabuco is opinionated. If the user insists on:
 
 ### User is migrating a massive legacy codebase
 
-Migration of legacy Java projects is being redesigned for Trabuco 1.10.0 (see `docs/MIGRATION_REDESIGN_PLAN.md` in the repo). Until then, the previous beta `migrate` skill is unavailable and there is no in-plugin migration capability. For users asking about migration, point them at the plan and offer to help with manual extraction (entity-by-entity, with `/trabuco:new-project` producing the target shape) until the new feature ships.
+Migration is supported as of Trabuco 1.10 — `/trabuco:migrate` drives a 14-phase orchestrated flow with per-phase approval gates and atomic rollback (see `docs/migration-guide.md`). Caveats to set expectations up front:
+
+- **Maven only.** Gradle source is blocked at Phase 0 with `NON_MAVEN_BUILD_SYSTEM`; the user must convert (`gradle init --type pom`) first.
+- **Spring Boot 2.x or 3.x.** Quarkus / Micronaut / non-Spring frameworks block as `NON_SPRING_FRAMEWORK`.
+- **Each phase is one Anthropic API call.** A typical 14-phase migration costs real tokens. Warn cost-conscious users.
+- **The build JDK on PATH must match the target Java version.** Mismatch is caught by a preflight check, but the user should set `JAVA_HOME` before they start.
+
+For projects outside those bounds, manual extraction (entity-by-entity, with `/trabuco:new-project` producing the target shape) is still the right answer.
 
 ### User needs regulatory compliance (PCI, HIPAA, SOC2)
 
