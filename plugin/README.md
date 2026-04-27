@@ -53,13 +53,7 @@ emits a clear message if it isn't.
 
 ## Install the plugin
 
-### From the Anthropic marketplace (once approved)
-
-```text
-/plugin install trabuco@claude-plugins-official
-```
-
-### From the Trabuco repository directly (works today)
+### From the Trabuco repository
 
 ```text
 /plugin marketplace add arianlopezc/Trabuco
