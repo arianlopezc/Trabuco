@@ -1,390 +1,395 @@
 package cli
 
 import (
+	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/arianlopezc/Trabuco/internal/ai"
-	"github.com/arianlopezc/Trabuco/internal/auth"
-	"github.com/arianlopezc/Trabuco/internal/migrate"
-	"github.com/arianlopezc/Trabuco/internal/prompts"
-	"github.com/arianlopezc/Trabuco/internal/utils"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+
+	"github.com/arianlopezc/Trabuco/internal/migration/orchestrator"
+	"github.com/arianlopezc/Trabuco/internal/migration/specialists"
+	"github.com/arianlopezc/Trabuco/internal/migration/state"
+	"github.com/arianlopezc/Trabuco/internal/migration/types"
+	"github.com/arianlopezc/Trabuco/internal/migration/vcs"
+
+	// Specialist registrations (each milestone wires its specialists here):
+	_ "github.com/arianlopezc/Trabuco/internal/migration/specialists/registry"
 )
 
-var (
-	migrateOutput       string
-	migrateAPIKey       string
-	migrateProvider     string
-	migrateModel        string
-	migrateDryRun       bool
-	migrateInteractive  bool
-	migrateResume       bool
-	migrateRollback     bool
-	migrateRollbackTo   string
-	migrateIncludeTests bool
-	migrateVerbose      bool
-	migrateDebug        bool
-	migrateSkipBuild    bool
-)
-
+// migrateCmd is the new top-level command for the 1.10.0 migration feature.
+// It orchestrates the 14-phase flow defined in docs/MIGRATION_REDESIGN_PLAN.md.
+//
+// Subcommands map 1:1 to the MCP tools so plugin and CLI mode are at parity.
 var migrateCmd = &cobra.Command{
-	Use:   "migrate [source-project]",
-	Short: "[Experimental] Migrate an existing Java project to Trabuco structure using AI",
-	Long: `[EXPERIMENTAL] Migrate an existing Spring Boot project to Trabuco's multi-module architecture.
+	Use:   "migrate",
+	Short: "Migrate an existing Java repo into a Trabuco-shaped project (in place)",
+	Long: `Run the 14-phase Trabuco migration on an existing repository.
 
-NOTE: This command is experimental and under active development.
-      Results should be reviewed and may require manual adjustments.
+The migration transforms the user's repo in place into a Trabuco multi-module
+Maven project: assessment, skeleton bootstrap, then per-module migrations
+(Model, Datastore, Shared, API, Worker, EventConsumer, AIAgent), config,
+deployment adaptation, test analysis, enforcement activation, and finalization.
+Each phase ends with an approval gate (approve / edit-and-approve / reject).
 
-This command uses AI (Claude) to analyze your existing Java project and
-intelligently migrate it to Trabuco's clean module structure:
-  - Model: DTOs, Entities, Enums
-  - SQLDatastore/NoSQLDatastore: Repositories, Migrations
-  - Shared: Services, Utilities
-  - API: REST Controllers
-  - Worker: Background Jobs (if applicable)
-  - EventConsumer: Event Listeners (if applicable)
+Subcommands run individual phases. The typical end-to-end flow is:
+  trabuco migrate assess    /path/to/repo
+  trabuco migrate skeleton  /path/to/repo
+  trabuco migrate module    /path/to/repo --module=model
+  ...
+  trabuco migrate finalize  /path/to/repo
 
-MODES:
-  Interactive (Guided):
-    Run without arguments for a step-by-step guided experience:
-      trabuco migrate
+Or run autopilot through every phase, gating at each:
+  trabuco migrate run       /path/to/repo
 
-  Non-Interactive:
-    Provide source path and flags for scripted/CI usage:
-      trabuco migrate /path/to/legacy-app [flags]
+State lives at .trabuco-migration/ inside the repo. Per-phase git tags
+(trabuco-migration-phase-N-pre/post) provide atomic rollback boundaries.
 
-AUTHENTICATION:
-  Configure credentials with: trabuco auth login
-  Or set environment variables: ANTHROPIC_API_KEY, OPENROUTER_API_KEY
-  Or use --api-key flag for one-time use.
-
-Examples:
-  # Guided interactive migration (recommended for first-time users)
-  trabuco migrate
-
-  # Basic migration with source path
-  trabuco migrate /path/to/legacy-app
-
-  # Specify output directory
-  trabuco migrate /path/to/legacy-app -o ./migrated-app
-
-  # Use OpenRouter instead of Anthropic
-  trabuco migrate --provider=openrouter /path/to/legacy-app
-
-  # Dry run (analyze without generating files)
-  trabuco migrate --dry-run /path/to/legacy-app
-
-  # Resume interrupted migration
-  trabuco migrate --resume /path/to/legacy-app
-
-  # Verbose output
-  trabuco migrate -v /path/to/legacy-app`,
-	Args: cobra.MaximumNArgs(1),
-	Run:  runMigrate,
+See docs/MIGRATION_REDESIGN_PLAN.md for the full design.`,
 }
 
 func init() {
-	migrateCmd.Flags().StringVarP(&migrateOutput, "output", "o", "", "Output directory (default: ./<project-name>-trabuco)")
-	migrateCmd.Flags().StringVar(&migrateAPIKey, "api-key", "", "API key (or set ANTHROPIC_API_KEY/OPENROUTER_API_KEY env var)")
-	migrateCmd.Flags().StringVar(&migrateProvider, "provider", "anthropic", "AI provider: anthropic, openrouter")
-	migrateCmd.Flags().StringVar(&migrateModel, "model", "", "Model to use (default: claude-sonnet-4-5)")
-	migrateCmd.Flags().BoolVar(&migrateDryRun, "dry-run", false, "Analyze only, don't generate files")
-	migrateCmd.Flags().BoolVar(&migrateInteractive, "interactive", true, "Confirm each major decision")
-	migrateCmd.Flags().BoolVar(&migrateResume, "resume", false, "Resume from last checkpoint")
-	migrateCmd.Flags().BoolVar(&migrateRollback, "rollback", false, "Rollback migration completely")
-	migrateCmd.Flags().StringVar(&migrateRollbackTo, "rollback-to", "", "Rollback to specific stage")
-	migrateCmd.Flags().BoolVar(&migrateIncludeTests, "include-tests", false, "Migrate test files")
-	migrateCmd.Flags().BoolVarP(&migrateVerbose, "verbose", "v", false, "Verbose output")
-	migrateCmd.Flags().BoolVar(&migrateDebug, "debug", false, "Debug mode (save all AI interactions)")
-	migrateCmd.Flags().BoolVar(&migrateSkipBuild, "skip-build", false, "Skip Maven build after migration")
+	migrateCmd.AddCommand(migrateAssessCmd)
+	migrateCmd.AddCommand(migrateSkeletonCmd)
+	migrateCmd.AddCommand(migrateModuleCmd)
+	migrateCmd.AddCommand(migrateConfigCmd)
+	migrateCmd.AddCommand(migrateDeploymentCmd)
+	migrateCmd.AddCommand(migrateTestsCmd)
+	migrateCmd.AddCommand(migrateActivateCmd)
+	migrateCmd.AddCommand(migrateFinalizeCmd)
+	migrateCmd.AddCommand(migrateStatusCmd)
+	migrateCmd.AddCommand(migrateRollbackCmd)
+	migrateCmd.AddCommand(migrateDecisionCmd)
+	migrateCmd.AddCommand(migrateResumeCmd)
+	migrateCmd.AddCommand(migrateRunCmd)
+
+	rootCmd.AddCommand(migrateCmd)
+
+	migrateModuleCmd.Flags().String("module", "", "Module to migrate (model|sqldatastore|nosqldatastore|shared|api|worker|eventconsumer|aiagent)")
+	migrateRollbackCmd.Flags().Int("to-phase", -1, "Phase number to roll back to (0..13)")
+	migrateDecisionCmd.Flags().String("id", "", "Decision ID to record")
+	migrateDecisionCmd.Flags().String("choice", "", "Choice value")
 }
 
-func runMigrate(cmd *cobra.Command, args []string) {
-	cyan := color.New(color.FgCyan, color.Bold)
-	green := color.New(color.FgGreen)
-	yellow := color.New(color.FgYellow)
-	red := color.New(color.FgRed)
+// ---------- subcommand definitions ----------
 
-	// Print header
-	cyan.Println("\n╔════════════════════════════════════════╗")
-	cyan.Println("║   Trabuco Migrate - AI Code Migration  ║")
-	cyan.Println("╚════════════════════════════════════════╝")
-	fmt.Println()
-
-	// Experimental warning (can be suppressed via env var for CI/CD)
-	if os.Getenv("TRABUCO_ACKNOWLEDGE_EXPERIMENTAL") != "true" {
-		yellow.Println("⚠️  EXPERIMENTAL FEATURE")
-		yellow.Println("   This command is under active development.")
-		yellow.Println("   Results may require manual review and adjustment.")
-		fmt.Println()
-		yellow.Println("   Set TRABUCO_ACKNOWLEDGE_EXPERIMENTAL=true to suppress this warning.")
-		fmt.Println()
-	}
-
-	// Validate Docker is running (required for generated project)
-	dockerStatus := utils.CheckDocker()
-	if !dockerStatus.Running {
-		red.Fprintf(os.Stderr, "Error: Docker is required but not available.\n")
-		if !dockerStatus.Installed {
-			red.Fprintf(os.Stderr, "       Docker is not installed. Please install Docker Desktop.\n")
-		} else {
-			red.Fprintf(os.Stderr, "       %s\n", dockerStatus.Error)
-		}
-		yellow.Fprintf(os.Stderr, "\nDocker is required for:\n")
-		yellow.Fprintf(os.Stderr, "  - Running integration tests (Testcontainers)\n")
-		yellow.Fprintf(os.Stderr, "  - Local development with docker-compose\n")
-		fmt.Fprintln(os.Stderr)
-		os.Exit(1)
-	}
-
-	var absSourcePath string
-	var err error
-
-	// Track if we have pre-scanned project info from guided flow
-	var preScannedProjectInfo *migrate.ProjectInfo
-	var preAnalyzedDependencies *migrate.DependencyReport
-
-	// Check if we're in guided mode (no source path provided)
-	if len(args) == 0 {
-		// Run guided interactive prompts
-		guidedConfig, err := prompts.RunMigratePrompts()
-		if err != nil {
-			red.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Transfer guided config to CLI variables
-		absSourcePath = guidedConfig.SourcePath
-		migrateOutput = guidedConfig.OutputPath
-		migrateProvider = guidedConfig.Provider
-		migrateAPIKey = guidedConfig.APIKey
-		migrateModel = guidedConfig.Model
-		migrateDryRun = guidedConfig.DryRun
-		migrateInteractive = guidedConfig.Interactive
-		migrateIncludeTests = guidedConfig.IncludeTests
-		migrateSkipBuild = guidedConfig.SkipBuild
-
-		// Pass pre-scanned data to avoid duplicate work
-		preScannedProjectInfo = guidedConfig.ProjectInfo
-		preAnalyzedDependencies = guidedConfig.DependencyReport
-	} else {
-		// Non-interactive mode: use provided source path
-		sourcePath := args[0]
-
-		// Resolve absolute path
-		absSourcePath, err = filepath.Abs(sourcePath)
-		if err != nil {
-			red.Fprintf(os.Stderr, "Error: invalid source path: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Verify source exists
-		if _, err := os.Stat(absSourcePath); os.IsNotExist(err) {
-			red.Fprintf(os.Stderr, "Error: source project not found: %s\n", absSourcePath)
-			os.Exit(1)
-		}
-	}
-
-	// Handle rollback
-	if migrateRollback || migrateRollbackTo != "" {
-		handleRollback(absSourcePath)
-		return
-	}
-
-	// Create AI provider using credential manager
-	provider, providerName, err := createAIProviderWithAuth()
-	if err != nil {
-		red.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Println()
-		yellow.Println("No API credentials found.")
-		fmt.Println()
-		fmt.Println("To configure credentials, run:")
-		fmt.Println("  trabuco auth login")
-		fmt.Println()
-		fmt.Println("Or set environment variables:")
-		fmt.Println("  export ANTHROPIC_API_KEY=sk-ant-...")
-		fmt.Println("  export OPENROUTER_API_KEY=sk-or-...")
-		fmt.Println()
-		fmt.Println("Get an API key:")
-		fmt.Println("  - Anthropic: https://console.anthropic.com/settings/keys")
-		fmt.Println("  - OpenRouter: https://openrouter.ai/keys")
-		os.Exit(1)
-	}
-
-	green.Printf("Using AI provider: %s\n", providerName)
-	fmt.Println()
-
-	// Create migration config
-	config := &migrate.Config{
-		SourcePath:              absSourcePath,
-		OutputPath:              migrateOutput,
-		DryRun:                  migrateDryRun,
-		Interactive:             migrateInteractive,
-		Resume:                  migrateResume,
-		IncludeTests:            migrateIncludeTests,
-		Verbose:                 migrateVerbose,
-		Debug:                   migrateDebug,
-		SkipBuild:               migrateSkipBuild,
-		TrabucoVersion:          Version,
-		PreScannedProjectInfo:   preScannedProjectInfo,
-		PreAnalyzedDependencies: preAnalyzedDependencies,
-	}
-
-	// Determine output path if not specified
-	if config.OutputPath == "" {
-		projectName := filepath.Base(absSourcePath)
-		config.OutputPath = filepath.Join(".", projectName+"-trabuco")
-	}
-
-	// Resolve output path
-	config.OutputPath, err = filepath.Abs(config.OutputPath)
-	if err != nil {
-		red.Fprintf(os.Stderr, "Error: invalid output path: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Create migrator
-	migrator := migrate.NewMigrator(provider, config)
-
-	// Run migration
-	if err := migrator.Run(); err != nil {
-		red.Fprintf(os.Stderr, "\nMigration failed: %v\n", err)
-
-		// Check if we have a checkpoint to resume from
-		if migrator.HasCheckpoint() {
-			fmt.Println()
-			yellow.Println("A checkpoint was saved. You can resume with:")
-			fmt.Printf("  trabuco migrate --resume %s\n", absSourcePath)
-		}
-
-		os.Exit(1)
-	}
-
-	// Success
-	fmt.Println()
-	green.Println("✓ Migration completed successfully!")
-	fmt.Println()
-
-	fmt.Printf("Output: %s\n", config.OutputPath)
-	fmt.Println()
-
-	if !config.SkipBuild && !config.DryRun {
-		fmt.Println("The project has been built. To run it:")
-		fmt.Printf("  cd %s\n", config.OutputPath)
-		fmt.Println("  docker-compose up -d  # Start dependencies")
-		fmt.Println("  cd API && mvn spring-boot:run")
-	} else if config.DryRun {
-		yellow.Println("This was a dry run. No files were generated.")
-		fmt.Println("Run without --dry-run to perform the migration.")
-	} else {
-		fmt.Println("Next steps:")
-		fmt.Printf("  cd %s\n", config.OutputPath)
-		fmt.Println("  mvn clean install")
-	}
+var migrateAssessCmd = &cobra.Command{
+	Use:   "assess <repo-path>",
+	Short: "Phase 0 — Intake & Assessment (LLM scans the source, produces assessment.json)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runPhase(cmd, args[0], types.PhaseAssessment) },
 }
 
-func createAIProviderWithAuth() (ai.Provider, string, error) {
-	// If API key was provided directly via flag, use it
-	if migrateAPIKey != "" {
-		config := &ai.ProviderConfig{
-			APIKey: migrateAPIKey,
-			Model:  migrateModel,
-		}
+var migrateSkeletonCmd = &cobra.Command{
+	Use:   "skeleton <repo-path>",
+	Short: "Phase 1 — Skeleton bootstrap (multi-module structure, migration-mode parent POM, legacy/ wrap)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runPhase(cmd, args[0], types.PhaseSkeleton) },
+}
 
-		providerType := ai.ProviderType(strings.ToLower(migrateProvider))
-		switch providerType {
-		case ai.ProviderTypeAnthropic:
-			provider, err := ai.NewAnthropicProvider(config)
-			return provider, "Anthropic (Claude)", err
-		case ai.ProviderTypeOpenRouter:
-			provider, err := ai.NewOpenRouterProvider(config)
-			return provider, "OpenRouter", err
-		default:
-			provider, err := ai.AutoDetectProvider(config)
-			if provider != nil {
-				return provider, provider.Name(), err
+var migrateModuleCmd = &cobra.Command{
+	Use:   "module <repo-path> --module=<name>",
+	Short: "Phase 2-8 — Migrate a single module (Model, Datastore, Shared, API, Worker, EventConsumer, AIAgent)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		modName, _ := cmd.Flags().GetString("module")
+		phase, err := phaseForModuleName(modName)
+		if err != nil {
+			return err
+		}
+		return runPhase(cmd, args[0], phase)
+	},
+}
+
+var migrateConfigCmd = &cobra.Command{
+	Use:   "config <repo-path>",
+	Short: "Phase 9 — Configuration (per-module application.yml, OpenTelemetry, structured logging)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runPhase(cmd, args[0], types.PhaseConfiguration) },
+}
+
+var migrateDeploymentCmd = &cobra.Command{
+	Use:   "deployment <repo-path>",
+	Short: "Phase 10 — Adapt legacy CI/CD to multi-module structure (legacy CI only; never invents pipelines)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runPhase(cmd, args[0], types.PhaseDeployment) },
+}
+
+var migrateTestsCmd = &cobra.Command{
+	Use:   "tests <repo-path>",
+	Short: "Phase 11 — Per-test analysis: keep/adapt/discard/characterize",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runPhase(cmd, args[0], types.PhaseTests) },
+}
+
+var migrateActivateCmd = &cobra.Command{
+	Use:   "activate <repo-path>",
+	Short: "Phase 12 — Enforcement activation (flips Maven Enforcer / Spotless / ArchUnit / Jacoco threshold ON)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runPhase(cmd, args[0], types.PhaseActivation) },
+}
+
+var migrateFinalizeCmd = &cobra.Command{
+	Use:   "finalize <repo-path>",
+	Short: "Phase 13 — Finalization (doctor, sync, completion report)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runPhase(cmd, args[0], types.PhaseFinalization) },
+}
+
+var migrateStatusCmd = &cobra.Command{
+	Use:   "status <repo-path>",
+	Short: "Show current migration state",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := absRepoPath(args[0])
+		if err != nil {
+			return err
+		}
+		s, err := state.Load(repoRoot)
+		if err != nil {
+			return fmt.Errorf("no migration in progress at %s: %w", repoRoot, err)
+		}
+		return printStatus(s)
+	},
+}
+
+var migrateRollbackCmd = &cobra.Command{
+	Use:   "rollback <repo-path> --to-phase=<N>",
+	Short: "Roll back to the pre-tag of phase N",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		toPhase, _ := cmd.Flags().GetInt("to-phase")
+		if toPhase < 0 || toPhase > 13 {
+			return fmt.Errorf("--to-phase must be 0..13")
+		}
+		repoRoot, err := absRepoPath(args[0])
+		if err != nil {
+			return err
+		}
+		o := newOrch(repoRoot)
+		return o.Rollback(types.Phase(toPhase))
+	},
+}
+
+var migrateDecisionCmd = &cobra.Command{
+	Use:   "decision <repo-path> --id=<id> --choice=<value>",
+	Short: "Record a user choice for a requires-decision item",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, _ := cmd.Flags().GetString("id")
+		choice, _ := cmd.Flags().GetString("choice")
+		if id == "" || choice == "" {
+			return fmt.Errorf("--id and --choice are required")
+		}
+		repoRoot, err := absRepoPath(args[0])
+		if err != nil {
+			return err
+		}
+		o := newOrch(repoRoot)
+		return o.RecordDecision(state.DecisionRecord{ID: id, Choice: choice})
+	},
+}
+
+var migrateResumeCmd = &cobra.Command{
+	Use:   "resume <repo-path>",
+	Short: "Resume from the most recent in-progress phase",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := absRepoPath(args[0])
+		if err != nil {
+			return err
+		}
+		s, err := state.Load(repoRoot)
+		if err != nil {
+			return err
+		}
+		for _, p := range types.AllPhases() {
+			rec := s.Phases[p]
+			if rec.State == types.PhaseInProgress || rec.State == types.PhaseFailed {
+				fmt.Printf("Resuming phase %s (was %s)\n", p, rec.State)
+				return runPhase(cmd, repoRoot, p)
 			}
-			return nil, "", err
+		}
+		fmt.Println("No in-progress phase to resume.")
+		return nil
+	},
+}
+
+var migrateRunCmd = &cobra.Command{
+	Use:   "run <repo-path>",
+	Short: "Run all phases sequentially, gating at each (use --auto-approve to skip gates — DANGEROUS)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := absRepoPath(args[0])
+		if err != nil {
+			return err
+		}
+		o := newOrch(repoRoot)
+		ctx := context.Background()
+		for _, p := range types.AllPhases() {
+			fmt.Printf("\n=== Phase %d (%s) ===\n", int(p), p)
+			action, err := o.RunPhase(ctx, p, "")
+			if err != nil {
+				return err
+			}
+			if action == types.GateReject {
+				fmt.Printf("Phase %s rejected; halting migration.\n", p)
+				return nil
+			}
+		}
+		fmt.Println("\nMigration complete. See .trabuco-migration/completion-report.md")
+		return nil
+	},
+}
+
+// ---------- helpers ----------
+
+func runPhase(cmd *cobra.Command, repoArg string, phase types.Phase) error {
+	repoRoot, err := absRepoPath(repoArg)
+	if err != nil {
+		return err
+	}
+	o := newOrch(repoRoot)
+	if !state.Exists(repoRoot) {
+		// Auto-init at first phase only.
+		if phase != types.PhaseAssessment {
+			return fmt.Errorf("no migration initialized; run 'trabuco migrate assess %s' first", repoRoot)
+		}
+		// Preflight before initial init.
+		if err := o.Preflight(); err != nil {
+			return err
+		}
+		// Bootstrap with empty target config; the assessor recommends one
+		// and the skeleton phase reads the user-approved config from
+		// state.json.
+		if _, err := o.Init(state.TargetConfig{}); err != nil {
+			return err
 		}
 	}
-
-	// Use credential manager to get credentials
-	manager, err := auth.NewManager()
+	action, err := o.RunPhase(cmd.Context(), phase, "")
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to initialize credential manager: %w", err)
+		return err
 	}
+	fmt.Printf("Phase %s: %s\n", phase, action)
+	return nil
+}
 
-	// Determine preferred provider from flag
-	var preferredProvider auth.Provider
-	switch strings.ToLower(migrateProvider) {
-	case "anthropic":
-		preferredProvider = auth.ProviderAnthropic
-	case "openrouter":
-		preferredProvider = auth.ProviderOpenRouter
-	case "openai":
-		preferredProvider = auth.ProviderOpenAI
-	}
-
-	// Get credentials with fallback
-	cred, err := manager.GetCredentialWithFallback(preferredProvider)
+func absRepoPath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
-
-	// Create provider config
-	config := &ai.ProviderConfig{
-		APIKey: cred.APIKey,
-		Model:  migrateModel,
+	if _, err := os.Stat(abs); err != nil {
+		return "", err
 	}
-
-	// Use model from credential if not specified
-	if config.Model == "" && cred.Model != "" {
-		config.Model = cred.Model
+	if !vcs.IsRepo(abs) {
+		return "", fmt.Errorf("%s is not a git repository", abs)
 	}
+	return abs, nil
+}
 
-	// Create the appropriate provider
-	providerInfo := auth.SupportedProviders[cred.Provider]
-	switch cred.Provider {
-	case auth.ProviderAnthropic:
-		provider, err := ai.NewAnthropicProvider(config)
-		return provider, providerInfo.Name, err
-	case auth.ProviderOpenRouter:
-		provider, err := ai.NewOpenRouterProvider(config)
-		return provider, providerInfo.Name, err
+func newOrch(repoRoot string) *orchestrator.Orchestrator {
+	return orchestrator.New(repoRoot, Version, specialists.Default(), terminalGate{})
+}
+
+func phaseForModuleName(name string) (types.Phase, error) {
+	switch strings.ToLower(name) {
+	case "model":
+		return types.PhaseModel, nil
+	case "sqldatastore", "nosqldatastore", "datastore":
+		return types.PhaseDatastore, nil
+	case "shared":
+		return types.PhaseShared, nil
+	case "api":
+		return types.PhaseAPI, nil
+	case "worker":
+		return types.PhaseWorker, nil
+	case "eventconsumer":
+		return types.PhaseEventConsumer, nil
+	case "aiagent":
+		return types.PhaseAIAgent, nil
 	default:
-		// Try auto-detection for unsupported providers
-		provider, err := ai.AutoDetectProvider(config)
-		if provider != nil {
-			return provider, providerInfo.Name, err
-		}
-		return nil, "", fmt.Errorf("unsupported provider: %s", cred.Provider)
+		return 0, fmt.Errorf("unknown --module=%q (must be one of: model, sqldatastore, nosqldatastore, shared, api, worker, eventconsumer, aiagent)", name)
 	}
 }
 
-func handleRollback(sourcePath string) {
-	cyan := color.New(color.FgCyan)
-	yellow := color.New(color.FgYellow)
-	red := color.New(color.FgRed)
+func printStatus(s *state.State) error {
+	out, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, _ = os.Stdout.Write(out)
+	_, _ = os.Stdout.WriteString("\n")
+	return nil
+}
 
-	checkpointDir := migrate.GetCheckpointDir(sourcePath)
+// terminalGate is the CLI-mode Gate implementation: presents the diff
+// and approval prompt as terminal output and reads a line of stdin for
+// the user's choice. Uses bufio.Reader (not fmt.Scanln) so empty
+// lines and trailing whitespace don't corrupt the read.
+type terminalGate struct{}
 
-	if migrateRollbackTo != "" {
-		cyan.Printf("Rolling back to stage: %s\n", migrateRollbackTo)
-		if err := migrate.RollbackToStage(checkpointDir, migrateRollbackTo); err != nil {
-			red.Fprintf(os.Stderr, "Rollback failed: %v\n", err)
-			os.Exit(1)
+func (terminalGate) Present(ctx context.Context, phase types.Phase, out *specialists.Output) (types.GateAction, string, error) {
+	fmt.Printf("\n--- Phase %d (%s) summary ---\n", int(phase), phase)
+	fmt.Println(out.Summary)
+	fmt.Printf("\nItems: %d\n", len(out.Items))
+	for _, item := range out.Items {
+		fmt.Printf("  [%s] %s\n", item.State, item.Description)
+		if item.BlockerCode != "" {
+			fmt.Printf("    blocker: %s — %s\n", item.BlockerCode, truncForGate(item.BlockerNote, 200))
 		}
-		yellow.Println("Rollback complete. You can resume migration with --resume flag.")
-	} else {
-		cyan.Println("Rolling back migration completely...")
-		if err := migrate.RollbackAll(checkpointDir); err != nil {
-			red.Fprintf(os.Stderr, "Rollback failed: %v\n", err)
-			os.Exit(1)
+		if len(item.FileWrites) > 0 {
+			fmt.Printf("    file_writes: %d\n", len(item.FileWrites))
+			for _, fw := range item.FileWrites {
+				fmt.Printf("      %s %s\n", fw.Operation, fw.Path)
+			}
 		}
-		yellow.Println("Migration rolled back. Output directory has been removed.")
+	}
+	if len(out.Decisions) > 0 {
+		fmt.Println("\nDecisions required:")
+		for _, d := range out.Decisions {
+			fmt.Printf("  - %s: %s\n    choices: %s\n", d.ID, d.Question, strings.Join(d.Choices, ", "))
+		}
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Print("\n[a]pprove / [e]dit and approve / [r]eject? ")
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return "", "", fmt.Errorf("read stdin: %w", err)
+		}
+		choice := strings.ToLower(strings.TrimSpace(line))
+		switch choice {
+		case "a", "approve":
+			return types.GateApprove, "", nil
+		case "e", "edit":
+			fmt.Print("Provide guidance for the specialist (single line): ")
+			hint, err := reader.ReadString('\n')
+			if err != nil {
+				return "", "", err
+			}
+			return types.GateEditAndApprove, strings.TrimSpace(hint), nil
+		case "r", "reject":
+			return types.GateReject, "", nil
+		case "":
+			fmt.Println("(empty input — please type a, e, or r)")
+			continue
+		default:
+			fmt.Printf("(unrecognized %q — please type a, e, or r)\n", choice)
+			continue
+		}
 	}
 }
+
+func truncForGate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+

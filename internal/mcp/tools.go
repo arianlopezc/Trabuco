@@ -10,13 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/arianlopezc/Trabuco/internal/ai"
 	"github.com/arianlopezc/Trabuco/internal/auth"
 	"github.com/arianlopezc/Trabuco/internal/config"
 	"github.com/arianlopezc/Trabuco/internal/doctor"
 	"github.com/arianlopezc/Trabuco/internal/generator"
 	"github.com/arianlopezc/Trabuco/internal/java"
-	"github.com/arianlopezc/Trabuco/internal/migrate"
 	"github.com/arianlopezc/Trabuco/internal/utils"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -36,13 +34,12 @@ func registerAllTools(s *server.MCPServer, version string) {
 	registerListModules(s)
 	registerCheckDocker(s)
 	registerGetVersion(s, version)
-	registerScanProject(s)
-	registerMigrateProject(s, version)
 	registerAuthStatus(s)
 	registerListProviders(s)
 	registerDesignSystem(s)
 	registerGenerateWorkspace(s, version)
 	registerSyncProject(s, version)
+	registerMigrationTools(s, version)
 }
 
 // ---------- Project Management Tools ----------
@@ -865,153 +862,6 @@ func registerGetVersion(s *server.MCPServer, version string) {
 	})
 }
 
-// ---------- Migration Tools ----------
-
-func registerScanProject(s *server.MCPServer) {
-	tool := mcp.NewTool("scan_project",
-		mcp.WithDescription("Analyze a legacy Java project to assess migration feasibility. Scans POM structure, Spring Boot version, database usage, entity/repository/service/controller counts, and dependency compatibility. Call this BEFORE migrate_project to understand whether migration is possible and what blockers exist. Returns a migration_summary with compatible, replaceable, and unsupported dependencies. If has_blockers is true, address unsupported dependencies before migration. This tool does NOT modify any files — it is a read-only analysis."),
-		mcp.WithString("path",
-			mcp.Description("Path to the legacy Java project to scan"),
-			mcp.Required(),
-		),
-	)
-
-	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		path := req.GetString("path", "")
-
-		absPath, err := resolvePath(path)
-		if err != nil {
-			return toolError(fmt.Sprintf("Failed to resolve path: %v", err)), nil
-		}
-
-		scanner := migrate.NewProjectScanner(absPath)
-		projectInfo, err := scanner.Scan()
-		if err != nil {
-			return toolError(fmt.Sprintf("Scan failed: %v", err)), nil
-		}
-
-		analyzer := migrate.NewDependencyAnalyzer()
-		depReport := analyzer.Analyze(projectInfo.Dependencies)
-
-		return toolJSON(map[string]any{
-			"project": map[string]any{
-				"name":                projectInfo.Name,
-				"project_type":       projectInfo.ProjectType,
-				"java_version":       projectInfo.JavaVersion,
-				"base_package":       projectInfo.BasePackage,
-				"group_id":           projectInfo.GroupID,
-				"artifact_id":        projectInfo.ArtifactID,
-				"spring_boot_version": projectInfo.SpringBootVersion,
-				"is_multi_module":    projectInfo.IsMultiModule,
-				"modules":            projectInfo.Modules,
-				"database":           projectInfo.Database,
-				"message_broker":     projectInfo.MessageBroker,
-				"has_scheduled_jobs": projectInfo.HasScheduledJobs,
-				"has_event_listeners": projectInfo.HasEventListeners,
-				"uses_nosql":         projectInfo.UsesNoSQL,
-				"entities_count":     len(projectInfo.Entities),
-				"repositories_count": len(projectInfo.Repositories),
-				"services_count":     len(projectInfo.Services),
-				"controllers_count":  len(projectInfo.Controllers),
-			},
-			"dependencies": map[string]any{
-				"compatible_count":  len(depReport.Compatible),
-				"replaceable":      depReport.Replaceable,
-				"unsupported":      depReport.Unsupported,
-				"has_blockers":     depReport.HasBlockers(),
-				"migration_summary": depReport.GetMigrationSummary(),
-			},
-		})
-	})
-}
-
-func registerMigrateProject(s *server.MCPServer, version string) {
-	tool := mcp.NewTool("migrate_project",
-		mcp.WithDescription("Migrate a legacy Java project to Trabuco's multi-module structure using AI-powered code transformation. PREREQUISITES: (1) Run scan_project first to check for blockers, (2) Verify AI credentials with auth_status. This is a long-running operation that makes LLM API calls — use dry_run=true first to preview the migration plan without generating files. Creates the migrated project in a NEW directory (does not modify the source). After migration, run run_doctor on the output to verify structural integrity."),
-		mcp.WithString("source_path",
-			mcp.Description("Path to the legacy Java project to migrate"),
-			mcp.Required(),
-		),
-		mcp.WithString("output_path",
-			mcp.Description("Where to create the migrated project (default: <source>-trabuco)"),
-		),
-		mcp.WithString("provider",
-			mcp.Description("AI provider: anthropic, openrouter (default: anthropic)"),
-		),
-		mcp.WithString("api_key",
-			mcp.Description("API key for the AI provider (or use trabuco auth login)"),
-		),
-		mcp.WithString("model",
-			mcp.Description("Model to use (default: claude-sonnet-4-5)"),
-		),
-		mcp.WithBoolean("dry_run",
-			mcp.Description("Analyze without generating files"),
-		),
-		mcp.WithBoolean("include_tests",
-			mcp.Description("Migrate test files"),
-		),
-		mcp.WithBoolean("skip_build",
-			mcp.Description("Skip Maven build after migration (default: true)"),
-		),
-	)
-
-	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sourcePath := req.GetString("source_path", "")
-		outputPath := req.GetString("output_path", "")
-		providerName := req.GetString("provider", "anthropic")
-		apiKey := req.GetString("api_key", "")
-		model := req.GetString("model", "")
-		dryRun := req.GetBool("dry_run", false)
-		includeTests := req.GetBool("include_tests", false)
-		skipBuild := req.GetBool("skip_build", true)
-
-		absSource, err := resolvePath(sourcePath)
-		if err != nil {
-			return toolError(fmt.Sprintf("Failed to resolve source path: %v", err)), nil
-		}
-
-		// Create AI provider
-		provider, err := createProvider(providerName, apiKey, model)
-		if err != nil {
-			return toolError(fmt.Sprintf("Failed to create AI provider: %v", err)), nil
-		}
-
-		if outputPath == "" {
-			outputPath = absSource + "-trabuco"
-		}
-		absOutput, err := filepath.Abs(outputPath)
-		if err != nil {
-			return toolError(fmt.Sprintf("Invalid output path: %v", err)), nil
-		}
-
-		migrateCfg := &migrate.Config{
-			SourcePath:     absSource,
-			OutputPath:     absOutput,
-			DryRun:         dryRun,
-			Interactive:    false, // MCP is non-interactive
-			IncludeTests:   includeTests,
-			SkipBuild:      skipBuild,
-			TrabucoVersion: version,
-		}
-
-		migrator := migrate.NewMigrator(provider, migrateCfg)
-
-		if err := migrator.Run(); err != nil {
-			return toolError(fmt.Sprintf("Migration failed: %v", err)), nil
-		}
-
-		status := "success"
-		if dryRun {
-			status = "dry_run"
-		}
-
-		return toolJSON(map[string]any{
-			"status":      status,
-			"output_path": absOutput,
-		})
-	})
-}
-
 // ---------- Authentication Tools ----------
 
 func registerAuthStatus(s *server.MCPServer) {
@@ -1072,58 +922,6 @@ func registerListProviders(s *server.MCPServer) {
 
 // ---------- Helpers ----------
 
-// createProvider creates an AI provider from the given parameters,
-// falling back to the credential manager if no API key is provided.
-func createProvider(providerName, apiKey, model string) (ai.Provider, error) {
-	if apiKey != "" {
-		cfg := &ai.ProviderConfig{
-			APIKey: apiKey,
-			Model:  model,
-		}
-		switch strings.ToLower(providerName) {
-		case "openrouter":
-			return ai.NewOpenRouterProvider(cfg)
-		default:
-			return ai.NewAnthropicProvider(cfg)
-		}
-	}
-
-	// Use credential manager
-	manager, err := auth.NewManager()
-	if err != nil {
-		return nil, fmt.Errorf("no API key provided and credential manager failed: %w", err)
-	}
-
-	var preferred auth.Provider
-	switch strings.ToLower(providerName) {
-	case "anthropic":
-		preferred = auth.ProviderAnthropic
-	case "openrouter":
-		preferred = auth.ProviderOpenRouter
-	case "openai":
-		preferred = auth.ProviderOpenAI
-	}
-
-	cred, err := manager.GetCredentialWithFallback(preferred)
-	if err != nil {
-		return nil, fmt.Errorf("no API key provided and no stored credentials found. Run 'trabuco auth login' or pass api_key parameter: %w", err)
-	}
-
-	cfg := &ai.ProviderConfig{
-		APIKey: cred.APIKey,
-		Model:  model,
-	}
-	if cfg.Model == "" && cred.Model != "" {
-		cfg.Model = cred.Model
-	}
-
-	switch cred.Provider {
-	case auth.ProviderOpenRouter:
-		return ai.NewOpenRouterProvider(cfg)
-	default:
-		return ai.NewAnthropicProvider(cfg)
-	}
-}
 
 // hasModule checks if a module name is in the list.
 func hasModule(modules []string, name string) bool {

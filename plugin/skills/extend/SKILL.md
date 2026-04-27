@@ -2,7 +2,7 @@
 name: extend
 description: Propose what to add next to an existing Trabuco project based on its current state and what the user wants to achieve. Different from /trabuco:add-module — that adds a specific module; this one ADVISES on what to add. Use when the user has a project and asks "what's next?" or "how would you extend this?"
 user-invocable: true
-allowed-tools: [mcp__trabuco__get_project_info, mcp__trabuco__scan_project, mcp__trabuco__suggest_architecture, mcp__trabuco__list_modules]
+allowed-tools: [mcp__trabuco__get_project_info, mcp__trabuco__suggest_architecture, mcp__trabuco__list_modules]
 argument-hint: "[goal description]"
 ---
 
@@ -12,7 +12,7 @@ argument-hint: "[goal description]"
 
 1. **Load context**:
    - `mcp__trabuco__get_project_info` for the current project
-   - If ambiguous, `mcp__trabuco__scan_project` for a deeper structural read
+   - If ambiguous, use Read/Glob/Grep on the project root (`pom.xml`, `*/pom.xml`, source layout) to fill in missing details
    - Read `trabuco://modules` resource to know the full catalog
 
 2. **Load expertise**: request the `extend_project` MCP prompt (argument: project path). This loads Trabuco's extension philosophy — the reasoning framework the advice should follow.

@@ -50,7 +50,7 @@ Trabuco is opinionated. If the user insists on:
 
 ### User is migrating a massive legacy codebase
 
-The `migrate` skill and `trabuco-migration-expert` subagent exist for this, but migration is AI-powered and expensive. For a 500k-line monolith, the LLM cost alone may dwarf the rewrite cost. Always run `scan_project` first and surface the feasibility honestly.
+Migration of legacy Java projects is being redesigned for Trabuco 1.10.0 (see `docs/MIGRATION_REDESIGN_PLAN.md` in the repo). Until then, the previous beta `migrate` skill is unavailable and there is no in-plugin migration capability. For users asking about migration, point them at the plan and offer to help with manual extraction (entity-by-entity, with `/trabuco:new-project` producing the target shape) until the new feature ships.
 
 ### User needs regulatory compliance (PCI, HIPAA, SOC2)
 

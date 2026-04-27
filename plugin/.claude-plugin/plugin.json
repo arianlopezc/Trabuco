@@ -1,7 +1,7 @@
 {
   "name": "trabuco",
-  "version": "1.9.4",
-  "description": "Conversational Java/Spring Boot project generation and extension. Exposes the Trabuco CLI's architecture advisor, module catalog, and scaffolding tools inside Claude Code. Grounded in Trabuco's opinionated conventions — keyset pagination, constructor injection, no FK constraints, Testcontainers patterns, A2A/MCP-ready AI agent module.",
+  "version": "1.10.0-dev",
+  "description": "Conversational Java/Spring Boot project generation and extension. Exposes the Trabuco CLI's architecture advisor, module catalog, and scaffolding tools inside Claude Code. Grounded in Trabuco's opinionated conventions — keyset pagination, constructor injection, no FK constraints, Testcontainers patterns, A2A/MCP-ready AI agent module. Migration feature is being redesigned for 1.10.0.",
   "author": {
     "name": "Arian Lopez",
     "url": "https://github.com/arianlopezc/Trabuco"

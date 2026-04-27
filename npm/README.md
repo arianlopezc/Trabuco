@@ -74,8 +74,6 @@ args = ["-y", "trabuco-mcp"]
 | `list_modules` | List all available modules with descriptions and dependency info |
 | `check_docker` | Check if Docker is installed and running |
 | `get_version` | Get the Trabuco CLI version |
-| `scan_project` | Analyze a legacy Java project's structure and dependencies |
-| `migrate_project` | Full AI-powered migration of a legacy project |
 | `auth_status` | Check which AI providers have credentials configured |
 | `list_providers` | List supported AI providers with pricing and model info |
 
