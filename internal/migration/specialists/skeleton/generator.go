@@ -292,8 +292,7 @@ const parentPOMTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     <!-- Trabuco migration mode: enforcement mechanisms (Maven Enforcer,
          Spotless, ArchUnit, Jacoco threshold) are deliberately omitted
          until Phase 12 (activation). This lets legacy CI continue to work
-         at every phase boundary during migration. See
-         docs/MIGRATION_REDESIGN_PLAN.md §5 for the rationale. -->
+         at every phase boundary during migration. -->
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

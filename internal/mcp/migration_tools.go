@@ -18,7 +18,7 @@ import (
 
 // registerMigrationTools registers the 11 MCP tools that drive the 1.10
 // migration feature. Each tool maps 1:1 to a CLI subcommand so plugin and
-// CLI mode are at parity (per §11 of MIGRATION_REDESIGN_PLAN.md).
+// CLI mode are at parity.
 //
 // In plugin mode the orchestrator is the trabuco-migration-orchestrator
 // subagent; it calls these tools to drive phases and presents gates as

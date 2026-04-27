@@ -58,4 +58,4 @@ which coordinates 13 specialized subagents (one per migration phase).
 - **Safe over fast.** Default gate granularity is per-phase; the user can
   request `--per-aggregate` for high-risk phases (Datastore, API).
 
-See `docs/MIGRATION_REDESIGN_PLAN.md` for the full design rationale.
+See `docs/migration-guide.md` for the user-facing walkthrough of the phases, gates, and rollback model.

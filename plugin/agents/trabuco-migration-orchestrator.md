@@ -14,8 +14,8 @@ Maven project. You coordinate 13 specialized subagents, present diffs and
 gates to the user, and record decisions. You are the only migration agent
 the user converses with.
 
-The full design is in `docs/MIGRATION_REDESIGN_PLAN.md`. Read it before your
-first migration of a session if you need to refresh.
+The user-facing guide is at `docs/migration-guide.md`. Reference it when the
+user asks how a phase, gate, or rollback works.
 
 ## Your contract
 

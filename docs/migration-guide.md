@@ -21,7 +21,7 @@ The migration mutates your repository. Before you start:
    anchors. **Do not migrate against your only copy of the source —
    work on a branch you can throw away.**
 3. **Maven source.** Trabuco 1.10 supports Maven (`pom.xml`). Gradle
-   support is planned for 1.11; running on Gradle source produces a
+   sources are not currently supported; running on Gradle produces a
    `NON_MAVEN_BUILD_SYSTEM` blocker at Phase 0 with conversion guidance.
 4. **JDK matching the project's target.** The generated code targets a
    specific Java version (17, 21, 25). The build runtime —
@@ -53,10 +53,10 @@ Phases 7 and 8 self-skip with `not_applicable` when the source has no
 listeners / AI integration. Phase 10 self-skips when there's no CI in
 the repo.
 
-The "deferred enforcement" design (per
-[`MIGRATION_REDESIGN_PLAN.md`](MIGRATION_REDESIGN_PLAN.md) §5) means
-your legacy CI keeps working at every phase boundary during the
-migration. Enforcement only flips ON at Phase 12.
+The "deferred enforcement" design — Maven Enforcer, Spotless, ArchUnit, and
+the Jacoco coverage threshold all start the migration in skipped form — means
+your legacy CI keeps working at every phase boundary during the migration.
+Enforcement only flips ON at Phase 12.
 
 ## Running the migration
 
@@ -248,9 +248,28 @@ repo:
 Copy any of them somewhere temporary, `git init && git add -A && git commit`,
 then run the migration against the copy.
 
-## Design
+## Design principles
 
-For the full design rationale (deferred enforcement, the no-out-of-scope
-contract, source pre-scanning, FileWrite schema, gate semantics, MCP /
-CLI parity), see
-[`docs/MIGRATION_REDESIGN_PLAN.md`](MIGRATION_REDESIGN_PLAN.md).
+The migration is built around a few load-bearing ideas:
+
+- **No-out-of-scope contract.** Phase 0 produces a structured assessment
+  (`.trabuco-migration/assessment.json`) cataloging every file, controller,
+  entity, listener, scheduled task, and CI artifact. Later phases are
+  forbidden from inventing artifacts that aren't in that catalog — if the
+  assessment shows no Kafka listeners, Phase 7 self-skips. This is what
+  prevents specialists from "while we're at it" hallucinations.
+- **Deferred enforcement.** Maven Enforcer, Spotless, ArchUnit, and the
+  Jacoco coverage threshold all start the migration skipped. Your legacy
+  CI keeps passing at every phase boundary. Phase 12 flips them ON in one
+  place, all at once, after the structural migration is complete.
+- **Per-phase atomic rollback.** Every phase brackets its work between two
+  git tags (`trabuco-migration-phase-N-pre`, `-post`). Rejecting a phase
+  resets to `-pre`; the orchestrator never leaves you in a half-applied
+  state.
+- **Gates over autopilot.** The orchestrator stops at every phase boundary
+  and waits for explicit `approve`, `edit-and-approve`, or `reject`.
+  Specialists propose; the user disposes.
+- **Plugin/CLI parity.** The same Go specialists run whether you invoke
+  `trabuco migrate` from the CLI or `/trabuco:migrate` from the Claude
+  Code plugin. The plugin's orchestrator subagent is a thin conversational
+  shell over the CLI's tooling.

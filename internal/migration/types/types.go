@@ -1,7 +1,6 @@
 // Package types defines the shared vocabulary used across the migration
 // subsystem: phases, output-item states, blocker reason codes, and the
-// source_evidence struct that backs the no-out-of-scope contract (see
-// docs/MIGRATION_REDESIGN_PLAN.md §4).
+// source_evidence struct that backs the no-out-of-scope contract.
 package types
 
 // Phase identifies a migration phase. The numeric values are the canonical

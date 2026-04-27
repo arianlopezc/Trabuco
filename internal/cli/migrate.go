@@ -21,8 +21,8 @@ import (
 	_ "github.com/arianlopezc/Trabuco/internal/migration/specialists/registry"
 )
 
-// migrateCmd is the new top-level command for the 1.10.0 migration feature.
-// It orchestrates the 14-phase flow defined in docs/MIGRATION_REDESIGN_PLAN.md.
+// migrateCmd is the top-level command for the migration feature.
+// It orchestrates the 14-phase flow described in docs/migration-guide.md.
 //
 // Subcommands map 1:1 to the MCP tools so plugin and CLI mode are at parity.
 var migrateCmd = &cobra.Command{
@@ -49,7 +49,7 @@ Or run autopilot through every phase, gating at each:
 State lives at .trabuco-migration/ inside the repo. Per-phase git tags
 (trabuco-migration-phase-N-pre/post) provide atomic rollback boundaries.
 
-See docs/MIGRATION_REDESIGN_PLAN.md for the full design.`,
+See docs/migration-guide.md for the full guide.`,
 }
 
 func init() {
