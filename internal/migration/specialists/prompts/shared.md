@@ -34,6 +34,43 @@ For each service in the assessment:
    them during migration phases (per plan §5). The activator (Phase 12)
    removes the exclusion.
 
+   **Scope the ClassFileImporter to project packages only**, never to
+   the whole classpath. ArchUnit's bytecode parser pins a maximum class-
+   file major version per release; if it tries to read JDK system
+   classes (`jrt:/java.base/...`) from a JDK newer than the ArchUnit
+   release knows about, the whole import fails. Use the
+   `@AnalyzeClasses(packages = "com.acme")` annotation form (replace
+   `com.acme` with the project's actual root package), which pulls only
+   the project's classes off the classpath. Do NOT use the no-arg
+   `new ClassFileImporter().importClasspath()` form — it sweeps in
+   `jrt:/`. Example skeleton:
+
+   ```java
+   @AnalyzeClasses(packages = "com.acme.shop", importOptions = ImportOption.DoNotIncludeJars.class)
+   class ArchitectureTest {
+       @ArchTest
+       static final ArchRule api_does_not_depend_on_datastore =
+           noClasses().that().resideInAPackage("..api..")
+               .should().dependOnClassesThat().resideInAPackage("..sqldatastore..")
+               .allowEmptyShould(true);
+   }
+   ```
+
+   **Boundary tests must live where they can see the boundary.** The
+   `shared/` module's classpath includes `model/` and itself, NOT
+   `api/`, `worker/`, etc. — those modules depend on `shared`, not
+   the other way around. A boundary test like "api doesn't depend on
+   datastore" CANNOT actually evaluate when run from `shared/`'s
+   classpath because no `api/*` classes are present.
+
+   So: place architecture tests in the module whose classpath
+   includes all the modules the rule references. In a typical Trabuco
+   project that's `api/` (the leaf that depends on shared, model,
+   datastore, etc.). Use `.allowEmptyShould(true)` on every rule as a
+   safety net — without it, ArchUnit fails the test when no classes
+   matched the `that()` clause, which makes the rule a tripwire that
+   fires on empty classpath rather than on actual violations.
+
 ## Decision points
 
 - `STATIC_GLOBAL_STATE`: legacy uses static mutable fields shared across

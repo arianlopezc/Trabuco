@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/arianlopezc/Trabuco/internal/java"
 	"github.com/arianlopezc/Trabuco/internal/migration/specialists"
 	"github.com/arianlopezc/Trabuco/internal/migration/state"
 	"github.com/arianlopezc/Trabuco/internal/migration/types"
@@ -124,6 +125,15 @@ func (o *Orchestrator) RunPhase(ctx context.Context, phase types.Phase, hint str
 	// unless the user is doing edit-and-approve (signaled by non-empty hint).
 	if rec.State == types.PhaseCompleted && hint == "" {
 		return types.GateApprove, nil
+	}
+
+	// Preflight: build runtime must match the project's target Java
+	// version. mvn will use whatever java is on PATH; if it doesn't
+	// match the target, plugin failures look mysterious (ArchUnit
+	// rejecting class file major versions, Spotless misbehaving, etc.).
+	// Skip on Phase 0 because targetConfig.javaVersion isn't set yet.
+	if err := preflightRuntimeJava(s); err != nil {
+		return "", err
 	}
 
 	specialist := o.registry.Get(phase)
@@ -317,6 +327,41 @@ func (o *Orchestrator) Status() (*state.State, error) {
 }
 
 // ---------- helpers ----------
+
+// preflightRuntimeJava checks that `java` on PATH matches the project's
+// target Java version. Returns nil when targetConfig.javaVersion is
+// unset (Phase 0 hasn't run yet) or when the major versions match;
+// returns a JAVA_VERSION_MISMATCH_RUNTIME-tagged error otherwise. The
+// error message lists the standard remediations (JAVA_HOME, install
+// matching JDK, Maven Toolchains).
+func preflightRuntimeJava(s *state.State) error {
+	want := s.TargetConfig.JavaVersion
+	if want == "" {
+		return nil
+	}
+	wantMajor, _, err := java.ParseVersion(want)
+	if err != nil || wantMajor == 0 {
+		// Target value is unparseable; don't gate on a malformed config.
+		return nil
+	}
+	gotMajor, gotFull, err := java.RuntimeJavaMajor()
+	if err != nil {
+		return fmt.Errorf("[%s] cannot probe java runtime: %w — install a JDK %d that matches the project's target, or set JAVA_HOME",
+			types.BlockerJavaVersionMismatchRuntime, err, wantMajor)
+	}
+	if gotMajor == wantMajor {
+		return nil
+	}
+	return fmt.Errorf(
+		"[%s] build runtime mismatch: java -version reports %d (%q) but the project's target is Java %d.\n"+
+			"  mvn uses the JDK on PATH, and ArchUnit/Spotless/Enforcer plugins can fail mysteriously when run on a JDK newer than the target.\n"+
+			"  Fix any of:\n"+
+			"    - install JDK %d and set JAVA_HOME to point at it (recommended for local dev)\n"+
+			"    - configure Maven Toolchains so the build always uses JDK %d regardless of PATH\n"+
+			"    - run trabuco from a container/CI image pinned to JDK %d (matches what the generated CI workflow does)",
+		types.BlockerJavaVersionMismatchRuntime, gotMajor, gotFull, wantMajor, wantMajor, wantMajor, wantMajor,
+	)
+}
 
 func isNotApplicable(out *specialists.Output) bool {
 	if len(out.Items) == 0 {

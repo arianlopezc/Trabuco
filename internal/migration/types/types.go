@@ -232,6 +232,13 @@ const (
 	BlockerDeployTargetUnresolvable    BlockerCode = "DEPLOY_TARGET_UNRESOLVABLE"
 )
 
+// Local build environment (raised by orchestrator preflight, not by a
+// specialist). Distinct from BlockerJavaVersionMismatchCI which is about
+// the user's CI workflow declaring a wrong JDK.
+const (
+	BlockerJavaVersionMismatchRuntime BlockerCode = "JAVA_VERSION_MISMATCH_RUNTIME"
+)
+
 // Validation funnel failures (auto-fed back to specialist for retry)
 const (
 	BlockerCompileFailed   BlockerCode = "COMPILE_FAILED"
@@ -296,6 +303,7 @@ var knownBlockerCodes = map[BlockerCode]struct{}{
 	BlockerEnforcerViolation:           {},
 	BlockerSpotlessViolation:           {},
 	BlockerCoverageBelowThresh:         {},
+	BlockerJavaVersionMismatchRuntime:  {},
 }
 
 // GateAction is the user's response at a phase approval gate.
