@@ -13,6 +13,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/arianlopezc/Trabuco/internal/ai"
@@ -117,8 +119,10 @@ func (s *Specialist) buildUserPrompt(in *specialists.Input) (string, error) {
 }
 
 // DefaultUserPrompt is the baseline user-prompt structure: phase context +
-// state.json + assessment (if present). Specialists with phase-specific
-// inputs override BuildUserPrompt to add more.
+// state.json + assessment (if present) + the actual source files relevant
+// to this phase (with line numbers, so the LLM can emit accurate
+// source_evidence ranges). Specialists with phase-specific inputs override
+// BuildUserPrompt to customize further.
 func DefaultUserPrompt(in *specialists.Input) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Phase: %d (%s)\n", int(in.Phase), in.Phase)
@@ -142,9 +146,236 @@ func DefaultUserPrompt(in *specialists.Input) (string, error) {
 		if data, err := readFileBest(assessPath); err == nil {
 			fmt.Fprintf(&b, "Assessment artifact (.trabuco-migration/assessment.json):\n```json\n%s\n```\n\n", data)
 		}
+
+		// Embed the source files this phase needs, with line numbers, so
+		// the LLM can emit accurate source_evidence and produce informed
+		// migrations grounded in real code. relevantFilePaths returns
+		// just the legacy/* paths the phase consumes.
+		paths := relevantFilePaths(in)
+		if len(paths) > 0 {
+			fmt.Fprintf(&b, "## Source files in scope for this phase\n\n")
+			fmt.Fprintf(&b, "Each file below is shown with line numbers. Emit source_evidence.lines ranges that fall within the actual line counts you see here. content_hash is optional — if omitted, the orchestrator validates only file+lines.\n\n")
+			for _, p := range paths {
+				if body, err := readFileBest(filepath.Join(in.RepoRoot, p)); err == nil {
+					fmt.Fprintf(&b, "### %s\n```\n%s```\n\n", p, withLineNumbers(body))
+				}
+			}
+		}
+
+		// For phases that build on prior phases (shared, api, worker,
+		// eventconsumer, aiagent, config, deployment, tests, activation,
+		// finalization), include every Trabuco-module .java file produced
+		// by earlier phases. Without this the LLM hallucinates the
+		// packages of classes its code imports.
+		if needsPriorTrabucoSources(in.Phase) {
+			if files := listTrabucoModuleSources(in.RepoRoot); len(files) > 0 {
+				fmt.Fprintf(&b, "## Trabuco modules built so far (for reference; do NOT modify unless the phase scope demands it)\n\n")
+				for _, f := range files {
+					if body, err := readFileBest(filepath.Join(in.RepoRoot, f)); err == nil {
+						fmt.Fprintf(&b, "### %s\n```\n%s```\n\n", f, body)
+					}
+				}
+			}
+		}
+
+		// Always include the parent pom.xml + every module pom.xml that
+		// already exists. Without this, specialists that touch any
+		// pom.xml hallucinate version strings, groupIds, etc. Costs a
+		// few KB but eliminates whole categories of compile failures.
+		fmt.Fprintf(&b, "## Current Maven POMs (parent + every module). Do NOT change groupId/artifactId/version when replacing these — copy the <parent> block character-for-character.\n\n")
+		pomCandidates := []string{"pom.xml"}
+		for _, m := range []string{"legacy", "model", "sqldatastore", "nosqldatastore", "shared", "api", "worker", "eventconsumer", "aiagent"} {
+			pomCandidates = append(pomCandidates, filepath.Join(m, "pom.xml"))
+		}
+		for _, p := range pomCandidates {
+			if body, err := readFileBest(filepath.Join(in.RepoRoot, p)); err == nil {
+				fmt.Fprintf(&b, "### %s\n```xml\n%s```\n\n", p, body)
+			}
+		}
 	}
 
 	return b.String(), nil
+}
+
+// needsPriorTrabucoSources reports whether this phase needs to see what
+// earlier phases already produced in the Trabuco target modules.
+func needsPriorTrabucoSources(p types.Phase) bool {
+	switch p {
+	case types.PhaseShared, types.PhaseAPI, types.PhaseWorker,
+		types.PhaseEventConsumer, types.PhaseAIAgent,
+		types.PhaseConfiguration, types.PhaseDeployment, types.PhaseTests,
+		types.PhaseActivation, types.PhaseFinalization:
+		return true
+	}
+	return false
+}
+
+// listTrabucoModuleSources returns every .java file under known Trabuco
+// module directories at repoRoot. Excludes legacy/, build outputs, and
+// the migration state dir.
+func listTrabucoModuleSources(repoRoot string) []string {
+	modules := []string{"model", "sqldatastore", "nosqldatastore", "shared", "api", "worker", "eventconsumer", "aiagent"}
+	var out []string
+	for _, m := range modules {
+		root := filepath.Join(repoRoot, m, "src", "main", "java")
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || info.IsDir() {
+				return nil
+			}
+			if !strings.HasSuffix(path, ".java") {
+				return nil
+			}
+			if rel, err := filepath.Rel(repoRoot, path); err == nil {
+				out = append(out, rel)
+			}
+			return nil
+		})
+	}
+	return out
+}
+
+// relevantFilePaths returns the set of source files the given phase
+// should reason over, derived from the assessment. Every path is
+// repo-relative.
+func relevantFilePaths(in *specialists.Input) []string {
+	a, err := loadAssessmentMap(state.AssessmentPath(in.RepoRoot))
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	// Every module-shaped phase wants the root parent POM (so the LLM
+	// uses the right groupId/artifactId for module <parent>) and the
+	// module's own scaffolded POM (so it knows the stub exists and uses
+	// "replace" instead of "create"). modulePOMHint maps phase → module
+	// directory name.
+	modulePOMHint := map[types.Phase]string{
+		types.PhaseModel:         "model",
+		types.PhaseDatastore:     "sqldatastore",
+		types.PhaseShared:        "shared",
+		types.PhaseAPI:           "api",
+		types.PhaseWorker:        "worker",
+		types.PhaseEventConsumer: "eventconsumer",
+		types.PhaseAIAgent:       "aiagent",
+	}
+	if mod, ok := modulePOMHint[in.Phase]; ok {
+		paths = append(paths, "pom.xml", mod+"/pom.xml")
+	}
+
+	switch in.Phase {
+	case types.PhaseModel:
+		paths = append(paths, collectFileField(a, "entities")...)
+	case types.PhaseDatastore:
+		paths = append(paths, collectFileField(a, "repositories")...)
+		paths = append(paths, collectFileField(a, "entities")...)
+	case types.PhaseShared:
+		paths = append(paths, collectFileField(a, "services")...)
+	case types.PhaseAPI:
+		paths = append(paths, collectFileField(a, "controllers")...)
+	case types.PhaseWorker:
+		paths = append(paths, collectFileField(a, "jobs")...)
+	case types.PhaseEventConsumer:
+		paths = append(paths, collectFileField(a, "listeners")...)
+		paths = append(paths, collectFileField(a, "publishers")...)
+	case types.PhaseAIAgent:
+		// AI files aren't yet a separate Assessment field; rely on the
+		// LLM reading the assessment to decide which services/controllers
+		// are AI-related.
+	case types.PhaseTests:
+		paths = collectFileField(a, "tests")
+	case types.PhaseConfiguration:
+		if cf, ok := a["configFiles"].([]any); ok {
+			for _, p := range cf {
+				if s, ok := p.(string); ok {
+					paths = append(paths, s)
+				}
+			}
+		}
+	case types.PhaseDeployment:
+		// Deployment files paths come from ciSystems[].files and
+		// deploymentFiles[].file.
+		if ci, ok := a["ciSystems"].([]any); ok {
+			for _, sys := range ci {
+				if m, ok := sys.(map[string]any); ok {
+					if files, ok := m["files"].([]any); ok {
+						for _, f := range files {
+							if s, ok := f.(string); ok {
+								paths = append(paths, s)
+							}
+						}
+					}
+				}
+			}
+		}
+		paths = append(paths, collectFileField(a, "deploymentFiles")...)
+	}
+	if in.Aggregate != "" {
+		paths = filterByAggregate(paths, in.Aggregate)
+	}
+	return paths
+}
+
+// loadAssessmentMap reads assessment.json into a generic map so we can
+// pluck file paths without importing the assessor package (which would
+// create a circular import).
+func loadAssessmentMap(path string) (map[string]any, error) {
+	data, err := readFileBest(path)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(data), &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// collectFileField pulls "file" entries from an array-of-objects field.
+func collectFileField(m map[string]any, field string) []string {
+	arr, ok := m[field].([]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, item := range arr {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if f, ok := obj["file"].(string); ok && f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// filterByAggregate returns only paths whose corresponding entry in the
+// assessment matches the given aggregate. For now we approximate by
+// checking whether the path contains the aggregate substring — the
+// assessor sets aggregate to a package-fragment-like string.
+func filterByAggregate(paths []string, aggregate string) []string {
+	var out []string
+	for _, p := range paths {
+		if strings.Contains(p, "/"+aggregate+"/") || strings.Contains(p, "/"+strings.ToLower(aggregate)+"/") {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		// If filtering empties the list we likely got the aggregate name
+		// wrong; fall back to all paths so the LLM at least has context.
+		return paths
+	}
+	return out
+}
+
+// withLineNumbers prefixes each line with "%4d  " so the LLM can pick
+// exact line ranges.
+func withLineNumbers(content string) string {
+	lines := strings.Split(content, "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		fmt.Fprintf(&b, "%4d  %s\n", i+1, line)
+	}
+	return b.String()
 }
 
 // outputContract is appended to every system prompt; it tells the LLM
@@ -226,12 +457,51 @@ Deleting an obsolete file:
   { "path": "legacy/src/main/java/com/x/Old.java",
     "operation": "delete" }
 
+# Module catalog is fixed
+
+The set of Trabuco modules is FIXED by the target config in state.json
+and was generated by the skeleton-builder in Phase 1. Read
+state.targetConfig.modules to see the authoritative list. You MUST NOT:
+- Create a new top-level Maven module directory (e.g. jobs/, lib/,
+  common/) that isn't already in target.modules.
+- Add a new <module>X</module> entry to the parent pom.xml's <modules>
+  section.
+
+If your phase's logical artifacts don't fit any existing module, place
+them in the most appropriate existing module using a sub-package, NOT
+a new module.
+
+# Module POM dependency hygiene
+
+If your phase introduces code into a Trabuco module (model/, sqldatastore/,
+shared/, api/, worker/, eventconsumer/, aiagent/), you MUST also keep that
+module's pom.xml in sync with the dependencies your code uses. The
+skeleton-builder left every module/pom.xml as a minimal stub (just the
+parent declaration and artifactId). When you introduce, e.g., spring-data-
+jdbc imports in a new entity, you must replace the module pom.xml to add
+the matching dependencies block. Every dependency version should be
+inherited from the parent's BOM where possible (spring-boot-dependencies);
+add an explicit version only if it isn't BOM-managed.
+
+CRITICAL: when replacing a pom.xml, copy the existing <parent> block
+verbatim. In particular, the <version> inside <parent> AND the project's
+own <version> must match what's currently in the parent pom.xml — DO NOT
+"normalize" 1.0-SNAPSHOT to 1.0.0-SNAPSHOT, do NOT change groupId or
+artifactId. The user's prompt includes the current pom files; copy them
+character-for-character for the parent block, then add/modify only the
+<dependencies> and <build> sections you actually need.
+
+The compile step in the validation funnel covers the module you write to,
+so a missing dependency will surface as COMPILE_FAILED and roll your
+phase back. Add the dependency in the same item that introduces the code
+that requires it.
+
 # Constraints
 
 - Every item with state=applied MUST include source_evidence pointing at
-  REAL file paths and line ranges in the assessment artifact. You will be
-  REJECTED if source_evidence is fabricated or doesn't match actual file
-  content.
+  REAL file paths and line ranges in the assessment artifact. content_hash
+  is optional — if you can't compute sha256 reliably, omit it; the
+  orchestrator will validate file+lines only.
 - file_writes paths must be inside the repo (no '..' traversal, no leading
   '/'). The orchestrator rejects unsafe paths.
 - For replace operations, you MUST provide the FULL new content. Do not

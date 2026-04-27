@@ -205,7 +205,7 @@ func (o *Orchestrator) RunPhase(ctx context.Context, phase types.Phase, hint str
 	if phase == types.PhaseActivation {
 		mode = validation.ModeActivation
 	}
-	res := validation.Run(o.repoRoot, mode, affectedModules(out))
+	res := validation.Run(o.repoRoot, mode, affectedModules(o.repoRoot, out))
 	if !res.Passed {
 		// Auto-rollback to pre-tag, surface failure as a blocker.
 		_ = vcs.ResetHard(o.repoRoot, preTag)
@@ -339,32 +339,45 @@ func notApplicableReason(out *specialists.Output) string {
 	return out.Summary
 }
 
-func affectedModules(out *specialists.Output) []string {
+// affectedModules returns the first-directory-segment of every path the
+// specialist touched (both source_evidence and file_writes), filtered to
+// only those segments that are actually Maven modules (have a pom.xml).
+// This is the list the validation funnel scopes its compile/test runs
+// to. We MUST include file_writes paths as well: a phase that creates
+// new files in `model/` without source_evidence in `model/` would
+// otherwise have its new module skipped by `mvn -pl legacy -am`. And we
+// MUST filter to real modules: a deployment phase that writes
+// `.github/workflows/ci.yml` produces a path-segment of `.github`,
+// which Maven would reject as a module ("Could not find the selected
+// project in the reactor: :.github").
+func affectedModules(repoRoot string, out *specialists.Output) []string {
 	seen := make(map[string]struct{})
 	var modules []string
-	for _, item := range out.Items {
-		if item.SourceEvidence == nil {
-			continue
-		}
-		// First path segment is typically the module name in multi-module Maven.
-		// "model/src/main/java/..." → "model"
-		dir, _ := filepath.Split(item.SourceEvidence.File)
-		if dir == "" {
-			continue
-		}
-		parts := filepath.SplitList(filepath.Clean(dir))
-		_ = parts // noop; resolution below
-		// Use the first directory component.
+	add := func(p string) {
 		i := 0
-		for i < len(item.SourceEvidence.File) && item.SourceEvidence.File[i] != '/' {
+		for i < len(p) && p[i] != '/' {
 			i++
 		}
-		if i > 0 && i < len(item.SourceEvidence.File) {
-			mod := item.SourceEvidence.File[:i]
-			if _, dup := seen[mod]; !dup {
-				seen[mod] = struct{}{}
-				modules = append(modules, mod)
-			}
+		if i == 0 || i >= len(p) {
+			return
+		}
+		mod := p[:i]
+		if _, dup := seen[mod]; dup {
+			return
+		}
+		// Real-module gate: must have a pom.xml under repoRoot/mod/.
+		if _, err := os.Stat(filepath.Join(repoRoot, mod, "pom.xml")); err != nil {
+			return
+		}
+		seen[mod] = struct{}{}
+		modules = append(modules, mod)
+	}
+	for _, item := range out.Items {
+		if item.SourceEvidence != nil {
+			add(item.SourceEvidence.File)
+		}
+		for _, w := range item.FileWrites {
+			add(w.Path)
 		}
 	}
 	return modules

@@ -49,8 +49,20 @@ func applyOneItem(repoRoot string, writes []types.FileWrite) ([]appliedWrite, er
 		}
 		switch w.Operation {
 		case types.OpCreate:
-			if _, err := os.Stat(full); err == nil {
-				return applied, fmt.Errorf("%s: create requested but file already exists", w.Path)
+			// Specialists sometimes emit "create" for a path that already
+			// exists from earlier phases (e.g. skeleton-stub POMs in
+			// module/pom.xml). Auto-promote create→replace in that case
+			// rather than failing — the LLM's intent is clear and a
+			// hard rejection just makes the prompt brittler. The
+			// applied-record marks oldContent so rollback restores the
+			// prior file.
+			if old, err := os.ReadFile(full); err == nil {
+				prev := appliedWrite{path: full, op: types.OpReplace, oldContent: old, oldExisted: true}
+				if err := writeFile(full, w.Content); err != nil {
+					return applied, fmt.Errorf("%s: %w", w.Path, err)
+				}
+				applied = append(applied, prev)
+				continue
 			}
 			prev := appliedWrite{path: full, op: types.OpCreate}
 			if err := writeFile(full, w.Content); err != nil {

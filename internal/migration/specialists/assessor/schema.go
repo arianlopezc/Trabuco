@@ -7,6 +7,7 @@ package assessor
 import (
 	"encoding/json"
 	"os"
+	"strings"
 )
 
 // Assessment is the structured catalog the assessor writes to
@@ -193,6 +194,59 @@ func Save(path string, a *Assessment) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// PrefixSourcePaths rewrites every file path inside the assessment that
+// points into the original source tree (i.e. starts with "src/") so it
+// is prefixed with `prefix` (typically "legacy/"). Called after Phase 1
+// moves the user's `src/` into `legacy/src/` so downstream specialists'
+// source_evidence resolves to the new locations.
+//
+// Paths that don't start with "src/" — CI workflows under .github/,
+// deployment files at repo root, etc. — are left untouched because
+// Phase 1 doesn't move them.
+func (a *Assessment) PrefixSourcePaths(prefix string) {
+	prefixIfSrc := func(p string) string {
+		if strings.HasPrefix(p, "src/") {
+			return prefix + p
+		}
+		return p
+	}
+	for i := range a.Entities {
+		a.Entities[i].File = prefixIfSrc(a.Entities[i].File)
+	}
+	for i := range a.Repositories {
+		a.Repositories[i].File = prefixIfSrc(a.Repositories[i].File)
+	}
+	for i := range a.Controllers {
+		a.Controllers[i].File = prefixIfSrc(a.Controllers[i].File)
+	}
+	for i := range a.Services {
+		a.Services[i].File = prefixIfSrc(a.Services[i].File)
+	}
+	for i := range a.Jobs {
+		a.Jobs[i].File = prefixIfSrc(a.Jobs[i].File)
+	}
+	for i := range a.Listeners {
+		a.Listeners[i].File = prefixIfSrc(a.Listeners[i].File)
+	}
+	for i := range a.Publishers {
+		a.Publishers[i].File = prefixIfSrc(a.Publishers[i].File)
+	}
+	for i := range a.Tests {
+		a.Tests[i].File = prefixIfSrc(a.Tests[i].File)
+	}
+	for i, p := range a.ConfigFiles {
+		a.ConfigFiles[i] = prefixIfSrc(p)
+	}
+	// secretsInSource entries are "file:line" — split, prefix, rejoin.
+	for i, sec := range a.SecretsInSource {
+		if idx := strings.IndexByte(sec, ':'); idx > 0 {
+			a.SecretsInSource[i] = prefixIfSrc(sec[:idx]) + sec[idx:]
+		} else {
+			a.SecretsInSource[i] = prefixIfSrc(sec)
+		}
+	}
 }
 
 // Load reads an assessment from disk. Used by other specialists to

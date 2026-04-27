@@ -84,13 +84,13 @@ func TestApplyFileWrites_RollbackOnLaterFailure(t *testing.T) {
 				State: types.ItemApplied,
 				FileWrites: []types.FileWrite{
 					{Path: "existing.txt", Operation: types.OpReplace, Content: "modified"},
-					{Path: "existing.txt", Operation: types.OpCreate, Content: "this fails because file now exists"}, // create-when-exists fails
+					{Path: "../escape.txt", Operation: types.OpCreate, Content: "fails — path traversal forbidden"},
 				},
 			},
 		},
 	}
 	if err := applyFileWrites(dir, out); err == nil {
-		t.Error("expected error on second write (create on existing file)")
+		t.Error("expected error on second write (path traversal)")
 	}
 	// First write should be rolled back.
 	if data, _ := os.ReadFile(filepath.Join(dir, "existing.txt")); string(data) != "original" {

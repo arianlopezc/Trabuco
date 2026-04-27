@@ -188,14 +188,26 @@ func VerifyEvidence(repoRoot string, ev *types.SourceEvidence) error {
 		return err
 	}
 	lines := strings.Split(string(data), "\n")
-	if startLine < 1 || endLine > len(lines) || startLine > endLine {
+	if startLine < 1 || startLine > len(lines) || startLine > endLine {
 		return fmt.Errorf("source_evidence.lines %q out of range (file has %d lines)", ev.Lines, len(lines))
 	}
-	excerpt := strings.Join(lines[startLine-1:endLine], "\n")
-	got := sha256Hex([]byte(excerpt))
-	want := strings.TrimPrefix(ev.ContentHash, "sha256:")
-	if got != want {
-		return fmt.Errorf("source_evidence.content_hash mismatch (got %s, want %s) — source has changed since assessment", got, want)
+	// Tolerate small endLine overshoots (LLM off-by-one is common; the
+	// startLine being valid already proves the file was read). Clamp.
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+	// content_hash is optional. Specialists that emit it get verified;
+	// specialists that omit it are trusted on file+lines anchoring alone.
+	// LLMs cannot reliably compute sha256, so requiring it would force
+	// every prompt to attach a precomputed hash table — too brittle for
+	// the marginal out-of-scope guard it provides.
+	if ev.ContentHash != "" {
+		excerpt := strings.Join(lines[startLine-1:endLine], "\n")
+		got := sha256Hex([]byte(excerpt))
+		want := strings.TrimPrefix(ev.ContentHash, "sha256:")
+		if got != want {
+			return fmt.Errorf("source_evidence.content_hash mismatch (got %s, want %s) — source has changed since assessment", got, want)
+		}
 	}
 	return nil
 }

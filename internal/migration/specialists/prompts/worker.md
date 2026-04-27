@@ -12,14 +12,34 @@ to **JobRunr**.
 ## Behavior
 
 For each job in the assessment:
-1. Translate to `worker/src/main/java/{packagePath}/worker/job/`.
+1. **All worker code lives in the `worker/` module.** Trabuco does NOT
+   have a separate `jobs/` Maven module — do NOT create one and do NOT
+   add `<module>jobs</module>` to the parent pom. The list of modules is
+   fixed by the target config in state.json.
 2. **JobRunr handler pattern**: write `class FooJobRequestHandler
-   implements JobRequestHandler<FooJobRequest>`.
-3. **Job request DTOs in Jobs module** (`jobs/src/main/java/...`):
-   Immutable types via `@Value.Immutable`.
+   implements JobRequestHandler<FooJobRequest>` at
+   `worker/src/main/java/{packagePath}/worker/job/`.
+3. **Job request DTOs**: immutable types (records or `@Value.Immutable`)
+   alongside the handler at
+   `worker/src/main/java/{packagePath}/worker/job/`. Co-locating the
+   request and the handler keeps the dependency graph simple — the
+   request type does not need to be shared across modules.
 4. **RecurringJobsConfig**: for `@Scheduled` jobs, register them in
-   `worker/src/main/java/.../config/RecurringJobsConfig.java` calling
-   `BackgroundJob.scheduleRecurrently(...)` with the same cron.
+   `worker/src/main/java/.../config/RecurringJobsConfig.java`. For
+   `JobRequestHandler`-based jobs, the correct JobRunr API is
+   `BackgroundJobRequest.scheduleRecurrently(id, cron, jobRequest)`
+   (NOT `BackgroundJob.scheduleRecurrently`, which expects a `JobLambda`).
+   Example:
+   ```java
+   import org.jobrunr.scheduling.BackgroundJobRequest;
+   // inside @PostConstruct or @Bean init:
+   BackgroundJobRequest.scheduleRecurrently(
+       "daily-order-report",
+       "0 0 6 * * *",
+       new DailyOrderReportJobRequest()
+   );
+   ```
+   Use the same id+cron the legacy `@Scheduled` job had.
 5. **Idempotency**: JobRunr at-least-once delivery; if legacy assumed
    exactly-once, surface as `requires_decision`.
 6. **Retry / concurrency**: preserve legacy retry/backoff settings via

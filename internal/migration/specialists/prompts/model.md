@@ -36,9 +36,16 @@ Per-aggregate vertical slice:
 
 For each migrated class produce:
 - `state: applied` with `source_evidence` pointing at the legacy class
-  (file + line range + content_hash).
-- `patch: <unified diff>` adding the new class file and updating the
-  legacy class with the @Deprecated annotation.
+  (file + line range — `content_hash` optional; when omitted the
+  orchestrator validates only file+lines).
+- `file_writes` containing every file you touch:
+  - `create` the new class in `model/src/main/java/...`
+  - `replace` the legacy class with the same content + `@Deprecated`
+  - `replace` `model/pom.xml` to add the dependencies your new code
+    requires (e.g. `spring-data-jdbc`, `spring-data-mongodb`,
+    `jakarta.validation-api`). The skeleton stub left it empty;
+    every Trabuco-shape class you introduce that uses a new package
+    must be backed by a dependency line.
 - `description: "migrate {LegacyClass} → model/{NewClass}"`
 
 When you encounter a class you can't translate cleanly:

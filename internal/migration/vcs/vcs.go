@@ -87,15 +87,28 @@ func TagExists(dir, name string) bool {
 	return cmd.Run() == nil
 }
 
-// ResetHard resets the working tree to the given ref. This is destructive —
-// only the orchestrator's rollback path should call it, after the user
-// approves rollback at a phase gate.
+// ResetHard resets the working tree to the given ref AND removes any
+// untracked files/directories. This is destructive — only the
+// orchestrator's rollback path should call it, after the user approves
+// rollback at a phase gate. The untracked-file clean is essential: a
+// specialist that wrote new files under model/, worker/, etc. and then
+// failed validation will have left those files on disk; without
+// `git clean -fd` the next attempt sees stale code that breaks compile.
+//
+// `.trabuco-migration/` is excluded from the clean (preserved as -e
+// pattern) because it carries the migration's own runtime state and
+// must survive every rollback.
 func ResetHard(dir, ref string) error {
 	cmd := exec.Command("git", "reset", "--hard", ref)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git reset --hard %s: %w (%s)", ref, err, strings.TrimSpace(string(out)))
+	}
+	clean := exec.Command("git", "clean", "-fd", "-e", ".trabuco-migration")
+	clean.Dir = dir
+	if out, err := clean.CombinedOutput(); err != nil {
+		return fmt.Errorf("git clean -fd: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

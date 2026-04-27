@@ -67,7 +67,7 @@ func TestVerifyEvidence_Failures(t *testing.T) {
 		{"nil", nil, "is nil"},
 		{"empty file", &types.SourceEvidence{Lines: "1"}, "file is empty"},
 		{"missing file", &types.SourceEvidence{File: "missing.java", Lines: "1"}, "not readable"},
-		{"out of range", &types.SourceEvidence{File: "file.java", Lines: "1-100", ContentHash: "x"}, "out of range"},
+		{"start out of range", &types.SourceEvidence{File: "file.java", Lines: "100-200", ContentHash: "x"}, "out of range"},
 		{"bad hash", &types.SourceEvidence{File: "file.java", Lines: "1-2", ContentHash: "deadbeef"}, "mismatch"},
 	}
 	for _, c := range cases {

@@ -138,9 +138,14 @@ func upgradeParentPOM(migrationModePOM string, hasLegacy bool) string {
 		return migrationModePOM
 	}
 
-	// Extract <properties> and <modules> from the migration-mode pom.
+	// Extract <properties>, <modules>, and <dependencyManagement> from the
+	// migration-mode pom. dependencyManagement carries the BOMs (e.g.
+	// spring-boot-dependencies) that earlier phases added so children
+	// can resolve dependency versions; dropping it here would put the
+	// build into "missing version" hell across every module.
 	properties := extractBlock(migrationModePOM, "<properties>", "</properties>")
 	modules := extractBlock(migrationModePOM, "<modules>", "</modules>")
+	depMgmt := extractBlock(migrationModePOM, "<dependencyManagement>", "</dependencyManagement>")
 
 	groupID := extractFirstTag(migrationModePOM, "groupId")
 	artifactID := extractFirstTag(migrationModePOM, "artifactId")
@@ -157,6 +162,7 @@ func upgradeParentPOM(migrationModePOM string, hasLegacy bool) string {
 		groupID, artifactID,
 		properties,
 		modules,
+		depMgmt,
 		enforcerSkipLegacy,
 	)
 	return body
@@ -246,6 +252,8 @@ const productionModePOMTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     <packaging>pom</packaging>
 
     <!-- Trabuco production mode: enforcement ON. -->
+
+    %s
 
     %s
 

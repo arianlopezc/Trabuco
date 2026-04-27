@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/arianlopezc/Trabuco/internal/migration/specialists"
+	"github.com/arianlopezc/Trabuco/internal/migration/specialists/assessor"
+	"github.com/arianlopezc/Trabuco/internal/migration/state"
 	"github.com/arianlopezc/Trabuco/internal/migration/types"
 )
 
@@ -53,6 +55,17 @@ func (s *Specialist) Run(ctx context.Context, in *specialists.Input) (*specialis
 	}
 	if err := gen.WrapLegacy(); err != nil {
 		return nil, fmt.Errorf("wrap legacy: %w", err)
+	}
+
+	// WrapLegacy moved src/* under legacy/. The assessment's path-bearing
+	// fields still point at the original locations; rewrite them so
+	// downstream specialists' source_evidence resolves to the new tree.
+	assessPath := state.AssessmentPath(in.RepoRoot)
+	if a, err := assessor.Load(assessPath); err == nil {
+		a.PrefixSourcePaths("legacy/")
+		if err := assessor.Save(assessPath, a); err != nil {
+			return nil, fmt.Errorf("rewrite assessment paths: %w", err)
+		}
 	}
 
 	items := []types.OutputItem{
