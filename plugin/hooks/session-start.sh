@@ -55,5 +55,5 @@ if [ "$lowest" != "$MIN_VERSION" ]; then
   exit 0
 fi
 
-emit_context "Trabuco plugin ready: \`trabuco\` ${version} detected (>= ${MIN_VERSION}). MCP tools under mcp__trabuco__* are available. Skills available: /trabuco:new-project, /trabuco:design-system, /trabuco:add-module, /trabuco:extend, /trabuco:doctor, /trabuco:migrate, /trabuco:suggest. Specialist subagents: trabuco-architect, trabuco-ai-agent-expert, trabuco-migration-expert."
+emit_context "Trabuco plugin ready: \`trabuco\` ${version} detected (>= ${MIN_VERSION}). MCP tools under mcp__trabuco__* are available. Skills available: /trabuco:new-project, /trabuco:design-system, /trabuco:add-module, /trabuco:extend, /trabuco:doctor, /trabuco:suggest. Specialist subagents: trabuco-architect, trabuco-ai-agent-expert."
 exit 0

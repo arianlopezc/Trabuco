@@ -49,4 +49,3 @@ Guide the user from a natural-language requirement to a generated, opinionated J
 
 - User already has a project and wants to extend it → use `/trabuco:add-module` or `/trabuco:extend`.
 - User wants multi-service / microservices design → use `/trabuco:design-system` instead (calls `design_system`, not `init_project`).
-- User wants to migrate a legacy Java project → use `/trabuco:migrate`.

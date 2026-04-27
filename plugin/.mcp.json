@@ -3,7 +3,7 @@
     "trabuco": {
       "command": "trabuco",
       "args": ["mcp"],
-      "description": "Trabuco CLI's MCP server. Exposes 14 tools (init_project, add_module, suggest_architecture, design_system, generate_workspace, scan_project, migrate_project, run_doctor, get_project_info, list_modules, list_providers, check_docker, get_version, auth_status), 4 expert prompts (trabuco_expert, design_microservices, extend_project, trabuco_ai_agent_expert), and 3 resources (trabuco://modules, trabuco://patterns, trabuco://limitations). Requires `trabuco` binary on PATH — install from https://github.com/arianlopezc/Trabuco/releases."
+      "description": "Trabuco CLI's MCP server. Exposes 12 tools (init_project, add_module, suggest_architecture, design_system, generate_workspace, run_doctor, get_project_info, list_modules, list_providers, check_docker, get_version, auth_status, sync_project), 4 expert prompts (trabuco_expert, design_microservices, extend_project, trabuco_ai_agent_expert), and 3 resources (trabuco://modules, trabuco://patterns, trabuco://limitations). Migration is being redesigned for 1.10.0; the previous beta migrate_project + scan_project tools have been removed. Requires `trabuco` binary on PATH — install from https://github.com/arianlopezc/Trabuco/releases."
     }
   }
 }
