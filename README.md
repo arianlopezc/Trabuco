@@ -56,12 +56,14 @@ Your API runs at `http://localhost:8080`. For Worker, EventConsumer, AIAgent, an
 
 ## Claude Code plugin
 
-If you use Claude Code, drive Trabuco conversationally:
+Trabuco is published in [Anthropic's community plugin marketplace](https://github.com/anthropics/claude-plugins-community). Inside Claude Code:
 
 ```text
-/plugin marketplace add arianlopezc/Trabuco
-/plugin install trabuco@trabuco-marketplace
+/plugin marketplace add anthropics/claude-plugins-community
+/plugin install trabuco@claude-community
 ```
+
+You can also browse the catalog at [claude.com/plugins](https://claude.com/plugins/), or pin to this repo directly (e.g. for unreleased changes) with `/plugin marketplace add arianlopezc/Trabuco` then `/plugin install trabuco@trabuco-marketplace`.
 
 The plugin ships **8 skills** (`/trabuco:new-project`, `/trabuco:design-system`, `/trabuco:add-module`, `/trabuco:extend`, `/trabuco:migrate`, `/trabuco:doctor`, `/trabuco:suggest`, `/trabuco:sync`), **17 specialist subagents** (architect, AI-agent expert, migration orchestrator, 14 migration phase specialists), and an **MCP server** with 25 tools. Full plugin docs: [`plugin/README.md`](plugin/README.md).
 

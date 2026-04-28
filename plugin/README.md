@@ -53,6 +53,19 @@ emits a clear message if it isn't.
 
 ## Install the plugin
 
+### From Anthropic's community marketplace (recommended)
+
+Trabuco is listed in
+[`anthropics/claude-plugins-community`](https://github.com/anthropics/claude-plugins-community),
+Anthropic's community plugin catalog. Inside Claude Code:
+
+```text
+/plugin marketplace add anthropics/claude-plugins-community
+/plugin install trabuco@claude-community
+```
+
+Browse the catalog at [claude.com/plugins](https://claude.com/plugins/).
+
 ### From the Trabuco repository
 
 ```text
@@ -61,7 +74,8 @@ emits a clear message if it isn't.
 ```
 
 This clones the Trabuco repo and installs the plugin from
-[`./plugin`](./) inside it.
+[`./plugin`](./) inside it. Useful if you want unreleased changes from
+`main` ahead of the next community-marketplace sync.
 
 ### From a downloaded release tarball
 

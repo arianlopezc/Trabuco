@@ -46,7 +46,7 @@ For migrating an existing Spring Boot project, see
 
 ## Features
 
-- **Claude Code plugin** — Drive scaffolding, extension, and architecture advice conversationally via `/trabuco:*` skills and specialist subagents. One install: `/plugin marketplace add arianlopezc/Trabuco`. See [Claude Code plugin](#claude-code-plugin) below.
+- **Claude Code plugin** — Drive scaffolding, extension, and architecture advice conversationally via `/trabuco:*` skills and specialist subagents. Published in [Anthropic's community marketplace](https://github.com/anthropics/claude-plugins-community): `/plugin marketplace add anthropics/claude-plugins-community` then `/plugin install trabuco@claude-community`. See [Claude Code plugin](#claude-code-plugin) below.
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
 - **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
 - **Project health checks** — Validate project structure and consistency with `trabuco doctor`
@@ -125,7 +125,12 @@ If you use Claude Code, install the Trabuco plugin to drive the CLI conversation
    ```bash
    trabuco version
    ```
-3. **Install the plugin:**
+3. **Install the plugin** from [Anthropic's community marketplace](https://github.com/anthropics/claude-plugins-community):
+   ```
+   /plugin marketplace add anthropics/claude-plugins-community
+   /plugin install trabuco@claude-community
+   ```
+   To pin to this repo directly (e.g. for unreleased changes ahead of the next community sync):
    ```
    /plugin marketplace add arianlopezc/Trabuco
    /plugin install trabuco@trabuco-marketplace
