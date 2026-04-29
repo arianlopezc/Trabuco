@@ -20,6 +20,24 @@ spring:
   threads:
     virtual:
       enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
+{{- if .AuthEnabled}}
+  # OAuth2 Resource Server — JWT validation against an external OIDC issuer.
+  # Same configuration shape as the API module; both apps validate tokens
+  # against the same issuer for consistent cross-app identity.
+  #
+  # Provider examples (set OIDC_ISSUER_URI to one of these):
+  #   Keycloak:    http://localhost:8180/realms/myrealm
+  #   Auth0:       https://YOUR_DOMAIN.auth0.com/
+  #   Okta:        https://YOUR_DOMAIN.okta.com/oauth2/default
+  #   Cognito:     https://cognito-idp.{region}.amazonaws.com/{userPoolId}
+  #   Generic:     https://your-idp.example.com
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI:}
+          audiences: ${OIDC_AUDIENCE:}
+{{- end}}
   ai:
     mcp:
       server:

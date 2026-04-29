@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -16,7 +17,28 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 
+/**
+ * Tier-based API-key authentication filter (legacy path).
+ *
+ * <p>When the AIAgent uses JWT validation (via {@code AgentSecurityConfig}
+ * generated under {@code config/security/} when {@code --auth=oidc} is
+ * set), this filter can be disabled by setting
+ * {@code app.aiagent.api-key.enabled=false} in {@code application.yml}.
+ * The default ({@code matchIfMissing=true}) keeps the filter active for
+ * backward compatibility — existing endpoints annotated with
+ * {@code @RequireScope("public")} continue to work via the
+ * {@code ScopeInterceptor} → {@code ScopeEnforcer} → {@code CallerContext}
+ * pipeline.
+ *
+ * <p>The two paths coexist: requests with JWT bearer tokens are validated
+ * by the OIDC resource server; requests with API-key bearer tokens (the
+ * legacy mechanism) flow through this filter. To migrate fully to
+ * JWT-only, set the property to {@code false} and replace
+ * {@code @RequireScope} annotations with
+ * {@code @PreAuthorize("hasAuthority('SCOPE_*')")}.
+ */
 @Component
+@ConditionalOnProperty(name = "app.aiagent.api-key.enabled", havingValue = "true", matchIfMissing = true)
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     // TODO: Replace with a configuration bean or externalized config for production use.

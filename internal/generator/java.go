@@ -731,6 +731,30 @@ func (g *Generator) generateEventConsumerModule() error {
 	return nil
 }
 
+// generateAIAgentModuleAuthFiles emits the OIDC-based security scaffolding
+// for AIAgent: AgentSecurityConfig (filter chain), JwtAuthenticationConverter
+// (Jwt → Authentication + RequestContextHolder population), and
+// AuthProblemDetailHandler (RFC 7807 401/403 emission). Coexists with the
+// legacy ApiKeyAuthFilter, which becomes @ConditionalOnProperty when
+// AuthEnabled — see ApiKeyAuthFilter.java.tmpl.
+func (g *Generator) generateAIAgentModuleAuthFiles() error {
+	files := []struct {
+		tmpl string
+		out  string
+	}{
+		{"java/aiagent/config/security/AgentSecurityConfig.java.tmpl", "AgentSecurityConfig.java"},
+		{"java/aiagent/config/security/JwtAuthenticationConverter.java.tmpl", "JwtAuthenticationConverter.java"},
+		{"java/aiagent/config/security/AuthProblemDetailHandler.java.tmpl", "AuthProblemDetailHandler.java"},
+	}
+	for _, f := range files {
+		out := filepath.Join("config", "security", f.out)
+		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", out)); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+	return nil
+}
+
 // generateAIAgentModule generates all files for the AI Agent module.
 // This includes: security (auth, scopes, guardrails), tools, agents (primary + specialist),
 // brain (scratchpad, reflection), knowledge, protocols (REST, A2A, discovery, streaming, webhooks),
@@ -778,6 +802,16 @@ func (g *Generator) generateAIAgentModule() error {
 	for _, f := range securityFiles {
 		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
 			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// OIDC-based security scaffolding (only when --auth=oidc).
+	// AgentSecurityConfig + JwtAuthenticationConverter +
+	// AuthProblemDetailHandler — coexists with the legacy ApiKeyAuthFilter
+	// above, which becomes @ConditionalOnProperty when AuthEnabled.
+	if g.config.AuthEnabled() {
+		if err := g.generateAIAgentModuleAuthFiles(); err != nil {
+			return err
 		}
 	}
 

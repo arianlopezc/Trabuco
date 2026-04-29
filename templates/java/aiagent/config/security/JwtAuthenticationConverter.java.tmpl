@@ -1,0 +1,51 @@
+package {{.GroupID}}.aiagent.config.security;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+import {{.GroupID}}.shared.auth.JwtClaimsExtractor;
+import {{.GroupID}}.shared.auth.RequestContextHolder;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+/**
+ * Converts a validated {@link Jwt} into a Spring
+ * {@link AbstractAuthenticationToken} and side-effects:
+ * populates {@link RequestContextHolder} with the derived
+ * {@link IdentityClaims} so downstream code (tools, agent
+ * orchestration, scope-aware services) can read identity without
+ * re-parsing the token.
+ *
+ * <p>Authorities are prefixed with {@code SCOPE_} to match Spring
+ * Security's default resource-server convention, so
+ * {@code @PreAuthorize("hasAuthority('SCOPE_agent:read')")} on
+ * {@code @Tool}-annotated methods works without a custom
+ * {@code GrantedAuthoritiesMapper}.
+ */
+@Component
+public class JwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
+
+    private final JwtClaimsExtractor extractor;
+
+    public JwtAuthenticationConverter(JwtClaimsExtractor extractor) {
+        this.extractor = extractor;
+    }
+
+    @Override
+    public AbstractAuthenticationToken convert(Jwt jwt) {
+        IdentityClaims claims = extractor.extract(jwt);
+        RequestContextHolder.set(claims);
+
+        Set<GrantedAuthority> authorities = new LinkedHashSet<>();
+        for (String scope : claims.scopes()) {
+            authorities.add(new SimpleGrantedAuthority("SCOPE_" + scope));
+        }
+        return new JwtAuthenticationToken(jwt, authorities, claims.subject());
+    }
+}
