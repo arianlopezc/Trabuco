@@ -1,0 +1,63 @@
+package {{.GroupID}}.model.auth;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
+import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Verifies {@link AuthenticatedRequest} round-trips cleanly through
+ * Jackson with both populated and empty caller fields, mirroring the
+ * shapes that show up in JobRunr job parameters and broker bodies.
+ */
+class AuthenticatedRequestTest {
+
+    private final ObjectMapper mapper = new ObjectMapper()
+        .registerModule(new Jdk8Module())
+        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+    @Test
+    void serializesAndDeserializesWithCaller() throws Exception {
+        IdentityClaims caller = ImmutableIdentityClaims.builder()
+            .subject("user-42")
+            .email(Optional.of("user@example.com"))
+            .scopes(Set.of("agent:read"))
+            .rawClaims(Map.of())
+            .build();
+        AuthenticatedRequest<String> original = new AuthenticatedRequest<>("hello", Optional.of(caller));
+
+        String json = mapper.writeValueAsString(original);
+        AuthenticatedRequest<String> roundTripped = mapper.readValue(
+            json,
+            mapper.getTypeFactory().constructParametricType(AuthenticatedRequest.class, String.class));
+
+        assertThat(roundTripped.payload()).isEqualTo("hello");
+        assertThat(roundTripped.caller()).isPresent();
+        assertThat(roundTripped.caller().get().subject()).isEqualTo("user-42");
+        assertThat(roundTripped.caller().get().email()).hasValue("user@example.com");
+    }
+
+    @Test
+    void systemFactoryProducesEmptyCaller() {
+        AuthenticatedRequest<String> req = AuthenticatedRequest.system("payload");
+        assertThat(req.payload()).isEqualTo("payload");
+        assertThat(req.caller()).isEmpty();
+    }
+
+    @Test
+    void deserializingMissingCallerYieldsEmpty() throws Exception {
+        String json = "{\"payload\":\"hello\"}";
+        AuthenticatedRequest<String> req = mapper.readValue(
+            json,
+            mapper.getTypeFactory().constructParametricType(AuthenticatedRequest.class, String.class));
+
+        assertThat(req.payload()).isEqualTo("hello");
+        assertThat(req.caller()).isEmpty();
+    }
+}

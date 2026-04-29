@@ -1,0 +1,64 @@
+package {{.GroupID}}.shared.auth;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+
+import java.time.Instant;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Smoke tests for {@link MockJwtFactory}: built JWTs have the expected
+ * shape, the authentication helper produces correctly-prefixed
+ * authorities, and the decoder helpers return the right tokens.
+ */
+class MockJwtFactoryTest {
+
+    @Test
+    void jwtHasExpectedClaimsAndExpiry() {
+        Jwt jwt = MockJwtFactory.jwt("user-42", "agent:read", "agent:write");
+
+        assertThat(jwt.getSubject()).isEqualTo("user-42");
+        assertThat(jwt.getClaimAsString("scope")).isEqualTo("agent:read agent:write");
+        assertThat(jwt.getExpiresAt()).isAfter(Instant.now());
+        assertThat(jwt.getIssuedAt()).isBeforeOrEqualTo(Instant.now());
+    }
+
+    @Test
+    void jwtWithNoScopesEmitsEmptyScopeClaim() {
+        Jwt jwt = MockJwtFactory.jwt("user-42");
+        assertThat(jwt.getSubject()).isEqualTo("user-42");
+        assertThat(jwt.getClaimAsString("scope")).isEmpty();
+    }
+
+    @Test
+    void authenticationHasScopePrefixedAuthorities() {
+        JwtAuthenticationToken token = MockJwtFactory.authentication("user-42", "agent:read", "admin");
+
+        assertThat(token.getName()).isEqualTo("user-42");
+        assertThat(token.getAuthorities())
+            .extracting(GrantedAuthority::getAuthority)
+            .containsExactlyInAnyOrder("SCOPE_agent:read", "SCOPE_admin");
+    }
+
+    @Test
+    void fixedDecoderReturnsTheGivenJwtForAnyToken() {
+        Jwt expected = MockJwtFactory.jwt("user-42", "agent:read");
+        JwtDecoder decoder = MockJwtFactory.fixedDecoder(expected);
+
+        assertThat(decoder.decode("any-token-string")).isSameAs(expected);
+        assertThat(decoder.decode("another-token")).isSameAs(expected);
+    }
+
+    @Test
+    void decoderWithSubjectAndScopesProducesMatchingJwt() {
+        JwtDecoder decoder = MockJwtFactory.decoder("user-42", "agent:read");
+        Jwt jwt = decoder.decode("any-token");
+
+        assertThat(jwt.getSubject()).isEqualTo("user-42");
+        assertThat(jwt.getClaimAsString("scope")).isEqualTo("agent:read");
+    }
+}

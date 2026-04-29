@@ -87,6 +87,21 @@
         </dependency>
 {{- end}}
 {{- end}}
+{{- if .AuthEnabled}}
+
+        <!-- Test deps for the auth model unit tests (AuthenticatedRequestTest).
+             jdk8 module is needed to (de)serialize Optional<IdentityClaims>. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jdk8</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{- end}}
     </dependencies>
 
     <build>

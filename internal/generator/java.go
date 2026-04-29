@@ -106,6 +106,14 @@ func (g *Generator) generateModelModule() error {
 				return fmt.Errorf("failed to generate %s: %w", f.out, err)
 			}
 		}
+		// Jackson round-trip test for AuthenticatedRequest — verifies it
+		// (de)serializes cleanly across module / process boundaries.
+		if err := g.writeTemplate(
+			"java/model/test/auth/AuthenticatedRequestTest.java.tmpl",
+			g.testJavaPath("Model", filepath.Join("auth", "AuthenticatedRequestTest.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate AuthenticatedRequestTest.java: %w", err)
+		}
 	}
 
 	// Job request classes (only if Worker is selected)
@@ -326,13 +334,22 @@ func (g *Generator) generateSharedModule() error {
 				return fmt.Errorf("failed to generate %s: %w", f.out, err)
 			}
 		}
-		// Test utility — same package as production auth types so
-		// tests can use it without import gymnastics.
-		if err := g.writeTemplate(
-			"java/shared/test/auth/MockJwtFactory.java.tmpl",
-			g.testJavaPath("Shared", filepath.Join("auth", "MockJwtFactory.java")),
-		); err != nil {
-			return fmt.Errorf("failed to generate MockJwtFactory.java: %w", err)
+		// Test utility + unit tests for the auth utilities — same
+		// package as production auth types so tests can use it
+		// without import gymnastics.
+		sharedAuthTestFiles := []struct {
+			tmpl string
+			out  string
+		}{
+			{"java/shared/test/auth/MockJwtFactory.java.tmpl", "MockJwtFactory.java"},
+			{"java/shared/test/auth/AuthScopeTest.java.tmpl", "AuthScopeTest.java"},
+			{"java/shared/test/auth/DefaultAuthContextPropagatorTest.java.tmpl", "DefaultAuthContextPropagatorTest.java"},
+			{"java/shared/test/auth/MockJwtFactoryTest.java.tmpl", "MockJwtFactoryTest.java"},
+		}
+		for _, f := range sharedAuthTestFiles {
+			if err := g.writeTemplate(f.tmpl, g.testJavaPath("Shared", filepath.Join("auth", f.out))); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", f.out, err)
+			}
 		}
 	}
 

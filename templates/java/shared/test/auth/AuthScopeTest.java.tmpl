@@ -1,0 +1,68 @@
+package {{.GroupID}}.shared.auth;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+import {{.GroupID}}.model.auth.ImmutableIdentityClaims;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Verifies the try-with-resources contract of {@link AuthScope}:
+ * setting on entry, restoring previous on close, clearing when no
+ * previous, and exception-safety.
+ */
+class AuthScopeTest {
+
+    private static final IdentityClaims OUTER = ImmutableIdentityClaims.builder()
+        .subject("outer-user")
+        .scopes(Set.of("agent:read"))
+        .rawClaims(Map.of())
+        .build();
+
+    private static final IdentityClaims INNER = ImmutableIdentityClaims.builder()
+        .subject("inner-user")
+        .scopes(Set.of("agent:write"))
+        .rawClaims(Map.of())
+        .build();
+
+    @AfterEach
+    void clearContext() {
+        RequestContextHolder.clear();
+    }
+
+    @Test
+    void setOnEntryAndClearOnExitWhenNoPreviousContext() {
+        try (AuthScope scope = AuthScope.set(OUTER)) {
+            assertThat(RequestContextHolder.get()).isEqualTo(OUTER);
+        }
+        assertThat(RequestContextHolder.getOptional()).isEmpty();
+    }
+
+    @Test
+    void restoresPreviousContextOnNestedExit() {
+        try (AuthScope outer = AuthScope.set(OUTER)) {
+            assertThat(RequestContextHolder.get()).isEqualTo(OUTER);
+            try (AuthScope inner = AuthScope.set(INNER)) {
+                assertThat(RequestContextHolder.get()).isEqualTo(INNER);
+            }
+            assertThat(RequestContextHolder.get()).isEqualTo(OUTER);
+        }
+        assertThat(RequestContextHolder.getOptional()).isEmpty();
+    }
+
+    @Test
+    void clearsContextWhenExceptionThrownInsideScope() {
+        try (AuthScope scope = AuthScope.set(OUTER)) {
+            throw new IllegalStateException("simulated failure");
+        } catch (IllegalStateException expected) {
+            // expected
+        }
+        assertThat(RequestContextHolder.getOptional())
+            .as("context cleared even when scope body throws")
+            .isEmpty();
+    }
+}
