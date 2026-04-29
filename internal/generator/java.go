@@ -336,7 +336,9 @@ func (g *Generator) generateSharedModule() error {
 		}
 		// Test utility + unit tests for the auth utilities — same
 		// package as production auth types so tests can use it
-		// without import gymnastics.
+		// without import gymnastics. SignedJwtTestSupport is the
+		// e2e helper used by API/AuthEndToEndTest; lives in Shared
+		// so AIAgent or any other module can reuse it.
 		sharedAuthTestFiles := []struct {
 			tmpl string
 			out  string
@@ -470,12 +472,28 @@ func (g *Generator) generateAPIModule() error {
 				return fmt.Errorf("failed to generate %s: %w", f.out, err)
 			}
 		}
-		// Integration test for the resource-server filter chain.
+		// Integration test for the resource-server filter chain
+		// (MockMvc + @MockBean JwtDecoder — fast, no real HTTP).
 		if err := g.writeTemplate(
 			"java/api/test/security/SecurityIntegrationTest.java.tmpl",
 			g.testJavaPath("API", filepath.Join("config", "security", "SecurityIntegrationTest.java")),
 		); err != nil {
 			return fmt.Errorf("failed to generate SecurityIntegrationTest.java: %w", err)
+		}
+		// End-to-end test (real Tomcat + real signed JWTs + real
+		// signature verification via NimbusJwtDecoder) plus its
+		// helper. Higher fidelity than SecurityIntegrationTest.
+		apiE2EFiles := []struct {
+			tmpl string
+			out  string
+		}{
+			{"java/api/test/security/SignedJwtTestSupport.java.tmpl", "SignedJwtTestSupport.java"},
+			{"java/api/test/security/AuthEndToEndTest.java.tmpl", "AuthEndToEndTest.java"},
+		}
+		for _, f := range apiE2EFiles {
+			if err := g.writeTemplate(f.tmpl, g.testJavaPath("API", filepath.Join("config", "security", f.out))); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", f.out, err)
+			}
 		}
 	}
 
