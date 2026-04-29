@@ -47,6 +47,7 @@ For migrating an existing Spring Boot project, see
 ## Features
 
 - **Claude Code plugin** — Drive scaffolding, extension, and architecture advice conversationally via `/trabuco:*` skills and specialist subagents. Published in [Anthropic's community marketplace](https://github.com/anthropics/claude-plugins-community): `/plugin marketplace add anthropics/claude-plugins-community` then `/plugin install trabuco@claude-community`. See [Claude Code plugin](#claude-code-plugin) below.
+- **OIDC Resource Server (opt-in)** — Pass `--auth=oidc` and Trabuco generates Spring Security 6 OAuth2 Resource Server with JWT validation against an external OIDC issuer (Keycloak / Auth0 / Okta / Cognito / generic). Universal data types in Model, cross-module utilities in Shared, HTTP filter chain in API and AIAgent. Full guide: [`docs/auth.md`](auth.md).
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
 - **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
 - **Project health checks** — Validate project structure and consistency with `trabuco doctor`

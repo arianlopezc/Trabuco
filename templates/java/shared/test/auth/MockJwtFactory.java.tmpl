@@ -1,0 +1,120 @@
+package {{.GroupID}}.shared.auth;
+
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+/**
+ * Test utility for minting fake but well-shaped JWTs and authentication
+ * tokens that flow through the same {@code JwtAuthenticationConverter}
+ * → {@code JwtClaimsExtractor} → {@code RequestContextHolder} pipeline as
+ * production tokens. Use in unit and integration tests that exercise
+ * controllers, services, or tools whose behavior depends on identity
+ * or scope.
+ *
+ * <p>Three usage patterns:
+ *
+ * <p><b>1. Build a {@link Jwt} directly</b> — for unit tests of code that
+ * receives {@code Jwt} or calls {@code JwtClaimsExtractor.extract(jwt)}:
+ * <pre>{@code
+ * Jwt jwt = MockJwtFactory.jwt("user-42", "agent:read", "agent:write");
+ * IdentityClaims claims = extractor.extract(jwt);
+ * assertThat(claims.subject()).isEqualTo("user-42");
+ * }</pre>
+ *
+ * <p><b>2. Override the {@code JwtDecoder} bean</b> — for
+ * {@code @SpringBootTest} integration tests that need a working filter
+ * chain without standing up a real IdP:
+ * <pre>{@code
+ * @MockBean JwtDecoder jwtDecoder;
+ *
+ * @BeforeEach void setup() {
+ *     when(jwtDecoder.decode(any()))
+ *         .thenReturn(MockJwtFactory.jwt("user-42", "admin"));
+ * }
+ * }</pre>
+ *
+ * <p><b>3. Build a {@link JwtAuthenticationToken}</b> — for tests that
+ * set the security context manually:
+ * <pre>{@code
+ * SecurityContextHolder.getContext().setAuthentication(
+ *     MockJwtFactory.authentication("user-42", "agent:read"));
+ * }</pre>
+ *
+ * <p>The minted JWTs have a non-zero expiry (1 hour from now) and a
+ * placeholder issuer of {@code https://test.example.com}. Tests that
+ * need different issuer or expiry semantics should call
+ * {@link Jwt#withTokenValue(String)} directly.
+ */
+public final class MockJwtFactory {
+
+    private static final String DEFAULT_ISSUER = "https://test.example.com";
+    private static final Duration DEFAULT_TTL  = Duration.ofHours(1);
+
+    private MockJwtFactory() {}
+
+    /**
+     * Returns a {@link Jwt} with the given subject and scopes, suitable for
+     * passing to {@code JwtClaimsExtractor} or returning from a mocked
+     * {@code JwtDecoder}.
+     *
+     * <p>The {@code scope} claim is set to space-delimited scope values
+     * matching the RFC-conformant layout that {@code DefaultJwtClaimsExtractor}
+     * understands.
+     */
+    public static Jwt jwt(String subject, String... scopes) {
+        Instant now = Instant.now();
+        return Jwt.withTokenValue("test-token-" + subject)
+            .header("alg", "RS256")
+            .header("typ", "JWT")
+            .subject(subject)
+            .issuer(DEFAULT_ISSUER)
+            .issuedAt(now)
+            .expiresAt(now.plus(DEFAULT_TTL))
+            .claim("scope", scopes.length == 0 ? "" : String.join(" ", scopes))
+            .build();
+    }
+
+    /**
+     * Returns a {@link JwtAuthenticationToken} ready for direct insertion
+     * into the {@code SecurityContext}. Authorities are prefixed with
+     * {@code SCOPE_} to match the resource-server convention used by
+     * {@code @PreAuthorize("hasAuthority('SCOPE_*')")}.
+     */
+    public static JwtAuthenticationToken authentication(String subject, String... scopes) {
+        Set<SimpleGrantedAuthority> authorities = new LinkedHashSet<>();
+        for (String scope : scopes) {
+            authorities.add(new SimpleGrantedAuthority("SCOPE_" + scope));
+        }
+        return new JwtAuthenticationToken(jwt(subject, scopes), authorities, subject);
+    }
+
+    /**
+     * Returns a {@link JwtDecoder} that returns the given fixed
+     * {@link Jwt} regardless of the token string passed to it. Use to
+     * replace the resource-server's auto-configured decoder when you
+     * want every request to look authenticated as a particular user
+     * for the duration of the test.
+     */
+    public static JwtDecoder fixedDecoder(Jwt jwt) {
+        return token -> jwt;
+    }
+
+    /**
+     * Returns a {@link JwtDecoder} that builds a fresh {@link Jwt} on
+     * every {@code decode} call using the provided subject and scopes.
+     * Convenience over {@link #fixedDecoder(Jwt)} when the test doesn't
+     * need to compose the {@code Jwt} explicitly.
+     */
+    public static JwtDecoder decoder(String subject, String... scopes) {
+        Set<String> scopeSet = new LinkedHashSet<>(Arrays.asList(scopes));
+        return token -> jwt(subject, scopeSet.toArray(String[]::new));
+    }
+}

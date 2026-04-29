@@ -6,12 +6,6 @@ For the live list, read `trabuco://limitations` — it's the authoritative sourc
 
 These aren't gaps to plug; they're *choices*. If a requirement centers on one of these, Trabuco may not be the right tool, or the user needs to plan around the absence.
 
-### No authentication / authorization
-
-Trabuco generates ZERO auth code. No login, no JWT, no OAuth, no RBAC. This is not on the roadmap — auth is too project-specific to scaffold well.
-
-**How to talk about it:** "Trabuco won't generate auth for you. Plan for adding Spring Security after generation. The API module gives you a clean layer to slot filters into, but the implementation is yours."
-
 ### No frontend
 
 Backend-only. No React, no Vue, no Thymeleaf, no HTMX. The only exception: the AIAgent exposes backend HTTP endpoints (`/chat`, `/ask`) that a frontend can call.
@@ -47,6 +41,12 @@ These are limitations in scope, not philosophy. A motivated user can add them wi
 - **No custom business logic** — obviously. The Shared module gives you the *structure* for services; the code is yours.
 - **No model training / fine-tuning in AIAgent** — Spring AI connects to *trained* models via API. Training is done elsewhere (Hugging Face, SageMaker, Vertex AI).
 
+## No-longer-limitations — shipped in 1.11
+
+These were limitations in 1.10 and earlier. Resolved in 1.11; mention them only if a user is on an old version.
+
+- **Authentication / authorization** — `--auth=oidc` (since 1.11) generates a Spring Security 6 OAuth2 Resource Server with JWT validation against an external OIDC issuer (Keycloak / Auth0 / Okta / Cognito / generic). Universal data types (`IdentityClaims`, `AuthorityScope`) live in Model; cross-module utilities (`RequestContextHolder`, `JwtClaimsExtractor`, `AuthScope`, `DefaultAuthContextPropagator`) in Shared; HTTP filter chain in API and AIAgent. AIAgent's legacy tier-based API-key path coexists via `@ConditionalOnProperty(matchIfMissing=true)`. Full guide: `docs/auth.md`.
+
 ## Not-limitations — things users *think* are missing but aren't
 
 - **"No JPA"** — intentional. Spring Data JDBC is simpler and avoids lazy-loading footguns. Don't call this a limitation; call it a choice.
@@ -63,7 +63,7 @@ Say this when:
 - The user wants a **different framework family** — Quarkus, Micronaut, Dropwizard, Ktor, Helidon. Trabuco is Spring Boot-only.
 - The project needs **Boot 2.x** compatibility — Trabuco targets 3.4.2 only.
 - The project needs **non-JVM languages** — Trabuco is JVM-only.
-- **Auth IS the project** (e.g., building an OAuth server) — Trabuco won't give you a head start.
+- **Auth IS the project** (e.g., building an OAuth server / IdP) — Trabuco scaffolds resource-server-side validation only (`--auth=oidc` generates an OIDC Resource Server). It does NOT generate identity-provider-side code (login forms, token issuance, user management).
 
 Being honest about fit saves the user from generating a project they'll fight for weeks. Don't oversell.
 

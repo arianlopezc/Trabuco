@@ -306,7 +306,9 @@ func (g *Generator) generateSharedModule() error {
 	// default impl), AuthContextPropagator (interface + default impl),
 	// AuthScope (try-with-resources helper) — lives in Shared. The
 	// data types these reference (IdentityClaims, AuthenticatedRequest)
-	// are in Model.
+	// are in Model. MockJwtFactory is a test utility for minting fake
+	// JWTs/Authentications/Decoders — also in Shared so all modules
+	// that depend on Shared (test scope) can use it.
 	if g.config.AuthEnabled() {
 		authFiles := []struct {
 			tmpl string
@@ -323,6 +325,14 @@ func (g *Generator) generateSharedModule() error {
 			if err := g.writeTemplate(f.tmpl, g.javaPath("Shared", filepath.Join("auth", f.out))); err != nil {
 				return fmt.Errorf("failed to generate %s: %w", f.out, err)
 			}
+		}
+		// Test utility — same package as production auth types so
+		// tests can use it without import gymnastics.
+		if err := g.writeTemplate(
+			"java/shared/test/auth/MockJwtFactory.java.tmpl",
+			g.testJavaPath("Shared", filepath.Join("auth", "MockJwtFactory.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate MockJwtFactory.java: %w", err)
 		}
 	}
 
