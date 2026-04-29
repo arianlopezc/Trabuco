@@ -139,7 +139,40 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		cfg.MessageBroker = normalizeMessageBrokerChoice(cfg.MessageBroker)
 	}
 
-	// 8. AI coding agent context files
+	// 8. Authentication — only meaningful when API or AIAgent is selected
+	// (those are the modules whose filter chains consume the auth scaffolding).
+	if cfg.HasModule(config.ModuleAPI) || cfg.HasModule(config.ModuleAIAgent) {
+		var authChoice string
+		if err := survey.AskOne(&survey.Select{
+			Message: "Authentication:",
+			Options: []string{
+				"None (skip — add later if needed)",
+				"OIDC Resource Server (Spring Security 6 + JWT, provider-agnostic)",
+			},
+			Default: "None (skip — add later if needed)",
+			Help: "OIDC works with Keycloak, Auth0, Okta, Cognito, and generic OIDC providers. " +
+				"Set OIDC_ISSUER_URI env var to your IdP discovery endpoint before running the app. " +
+				"See docs/auth.md for per-provider config recipes.",
+		}, &authChoice); err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(authChoice, "OIDC") {
+			cfg.Auth = config.AuthOIDC
+			// Auto-include Shared if not selected — RequestContextHolder,
+			// JwtClaimsExtractor and DefaultAuthContextPropagator live
+			// there and API/AIAgent import them.
+			if !cfg.HasModule(config.ModuleShared) {
+				cfg.Modules = append(cfg.Modules, config.ModuleShared)
+				yellow := color.New(color.FgYellow)
+				yellow.Println("\n  Note: OIDC requires Shared (auth utilities live there). Adding Shared to module list.")
+				fmt.Println()
+			}
+		} else {
+			cfg.Auth = config.AuthNone
+		}
+	}
+
+	// 9. AI coding agent context files
 	agentOptions := config.GetAIAgentDisplayOptions()
 	var selectedAgentIndices []int
 	if err := survey.AskOne(&survey.MultiSelect{
