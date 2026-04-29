@@ -1,0 +1,44 @@
+package {{.GroupID}}.model.auth;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.util.Optional;
+
+/**
+ * Generic wrapper that pairs a payload with the {@link IdentityClaims} of
+ * the caller who triggered it. Use for any async boundary that should
+ * remember "who asked for this":
+ *
+ * <ul>
+ *   <li>JobRunr job parameters: enqueue
+ *       {@code new AuthenticatedRequest<>(jobRequest, RequestContextHolder.getOptional())},
+ *       handler reads {@code wrapped.caller().ifPresent(RequestContextHolder::set)}
+ *       before processing the inner payload.</li>
+ *   <li>Broker messages: serialize the wrapper as the message body, or
+ *       use {@link AuthContextPropagator} (Shared) to render claims as
+ *       broker headers and keep the body unchanged.</li>
+ *   <li>Webhook delivery payloads: include the original requester's
+ *       identity for downstream services to honor.</li>
+ * </ul>
+ *
+ * <p>This is a pure data type — no behavior, no Spring dependencies — so
+ * it serializes/deserializes cleanly across module and process
+ * boundaries via Jackson.
+ */
+public record AuthenticatedRequest<T>(
+        T payload,
+        Optional<IdentityClaims> caller) {
+
+    @JsonCreator
+    public static <T> AuthenticatedRequest<T> of(
+            @JsonProperty("payload") T payload,
+            @JsonProperty("caller") Optional<IdentityClaims> caller) {
+        return new AuthenticatedRequest<>(payload, caller != null ? caller : Optional.empty());
+    }
+
+    /** Convenience: wrap with no caller (e.g., system-initiated work). */
+    public static <T> AuthenticatedRequest<T> system(T payload) {
+        return new AuthenticatedRequest<>(payload, Optional.empty());
+    }
+}

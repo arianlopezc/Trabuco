@@ -89,19 +89,22 @@ func (g *Generator) generateModelModule() error {
 	// IdentityClaims and AuthorityScope are universal data — read by API
 	// filters, Worker handlers, EventConsumer listeners, and AIAgent
 	// tools — so they live in Model alongside the rest of the project's
-	// schemas.
+	// schemas. AuthenticatedRequest is a generic wrapper used at async
+	// boundaries (job parameters, broker bodies) when callers want to
+	// carry identity inline rather than via headers.
 	if g.config.AuthEnabled() {
-		if err := g.writeTemplate(
-			"java/model/auth/IdentityClaims.java.tmpl",
-			g.javaPath("Model", filepath.Join("auth", "IdentityClaims.java")),
-		); err != nil {
-			return fmt.Errorf("failed to generate IdentityClaims.java: %w", err)
+		modelAuthFiles := []struct {
+			tmpl string
+			out  string
+		}{
+			{"java/model/auth/IdentityClaims.java.tmpl", "IdentityClaims.java"},
+			{"java/model/auth/AuthorityScope.java.tmpl", "AuthorityScope.java"},
+			{"java/model/auth/AuthenticatedRequest.java.tmpl", "AuthenticatedRequest.java"},
 		}
-		if err := g.writeTemplate(
-			"java/model/auth/AuthorityScope.java.tmpl",
-			g.javaPath("Model", filepath.Join("auth", "AuthorityScope.java")),
-		); err != nil {
-			return fmt.Errorf("failed to generate AuthorityScope.java: %w", err)
+		for _, f := range modelAuthFiles {
+			if err := g.writeTemplate(f.tmpl, g.javaPath("Model", filepath.Join("auth", f.out))); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", f.out, err)
+			}
 		}
 	}
 
@@ -300,9 +303,10 @@ func (g *Generator) generateSharedModule() error {
 
 	// Auth utilities (only if --auth=oidc is enabled).
 	// Logic — RequestContextHolder, JwtClaimsExtractor (interface +
-	// default impl), AuthContextPropagator (interface) — lives in
-	// Shared. The data types these reference (IdentityClaims) are in
-	// Model.
+	// default impl), AuthContextPropagator (interface + default impl),
+	// AuthScope (try-with-resources helper) — lives in Shared. The
+	// data types these reference (IdentityClaims, AuthenticatedRequest)
+	// are in Model.
 	if g.config.AuthEnabled() {
 		authFiles := []struct {
 			tmpl string
@@ -312,6 +316,8 @@ func (g *Generator) generateSharedModule() error {
 			{"java/shared/auth/JwtClaimsExtractor.java.tmpl", "JwtClaimsExtractor.java"},
 			{"java/shared/auth/DefaultJwtClaimsExtractor.java.tmpl", "DefaultJwtClaimsExtractor.java"},
 			{"java/shared/auth/AuthContextPropagator.java.tmpl", "AuthContextPropagator.java"},
+			{"java/shared/auth/DefaultAuthContextPropagator.java.tmpl", "DefaultAuthContextPropagator.java"},
+			{"java/shared/auth/AuthScope.java.tmpl", "AuthScope.java"},
 		}
 		for _, f := range authFiles {
 			if err := g.writeTemplate(f.tmpl, g.javaPath("Shared", filepath.Join("auth", f.out))); err != nil {

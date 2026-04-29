@@ -1,0 +1,92 @@
+package {{.GroupID}}.shared.auth;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+import {{.GroupID}}.model.auth.ImmutableIdentityClaims;
+import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Default {@link AuthContextPropagator}: serializes
+ * {@link IdentityClaims} into a small set of {@code X-Identity-*}
+ * string headers and reconstructs claims from those headers on the
+ * receiving side.
+ *
+ * <p>Header convention:
+ * <ul>
+ *   <li>{@code X-Identity-Sub} — subject (required)</li>
+ *   <li>{@code X-Identity-Email} — verified email (optional)</li>
+ *   <li>{@code X-Identity-Tenant-Id} — tenant identifier (optional)</li>
+ *   <li>{@code X-Identity-Scopes} — space-delimited scopes (optional)</li>
+ * </ul>
+ *
+ * <p>Broker-specific code (Kafka producer, RabbitMQ template, SQS
+ * client, Pub/Sub publisher) calls {@link #toHeaders(IdentityClaims)}
+ * to render claims as a {@code Map<String, String>} and then maps that
+ * map onto the broker's native header type. The receive side reads
+ * the broker's native headers into a {@code Map<String, String>} and
+ * calls {@link #fromHeaders(Map)} to reconstruct.
+ *
+ * <p>SECURITY: implementations MUST NOT re-validate JWTs at the
+ * downstream end. Identity has been authenticated at the API
+ * boundary; the message broker is a trusted internal channel.
+ * Re-validation would add latency without security gain.
+ *
+ * <p>The {@code rawClaims} field is intentionally NOT serialized into
+ * headers — it can be large and contains provider-specific data not
+ * needed by downstream consumers. If a downstream service needs the
+ * full token payload, propagate the bearer token itself instead of
+ * unpacked claims.
+ */
+@Component
+public class DefaultAuthContextPropagator implements AuthContextPropagator {
+
+    public static final String HEADER_SUB        = "X-Identity-Sub";
+    public static final String HEADER_EMAIL      = "X-Identity-Email";
+    public static final String HEADER_TENANT_ID  = "X-Identity-Tenant-Id";
+    public static final String HEADER_SCOPES     = "X-Identity-Scopes";
+
+    @Override
+    public Map<String, String> toHeaders(IdentityClaims claims) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put(HEADER_SUB, claims.subject());
+        claims.email().ifPresent(e -> headers.put(HEADER_EMAIL, e));
+        claims.tenantId().ifPresent(t -> headers.put(HEADER_TENANT_ID, t));
+        if (!claims.scopes().isEmpty()) {
+            headers.put(HEADER_SCOPES, String.join(" ", claims.scopes()));
+        }
+        return headers;
+    }
+
+    @Override
+    public Optional<IdentityClaims> fromHeaders(Map<String, String> headers) {
+        if (headers == null) {
+            return Optional.empty();
+        }
+        String sub = headers.get(HEADER_SUB);
+        if (sub == null || sub.isBlank()) {
+            return Optional.empty();
+        }
+        ImmutableIdentityClaims.Builder builder = ImmutableIdentityClaims.builder()
+            .subject(sub)
+            .email(Optional.ofNullable(headers.get(HEADER_EMAIL)))
+            .tenantId(Optional.ofNullable(headers.get(HEADER_TENANT_ID)))
+            .rawClaims(Map.of());
+
+        String scopesHeader = headers.get(HEADER_SCOPES);
+        if (scopesHeader != null && !scopesHeader.isBlank()) {
+            Set<String> scopes = new LinkedHashSet<>();
+            for (String s : scopesHeader.trim().split("\\s+")) {
+                scopes.add(s);
+            }
+            builder.scopes(scopes);
+        } else {
+            builder.scopes(Set.of());
+        }
+        return Optional.of(builder.build());
+    }
+}
