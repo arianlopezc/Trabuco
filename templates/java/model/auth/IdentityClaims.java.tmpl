@@ -1,0 +1,65 @@
+package {{.GroupID}}.model.auth;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import {{.GroupID}}.model.ImmutableStyle;
+import org.immutables.value.Value;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Authenticated identity resolved from a validated JWT.
+ *
+ * <p>Universal data type — read by API filters, Worker handlers,
+ * EventConsumer listeners, and AIAgent tools. Provider-specific claim
+ * layouts (Auth0's namespaced claims, Cognito's {@code cognito:groups})
+ * are normalized into {@link #scopes()} by a
+ * {@code JwtClaimsExtractor} implementation in the Shared module; the
+ * original payload remains accessible via {@link #rawClaims()} for
+ * application-specific extraction.
+ */
+@Value.Immutable
+@ImmutableStyle
+@JsonSerialize(as = ImmutableIdentityClaims.class)
+@JsonDeserialize(as = ImmutableIdentityClaims.class)
+public interface IdentityClaims {
+
+    /** OIDC subject — stable per-user identifier from the IdP. */
+    String subject();
+
+    /** Verified email if the IdP issued one. */
+    Optional<String> email();
+
+    /** Tenant identifier for multi-tenant deployments. */
+    Optional<String> tenantId();
+
+    /** Normalized scopes (provider-agnostic). */
+    Set<String> scopes();
+
+    /** Original JWT claims for application-specific extraction. */
+    Map<String, Object> rawClaims();
+
+    default boolean hasScope(String scope) {
+        return scopes().contains(scope);
+    }
+
+    default boolean hasAnyScope(String... required) {
+        for (String s : required) {
+            if (scopes().contains(s)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Anonymous identity for unauthenticated requests on permitted endpoints. */
+    static IdentityClaims anonymous() {
+        return ImmutableIdentityClaims.builder()
+            .subject("anonymous")
+            .scopes(Set.of())
+            .rawClaims(Map.of())
+            .build();
+    }
+}

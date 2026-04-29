@@ -85,6 +85,26 @@ func (g *Generator) generateModelModule() error {
 		}
 	}
 
+	// Auth model files (only if --auth=oidc is enabled).
+	// IdentityClaims and AuthorityScope are universal data — read by API
+	// filters, Worker handlers, EventConsumer listeners, and AIAgent
+	// tools — so they live in Model alongside the rest of the project's
+	// schemas.
+	if g.config.AuthEnabled() {
+		if err := g.writeTemplate(
+			"java/model/auth/IdentityClaims.java.tmpl",
+			g.javaPath("Model", filepath.Join("auth", "IdentityClaims.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate IdentityClaims.java: %w", err)
+		}
+		if err := g.writeTemplate(
+			"java/model/auth/AuthorityScope.java.tmpl",
+			g.javaPath("Model", filepath.Join("auth", "AuthorityScope.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate AuthorityScope.java: %w", err)
+		}
+	}
+
 	// Job request classes (only if Worker is selected)
 	if g.config.HasModule(config.ModuleWorker) {
 		// PlaceholderJobRequest.java (sealed interface for placeholder domain)
@@ -276,6 +296,28 @@ func (g *Generator) generateSharedModule() error {
 		g.testJavaPath("Shared", "ArchitectureTest.java"),
 	); err != nil {
 		return fmt.Errorf("failed to generate ArchitectureTest.java: %w", err)
+	}
+
+	// Auth utilities (only if --auth=oidc is enabled).
+	// Logic — RequestContextHolder, JwtClaimsExtractor (interface +
+	// default impl), AuthContextPropagator (interface) — lives in
+	// Shared. The data types these reference (IdentityClaims) are in
+	// Model.
+	if g.config.AuthEnabled() {
+		authFiles := []struct {
+			tmpl string
+			out  string
+		}{
+			{"java/shared/auth/RequestContextHolder.java.tmpl", "RequestContextHolder.java"},
+			{"java/shared/auth/JwtClaimsExtractor.java.tmpl", "JwtClaimsExtractor.java"},
+			{"java/shared/auth/DefaultJwtClaimsExtractor.java.tmpl", "DefaultJwtClaimsExtractor.java"},
+			{"java/shared/auth/AuthContextPropagator.java.tmpl", "AuthContextPropagator.java"},
+		}
+		for _, f := range authFiles {
+			if err := g.writeTemplate(f.tmpl, g.javaPath("Shared", filepath.Join("auth", f.out))); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", f.out, err)
+			}
+		}
 	}
 
 	return nil

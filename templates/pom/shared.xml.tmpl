@@ -74,6 +74,18 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+{{- if .AuthEnabled}}
+
+        <!-- OAuth2 Resource Server: provides the Jwt type referenced by
+             JwtClaimsExtractor and DefaultJwtClaimsExtractor in the
+             shared.auth package. The actual filter chain lives in the
+             API and AIAgent modules; Shared only needs the
+             token-decoding types on its compile classpath. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+{{- end}}
 
         <!-- Test Dependencies -->
         <dependency>

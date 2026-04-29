@@ -1,0 +1,50 @@
+package {{.GroupID}}.shared.auth;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+
+import java.util.Optional;
+
+/**
+ * Per-request carrier of {@link IdentityClaims}. Populated by the API
+ * module's filter chain after JWT validation; read by services in
+ * Shared, Worker, EventConsumer, and AIAgent so any module can answer
+ * "who triggered this?" without re-parsing the token.
+ *
+ * <p>Always clear the context in a {@code finally} block to avoid leaks
+ * across virtual-thread carrier reuse — see the API module's
+ * filter chain for the canonical pattern.
+ *
+ * <p>Implementation note: uses {@link ThreadLocal} for compatibility
+ * with the Java 21 baseline. When the project's runtime is Java 25+,
+ * this can be replaced with {@code java.lang.ScopedValue} for
+ * inherited propagation across structured concurrency without a
+ * preview-flag opt-in. See {@code JAVA_CODE_QUALITY.md} §concurrency.
+ */
+public final class RequestContextHolder {
+
+    private static final ThreadLocal<IdentityClaims> CONTEXT = new ThreadLocal<>();
+
+    private RequestContextHolder() {}
+
+    public static void set(IdentityClaims claims) {
+        CONTEXT.set(claims);
+    }
+
+    /**
+     * Returns the current request's claims, or
+     * {@link IdentityClaims#anonymous()} if no claims have been set.
+     */
+    public static IdentityClaims get() {
+        IdentityClaims claims = CONTEXT.get();
+        return claims != null ? claims : IdentityClaims.anonymous();
+    }
+
+    /** Returns the current claims if explicitly set; empty otherwise. */
+    public static Optional<IdentityClaims> getOptional() {
+        return Optional.ofNullable(CONTEXT.get());
+    }
+
+    public static void clear() {
+        CONTEXT.remove();
+    }
+}
