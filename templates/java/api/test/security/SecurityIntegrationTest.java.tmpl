@@ -28,13 +28,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>The {@link MockBean} {@link JwtDecoder} satisfies the resource-server
  * starter's bean requirement without making real network calls. The 200-with-token
- * and 403-wrong-scope paths are verified in later phases when secured endpoints
- * land (AIAgent integration in Phase D, scope-protected business endpoints in
- * Phase E or in user code).
+ * and 403-wrong-scope paths are verified by {@code AuthEndToEndTest} which boots
+ * a real Tomcat and uses RS256-signed test tokens.
+ *
+ * <p>Sets {@code trabuco.auth.enabled=true} explicitly: the auth scaffolding is
+ * generated dormant by default (permit-all chain active) and only the JWT chain
+ * exercises the 401 path under test here.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
+    "trabuco.auth.enabled=true",
     "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://test.example.com/jwks"
 })
 class SecurityIntegrationTest {

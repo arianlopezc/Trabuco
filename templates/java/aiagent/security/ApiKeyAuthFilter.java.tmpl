@@ -20,20 +20,20 @@ import java.util.Map;
 /**
  * Tier-based API-key authentication filter (legacy path).
  *
- * <p>When the AIAgent uses JWT validation (via {@code AgentSecurityConfig}
- * generated under {@code config/security/} when {@code --auth=oidc} is
- * set), this filter can be disabled by setting
- * {@code app.aiagent.api-key.enabled=false} in {@code application.yml}.
- * The default ({@code matchIfMissing=true}) keeps the filter active for
- * backward compatibility — existing endpoints annotated with
- * {@code @RequireScope("public")} continue to work via the
- * {@code ScopeInterceptor} → {@code ScopeEnforcer} → {@code CallerContext}
- * pipeline.
+ * <p>This filter is governed by its own
+ * {@code app.aiagent.api-key.enabled} property (default {@code true})
+ * and is independent of the JWT validation chain in
+ * {@code AgentSecurityConfig} (gated by {@code trabuco.auth.enabled}).
+ * The default keeps the filter active for backward compatibility —
+ * existing endpoints annotated with {@code @RequireScope("public")}
+ * continue to work via the {@code ScopeInterceptor} →
+ * {@code ScopeEnforcer} → {@code CallerContext} pipeline.
  *
- * <p>The two paths coexist: requests with JWT bearer tokens are validated
- * by the OIDC resource server; requests with API-key bearer tokens (the
- * legacy mechanism) flow through this filter. To migrate fully to
- * JWT-only, set the property to {@code false} and replace
+ * <p>The two paths coexist: requests with JWT bearer tokens are
+ * validated by the OIDC resource server (only when
+ * {@code trabuco.auth.enabled=true}); requests with API-key bearer
+ * tokens flow through this filter. To migrate fully to JWT-only, set
+ * {@code app.aiagent.api-key.enabled=false} and replace
  * {@code @RequireScope} annotations with
  * {@code @PreAuthorize("hasAuthority('SCOPE_*')")}.
  */

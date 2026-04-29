@@ -45,7 +45,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * of integrating with a real IdP — covers signature, expiry, scope,
  * and ProblemDetail emission over the wire.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    // Auth scaffolding is generated dormant by default; the e2e suite
+    // explicitly enables the JWT chain so the 401/403 paths can be
+    // exercised end-to-end.
+    properties = "trabuco.auth.enabled=true"
+)
 @Import({AuthEndToEndTest.RealJwtConfig.class, AuthEndToEndTest.SecuredTestEndpoints.class})
 class AuthEndToEndTest {
 

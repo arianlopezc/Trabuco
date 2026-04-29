@@ -30,8 +30,17 @@ spring:
       enabled: true
 {{- if .AuthEnabled}}
   # OAuth2 Resource Server — JWT validation against an external OIDC issuer.
-  # Set OIDC_ISSUER_URI to your IdP's discovery endpoint. The decoder
-  # auto-fetches JWKS, handles key rotation, and validates iss / exp / aud.
+  # Dormant by default: the SecurityConfig.permitAllFilterChain bean is
+  # active until trabuco.auth.enabled (below) is flipped to true. When
+  # OIDC_ISSUER_URI is unset, Spring's IssuerUriCondition skips JwtDecoder
+  # creation entirely (StringUtils.hasText), so an empty default is safe.
+  #
+  # To enable auth:
+  #   1. Set trabuco.auth.enabled=true
+  #   2. Set OIDC_ISSUER_URI to your IdP's discovery endpoint
+  #
+  # The decoder auto-fetches JWKS, handles key rotation, and validates
+  # iss / exp / aud.
   #
   # Provider examples (set OIDC_ISSUER_URI to one of these):
   #   Keycloak:    http://localhost:8180/realms/myrealm
@@ -180,6 +189,20 @@ resilience4j:
         failureRateThreshold: 50
         waitDurationInOpenState: 30s
         permittedNumberOfCallsInHalfOpenState: 3
+{{- end}}
+
+{{- if .AuthEnabled}}
+
+# Trabuco runtime feature flags
+# Auth scaffolding ships dormant — flip enabled to true (and set
+# OIDC_ISSUER_URI above) to activate JWT validation against the
+# configured OIDC issuer. When false, SecurityConfig.permitAllFilterChain
+# is the active SecurityFilterChain and no auth is enforced. The
+# generated source for both chains is identical regardless of this
+# value; it gates the runtime wiring only.
+trabuco:
+  auth:
+    enabled: ${TRABUCO_AUTH_ENABLED:false}
 {{- end}}
 
 # CORS configuration

@@ -1,0 +1,60 @@
+package {{.GroupID}}.api.config.security;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * Regression backstop for the "auth scaffolding is generated dormant"
+ * design. Verifies that when {@code trabuco.auth.enabled} is unset
+ * (the default), the {@code permitAllFilterChain} bean is the active
+ * {@code SecurityFilterChain} and every request flows through without
+ * authentication enforcement.
+ *
+ * <p>This complements {@link SecurityIntegrationTest} (auth on, MockMvc)
+ * and {@link AuthEndToEndTest} (auth on, real HTTP with signed JWTs)
+ * by covering the third quadrant — auth off — that those tests don't
+ * touch.
+ *
+ * <p>If a future change accidentally wires the JWT chain by default
+ * (e.g., flipping {@code matchIfMissing} on the wrong bean, removing
+ * the permit-all chain, or letting Spring Security's default HTTP
+ * Basic auto-config win), every test here would start returning 401
+ * instead of the expected 200/404 — failing loudly.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+class AuthDormantTest {
+
+    @Autowired
+    private MockMvc mvc;
+
+    @Test
+    void healthEndpointReturnsOkWithoutToken() throws Exception {
+        mvc.perform(get("/actuator/health"))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void apiEndpointDoesNotReturn401WithoutToken() throws Exception {
+        // The dormant default permits every request. The placeholder
+        // controller may return 200 or 404 depending on whether the
+        // path is bound; what matters is it does NOT return 401 (which
+        // would indicate the JWT chain accidentally activated).
+        mvc.perform(get("/api/placeholders"))
+            .andExpect(result -> {
+                int status = result.getResponse().getStatus();
+                if (status == 401 || status == 403) {
+                    throw new AssertionError(
+                        "Expected dormant auth (no 401/403), got " + status +
+                        ". The permit-all chain may have been replaced by a JWT chain — " +
+                        "check @ConditionalOnProperty wiring on SecurityConfig beans.");
+                }
+            });
+    }
+}

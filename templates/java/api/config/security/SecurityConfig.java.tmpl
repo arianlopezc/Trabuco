@@ -1,5 +1,6 @@
 package {{.GroupID}}.api.config.security;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -9,22 +10,39 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Resource server configuration: stateless JWT validation against an
- * external OIDC issuer. The IdP is selected by
- * {@code spring.security.oauth2.resourceserver.jwt.issuer-uri} in
- * {@code application.yml}; no code changes per provider for RFC-conformant
- * IdPs (Keycloak, Okta, generic OIDC). Auth0 and Cognito require a custom
- * {@code JwtClaimsExtractor} bean (in Shared) to handle non-standard
- * claim layouts.
+ * Resource-server configuration for the REST API.
  *
- * <p>Method-level authorization is enabled via
- * {@link EnableMethodSecurity}; controllers use
- * {@code @PreAuthorize("hasAuthority(AuthorityScope.AUTHORITY_*)")}.
+ * <p>Provides two mutually-exclusive {@link SecurityFilterChain} beans
+ * gated by the {@code trabuco.auth.enabled} property:
  *
- * <p>SECURITY: this configuration requires the resource-server starter to
- * have a valid issuer or JWK set on startup. Set {@code OIDC_ISSUER_URI}
- * (or the equivalent provider-specific env var documented in
- * {@code docs/auth.md}) before running the application.
+ * <ul>
+ *   <li><b>{@link #oauth2FilterChain} — active when
+ *       {@code trabuco.auth.enabled=true}</b>. Stateless JWT validation
+ *       against the OIDC issuer specified by
+ *       {@code spring.security.oauth2.resourceserver.jwt.issuer-uri}
+ *       (typically backed by the {@code OIDC_ISSUER_URI} env var).
+ *       RFC-conformant IdPs (Keycloak, Okta, generic OIDC) work with no
+ *       code changes; Auth0 and Cognito need a custom
+ *       {@link {{.GroupID}}.shared.auth.JwtClaimsExtractor} bean to handle
+ *       non-standard claim layouts. Method-level authorization is
+ *       enabled via {@link EnableMethodSecurity}; controllers use
+ *       {@code @PreAuthorize("hasAuthority('SCOPE_*')")}.</li>
+ *   <li><b>{@link #permitAllFilterChain} — the default</b>. Active when
+ *       {@code trabuco.auth.enabled} is missing or {@code false}.
+ *       Open chain — every request is permitted, no authentication
+ *       enforced. The auth scaffolding ships with the project so it's
+ *       discoverable in source, but stays dormant until you flip the
+ *       property and configure an issuer URI.</li>
+ * </ul>
+ *
+ * <p>To enable: set {@code trabuco.auth.enabled=true} <b>and</b>
+ * configure the issuer URI. See {@code docs/auth.md} for per-provider
+ * recipes.
+ *
+ * <p>SECURITY: a permit-all chain is required because Spring Security
+ * on the classpath would otherwise auto-configure HTTP Basic on every
+ * endpoint — surprising default behavior that this config replaces with
+ * an explicit "open" stance until auth is opted into.
  */
 @Configuration
 @EnableMethodSecurity
@@ -39,8 +57,14 @@ public class SecurityConfig {
         this.authProblemHandler = authProblemHandler;
     }
 
+    /**
+     * Active when {@code trabuco.auth.enabled=true}. Validates JWTs
+     * against the configured OIDC issuer and emits RFC 7807
+     * {@code application/problem+json} for 401/403.
+     */
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "true")
+    public SecurityFilterChain oauth2FilterChain(HttpSecurity http) throws Exception {
         return http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> {})
@@ -60,6 +84,21 @@ public class SecurityConfig {
                     "/error"
                 ).permitAll()
                 .anyRequest().authenticated())
+            .build();
+    }
+
+    /**
+     * Default chain — permits all requests. Active when
+     * {@code trabuco.auth.enabled} is unset or {@code false}.
+     */
+    @Bean
+    @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "false", matchIfMissing = true)
+    public SecurityFilterChain permitAllFilterChain(HttpSecurity http) throws Exception {
+        return http
+            .csrf(AbstractHttpConfigurer::disable)
+            .cors(cors -> {})
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
             .build();
     }
 }

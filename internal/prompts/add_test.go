@@ -205,9 +205,15 @@ func TestGetModuleDependencies(t *testing.T) {
 			expectedDeps:    []string{},
 		},
 		{
-			name:            "API has no additional deps",
+			name:            "API auto-adds Shared (auth scaffolding deps)",
 			module:          "API",
 			existingModules: []string{"Model"},
+			expectedDeps:    []string{"Shared"},
+		},
+		{
+			name:            "API with Shared already present has no extra deps",
+			module:          "API",
+			existingModules: []string{"Model", "Shared"},
 			expectedDeps:    []string{},
 		},
 	}

@@ -27,9 +27,13 @@ func TestResolveDependencies(t *testing.T) {
 			expected: []string{"Model", "Shared"},
 		},
 		{
-			name:     "API only adds Model (NOT Shared or SQLDatastore)",
+			// API auto-includes Shared because the always-generated auth
+			// scaffolding imports Shared utilities (RequestContextHolder,
+			// JwtClaimsExtractor, AuthContextPropagator). Datastore stays
+			// optional.
+			name:     "API auto-includes Shared (auth scaffolding lives there)",
 			selected: []string{"API"},
-			expected: []string{"Model", "API"},
+			expected: []string{"Model", "Shared", "API"},
 		},
 		{
 			name:     "Shared + SQLDatastore",
@@ -47,9 +51,11 @@ func TestResolveDependencies(t *testing.T) {
 			expected: []string{"Model"},
 		},
 		{
-			name:     "API + SQLDatastore (no Shared)",
+			// API + SQLDatastore: Shared is still auto-added because API
+			// depends on it for the dormant auth scaffolding.
+			name:     "API + SQLDatastore auto-adds Shared",
 			selected: []string{"API", "SQLDatastore"},
-			expected: []string{"Model", "SQLDatastore", "API"},
+			expected: []string{"Model", "SQLDatastore", "Shared", "API"},
 		},
 		{
 			name:     "Worker adds Jobs dependency",
@@ -100,13 +106,14 @@ func TestGetModule(t *testing.T) {
 		t.Errorf("Shared should only depend on Model, got: %v", shared.Dependencies)
 	}
 
-	// Test API module - should only depend on Model
+	// Test API module — depends on Model AND Shared (Shared holds the
+	// runtime utilities used by the always-generated auth scaffolding).
 	api := GetModule("API")
 	if api == nil {
 		t.Fatal("GetModule('API') returned nil")
 	}
-	if len(api.Dependencies) != 1 || api.Dependencies[0] != "Model" {
-		t.Errorf("API should only depend on Model, got: %v", api.Dependencies)
+	if len(api.Dependencies) != 2 || api.Dependencies[0] != "Model" || api.Dependencies[1] != "Shared" {
+		t.Errorf("API should depend on Model and Shared, got: %v", api.Dependencies)
 	}
 
 	// Test non-existing module

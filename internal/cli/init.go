@@ -37,7 +37,6 @@ var (
 	flagAIAgents      string
 	flagCI            string
 	flagReview        string // "full" (default), "minimal", or "off"
-	flagAuth          string // "none" (default) or "oidc"
 	flagIncludeClaude bool   // Deprecated: use flagAIAgents instead
 	flagStrict        bool
 	flagSkipBuild     bool
@@ -73,7 +72,6 @@ func init() {
 	initCmd.Flags().StringVar(&flagAIAgents, "ai-agents", "", "Comma-separated AI agents: claude,cursor,copilot,codex (non-interactive)")
 	initCmd.Flags().StringVar(&flagCI, "ci", "", "CI provider to generate (github)")
 	initCmd.Flags().StringVar(&flagReview, "review", "full", "Review automation: full (subagents + hooks + skills), minimal (no Stop hook guard), off (no review artifacts). Only applies when Claude is among --ai-agents.")
-	initCmd.Flags().StringVar(&flagAuth, "auth", "none", "Authentication mechanism: none (default) or oidc (Spring Security 6 OAuth2 Resource Server + JWT, provider-agnostic via issuer-uri). When 'oidc' is set, the Shared module is auto-included.")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", false, "Deprecated: use --ai-agents=claude instead")
 	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
 	initCmd.Flags().BoolVar(&flagSkipBuild, "skip-build", false, "Skip running 'mvn clean install' after generation")
@@ -215,17 +213,6 @@ func runInit(cmd *cobra.Command, args []string) {
 			return
 		}
 
-		// Validate auth mechanism
-		validAuth := map[string]bool{
-			config.AuthNone: true,
-			config.AuthOIDC: true,
-			"":              true, // default to none
-		}
-		if !validAuth[flagAuth] {
-			color.Red("\nError: Invalid --auth value '%s'. Valid options: none, oidc\n", flagAuth)
-			return
-		}
-
 		// Handle deprecated --include-claude flag
 		if flagIncludeClaude {
 			hasClaudeInList := false
@@ -252,24 +239,10 @@ func runInit(cmd *cobra.Command, args []string) {
 			return
 		}
 
-		// Resolve dependencies (auto-include Jobs when Worker is selected, etc.)
+		// Resolve dependencies (auto-include Jobs when Worker is selected,
+		// Shared when API or AIAgent is selected so the always-generated
+		// auth scaffolding compiles, etc.).
 		resolvedModules := config.ResolveDependencies(modules)
-
-		// Auth=oidc requires Shared (RequestContextHolder, JwtClaimsExtractor live there).
-		// Auto-include Shared with a visible note rather than erroring out.
-		if flagAuth == config.AuthOIDC {
-			hasShared := false
-			for _, m := range resolvedModules {
-				if m == config.ModuleShared {
-					hasShared = true
-					break
-				}
-			}
-			if !hasShared {
-				resolvedModules = append(resolvedModules, config.ModuleShared)
-				yellow.Fprintf(os.Stderr, "\nNote: --auth=oidc requires Shared (auth utilities live there). Adding Shared to module list.\n\n")
-			}
-		}
 
 		cfg = &config.ProjectConfig{
 			ProjectName:         flagProjectName,
@@ -283,7 +256,6 @@ func runInit(cmd *cobra.Command, args []string) {
 			MessageBroker:       flagMessageBroker,
 			AIAgents:            aiAgents,
 			CIProvider:          flagCI,
-			Auth:                flagAuth,
 			Review: config.ReviewConfig{
 				Mode:        flagReview,
 				GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -357,9 +329,6 @@ func runInit(cmd *cobra.Command, args []string) {
 				fmt.Printf("  CI:         %s\n", p.Name)
 			}
 		}
-	}
-	if cfg.AuthEnabled() {
-		fmt.Printf("  Auth:       %s\n", cfg.Auth)
 	}
 	yellow.Println("─────────────────────────────────────────")
 	fmt.Println()

@@ -85,13 +85,15 @@ func (g *Generator) generateModelModule() error {
 		}
 	}
 
-	// Auth model files (only if --auth=oidc is enabled).
-	// IdentityClaims and AuthorityScope are universal data — read by API
-	// filters, Worker handlers, EventConsumer listeners, and AIAgent
-	// tools — so they live in Model alongside the rest of the project's
-	// schemas. AuthenticatedRequest is a generic wrapper used at async
-	// boundaries (job parameters, broker bodies) when callers want to
-	// carry identity inline rather than via headers.
+	// Auth model files (emitted whenever a consuming module — API or
+	// AIAgent — is selected; the runtime gate is the
+	// {@code trabuco.auth.enabled} property in the generated app's yaml,
+	// not a generator-time switch). IdentityClaims and AuthorityScope are
+	// universal data — read by API filters, Worker handlers, EventConsumer
+	// listeners, and AIAgent tools — so they live in Model alongside the
+	// rest of the project's schemas. AuthenticatedRequest is a generic
+	// wrapper used at async boundaries (job parameters, broker bodies) when
+	// callers want to carry identity inline rather than via headers.
 	if g.config.AuthEnabled() {
 		modelAuthFiles := []struct {
 			tmpl string
@@ -309,7 +311,9 @@ func (g *Generator) generateSharedModule() error {
 		return fmt.Errorf("failed to generate ArchitectureTest.java: %w", err)
 	}
 
-	// Auth utilities (only if --auth=oidc is enabled).
+	// Auth utilities (emitted whenever a consuming module — API or
+	// AIAgent — is selected; the runtime gate is
+	// {@code trabuco.auth.enabled} in the generated app's yaml).
 	// Logic — RequestContextHolder, JwtClaimsExtractor (interface +
 	// default impl), AuthContextPropagator (interface + default impl),
 	// AuthScope (try-with-resources helper) — lives in Shared. The
@@ -450,12 +454,13 @@ func (g *Generator) generateAPIModule() error {
 		return fmt.Errorf("failed to generate OpenAPIConfig.java: %w", err)
 	}
 
-	// Auth filter chain (only if --auth=oidc is enabled).
-	// The HTTP-specific concerns — Spring Security filter chain, JWT
-	// to Authentication conversion, ProblemDetail-formatted 401/403,
-	// OpenAPI bearer scheme — live in API. Cross-module identity
-	// utilities live in Shared (Phase A) and the underlying data types
-	// live in Model (Phase A).
+	// API auth filter chain (emitted whenever API is selected — auth
+	// scaffolding ships with the REST tier and stays dormant until
+	// {@code trabuco.auth.enabled=true} flips it on). The HTTP-specific
+	// concerns — Spring Security dual filter chains, JWT to Authentication
+	// conversion, ProblemDetail-formatted 401/403, OpenAPI bearer scheme —
+	// live in API. Cross-module identity utilities live in Shared and the
+	// underlying data types live in Model.
 	if g.config.AuthEnabled() {
 		apiAuthFiles := []struct {
 			tmpl string
@@ -489,6 +494,10 @@ func (g *Generator) generateAPIModule() error {
 		}{
 			{"java/api/test/security/SignedJwtTestSupport.java.tmpl", "SignedJwtTestSupport.java"},
 			{"java/api/test/security/AuthEndToEndTest.java.tmpl", "AuthEndToEndTest.java"},
+			// Regression backstop for the dormant default — verifies
+			// that when trabuco.auth.enabled is unset the permit-all
+			// chain is the active SecurityFilterChain (no 401 leakage).
+			{"java/api/test/security/AuthDormantTest.java.tmpl", "AuthDormantTest.java"},
 		}
 		for _, f := range apiE2EFiles {
 			if err := g.writeTemplate(f.tmpl, g.testJavaPath("API", filepath.Join("config", "security", f.out))); err != nil {
@@ -777,11 +786,12 @@ func (g *Generator) generateEventConsumerModule() error {
 }
 
 // generateAIAgentModuleAuthFiles emits the OIDC-based security scaffolding
-// for AIAgent: AgentSecurityConfig (filter chain), JwtAuthenticationConverter
+// for AIAgent: AgentSecurityConfig (dual filter chains gated on
+// {@code trabuco.auth.enabled}), JwtAuthenticationConverter
 // (Jwt → Authentication + RequestContextHolder population), and
 // AuthProblemDetailHandler (RFC 7807 401/403 emission). Coexists with the
-// legacy ApiKeyAuthFilter, which becomes @ConditionalOnProperty when
-// AuthEnabled — see ApiKeyAuthFilter.java.tmpl.
+// legacy ApiKeyAuthFilter, which is governed by its own
+// {@code app.aiagent.api-key.enabled} property and stays on by default.
 func (g *Generator) generateAIAgentModuleAuthFiles() error {
 	files := []struct {
 		tmpl string
@@ -850,10 +860,12 @@ func (g *Generator) generateAIAgentModule() error {
 		}
 	}
 
-	// OIDC-based security scaffolding (only when --auth=oidc).
+	// OIDC-based security scaffolding (emitted whenever AIAgent is
+	// selected; runtime-activated via {@code trabuco.auth.enabled}).
 	// AgentSecurityConfig + JwtAuthenticationConverter +
-	// AuthProblemDetailHandler — coexists with the legacy ApiKeyAuthFilter
-	// above, which becomes @ConditionalOnProperty when AuthEnabled.
+	// AuthProblemDetailHandler — coexists with the legacy
+	// ApiKeyAuthFilter above (governed by its own
+	// {@code app.aiagent.api-key.enabled} property).
 	if g.config.AuthEnabled() {
 		if err := g.generateAIAgentModuleAuthFiles(); err != nil {
 			return err
