@@ -415,6 +415,37 @@ func (g *Generator) generateAPIModule() error {
 		return fmt.Errorf("failed to generate OpenAPIConfig.java: %w", err)
 	}
 
+	// Auth filter chain (only if --auth=oidc is enabled).
+	// The HTTP-specific concerns — Spring Security filter chain, JWT
+	// to Authentication conversion, ProblemDetail-formatted 401/403,
+	// OpenAPI bearer scheme — live in API. Cross-module identity
+	// utilities live in Shared (Phase A) and the underlying data types
+	// live in Model (Phase A).
+	if g.config.AuthEnabled() {
+		apiAuthFiles := []struct {
+			tmpl string
+			out  string
+		}{
+			{"java/api/config/security/SecurityConfig.java.tmpl", "SecurityConfig.java"},
+			{"java/api/config/security/JwtAuthenticationConverter.java.tmpl", "JwtAuthenticationConverter.java"},
+			{"java/api/config/security/AuthProblemDetailHandler.java.tmpl", "AuthProblemDetailHandler.java"},
+			{"java/api/config/security/OpenApiSecurityConfig.java.tmpl", "OpenApiSecurityConfig.java"},
+		}
+		for _, f := range apiAuthFiles {
+			out := filepath.Join("config", "security", f.out)
+			if err := g.writeTemplate(f.tmpl, g.javaPath("API", out)); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", f.out, err)
+			}
+		}
+		// Integration test for the resource-server filter chain.
+		if err := g.writeTemplate(
+			"java/api/test/security/SecurityIntegrationTest.java.tmpl",
+			g.testJavaPath("API", filepath.Join("config", "security", "SecurityIntegrationTest.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate SecurityIntegrationTest.java: %w", err)
+		}
+	}
+
 	// application.yml
 	if err := g.writeTemplate(
 		"java/api/resources/application.yml.tmpl",
