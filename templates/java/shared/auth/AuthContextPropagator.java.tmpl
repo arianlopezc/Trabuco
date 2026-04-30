@@ -1,0 +1,32 @@
+package {{.GroupID}}.shared.auth;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * Serialize and deserialize {@link IdentityClaims} into opaque
+ * carriers — JobRunr job parameters, message-broker headers — so
+ * authenticated identity flows from the API request that triggered
+ * work all the way through Worker handlers and EventConsumer
+ * listeners.
+ *
+ * <p>This is the contract; broker-specific implementations (Kafka,
+ * RabbitMQ, SQS, Pub/Sub) live in the EventConsumer module and read
+ * the broker's native header types. The Worker module uses JobRunr's
+ * job-parameter carrier directly without needing a propagator.
+ *
+ * <p>Important: implementations MUST NOT revalidate JWTs at the
+ * downstream end. Identity has already been authenticated at the API
+ * boundary; the message broker is a trusted internal channel and
+ * re-validation would add latency without security gain.
+ */
+public interface AuthContextPropagator {
+
+    /** Render claims as broker-friendly string headers. */
+    Map<String, String> toHeaders(IdentityClaims claims);
+
+    /** Reconstruct claims from carrier headers. Empty if absent or malformed. */
+    Optional<IdentityClaims> fromHeaders(Map<String, String> headers);
+}

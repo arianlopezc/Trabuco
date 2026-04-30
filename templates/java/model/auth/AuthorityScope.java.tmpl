@@ -1,0 +1,30 @@
+package {{.GroupID}}.model.auth;
+
+/**
+ * Centralized scope constants for authentication and authorization.
+ *
+ * <p>{@code SCOPE_*} are the raw claim values issued by the IdP;
+ * {@code AUTHORITY_*} are the same values prefixed with {@code SCOPE_},
+ * which is the form Spring Security's
+ * {@code oauth2ResourceServer().jwt()} converter produces by default and
+ * is therefore what {@code @PreAuthorize("hasAuthority(...)")} expressions
+ * compare against.
+ *
+ * <p>Use these constants in filter chain config, controller annotations,
+ * and {@code @RequireScope} declarations rather than raw strings — that
+ * way scope renames are caught at compile time.
+ */
+public final class AuthorityScope {
+
+    public static final String SCOPE_AGENT_READ  = "agent:read";
+    public static final String SCOPE_AGENT_WRITE = "agent:write";
+    public static final String SCOPE_PARTNER     = "partner";
+    public static final String SCOPE_ADMIN       = "admin";
+
+    public static final String AUTHORITY_AGENT_READ  = "SCOPE_" + SCOPE_AGENT_READ;
+    public static final String AUTHORITY_AGENT_WRITE = "SCOPE_" + SCOPE_AGENT_WRITE;
+    public static final String AUTHORITY_PARTNER     = "SCOPE_" + SCOPE_PARTNER;
+    public static final String AUTHORITY_ADMIN       = "SCOPE_" + SCOPE_ADMIN;
+
+    private AuthorityScope() {}
+}

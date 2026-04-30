@@ -1,0 +1,19 @@
+package {{.GroupID}}.shared.auth;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+import org.springframework.security.oauth2.jwt.Jwt;
+
+/**
+ * Provider-specific extraction of {@link IdentityClaims} from a
+ * validated JWT.
+ *
+ * <p>The default implementation handles RFC-conformant providers
+ * (Keycloak, Okta, generic OIDC). Auth0 and Cognito callers should
+ * register a custom {@link JwtClaimsExtractor} bean to handle their
+ * non-standard claim layouts (Auth0's namespaced claims, Cognito's
+ * {@code cognito:groups}).
+ */
+public interface JwtClaimsExtractor {
+
+    IdentityClaims extract(Jwt jwt);
+}

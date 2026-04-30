@@ -34,9 +34,25 @@ type ProjectConfig struct {
 	// Review: on-turn code review automation (subagents + hooks + skills)
 	Review ReviewConfig
 
+	// Auth: authentication scaffolding for the generated project.
+	//   - "none" (default) — no auth scaffolding generated.
+	//   - "oidc"           — Spring Security 6 OAuth2 Resource Server with
+	//                        JWT validation against an external OIDC issuer
+	//                        (Keycloak / Auth0 / Okta / Cognito / generic).
+	// When set to "oidc", Shared is auto-included since RequestContextHolder
+	// and the JwtClaimsExtractor live there and API/Worker/EventConsumer/AIAgent
+	// import them.
+	Auth string
+
 	// Deprecated: Use AIAgents instead
 	IncludeCLAUDEMD bool // Legacy field for backwards compatibility
 }
+
+// Auth mechanism constants
+const (
+	AuthNone = "none"
+	AuthOIDC = "oidc"
+)
 
 // ReviewMode selects how much review scaffolding to emit.
 const (
@@ -379,4 +395,18 @@ func (c *ProjectConfig) ReviewEnabled() bool {
 // Stop hook guard that ensures the code-reviewer subagent is invoked.
 func (c *ProjectConfig) ReviewEmitsStopHook() bool {
 	return c.Review.Mode == ReviewModeFull
+}
+
+// AuthEnabled returns true when an auth mechanism is selected (anything
+// other than "none"/""). Templates and generators gate auth-specific
+// emission on this helper to keep the matching consistent.
+func (c *ProjectConfig) AuthEnabled() bool {
+	return c.Auth != "" && c.Auth != AuthNone
+}
+
+// AuthIsOIDC returns true when the OIDC Resource Server flavor is chosen.
+// Kept as a separate helper to make future auth mechanisms (e.g., mTLS-only
+// internal services) additive without breaking existing template gates.
+func (c *ProjectConfig) AuthIsOIDC() bool {
+	return c.Auth == AuthOIDC
 }

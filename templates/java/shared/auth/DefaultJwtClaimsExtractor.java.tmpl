@@ -1,0 +1,66 @@
+package {{.GroupID}}.shared.auth;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+import {{.GroupID}}.model.auth.ImmutableIdentityClaims;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Component;
+
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Default extractor for RFC-conformant OIDC providers.
+ *
+ * <p>Reads the standard {@code scope} claim (space-delimited string per
+ * RFC 8693) or the alternative {@code scp} claim (array form used by
+ * some providers). For non-standard providers, register a custom
+ * {@link JwtClaimsExtractor} bean and this default will be replaced.
+ *
+ * <p>Annotated {@code @Component} so it's auto-discovered when Shared
+ * is on the classpath of any Spring Boot module — API, AIAgent, etc.
+ */
+@Component
+public class DefaultJwtClaimsExtractor implements JwtClaimsExtractor {
+
+    @Override
+    public IdentityClaims extract(Jwt jwt) {
+        return ImmutableIdentityClaims.builder()
+            .subject(jwt.getSubject())
+            .email(Optional.ofNullable(jwt.getClaimAsString("email")))
+            .tenantId(Optional.ofNullable(jwt.getClaimAsString("tenant_id")))
+            .scopes(scopes(jwt))
+            .rawClaims(jwt.getClaims())
+            .build();
+    }
+
+    private Set<String> scopes(Jwt jwt) {
+        Object raw = jwt.getClaim("scope");
+        if (raw == null) {
+            raw = jwt.getClaim("scp");
+        }
+        if (raw == null) {
+            return Set.of();
+        }
+
+        if (raw instanceof String s) {
+            String trimmed = s.trim();
+            if (trimmed.isEmpty()) {
+                return Set.of();
+            }
+            return new LinkedHashSet<>(Arrays.asList(trimmed.split("\\s+")));
+        }
+        if (raw instanceof Collection<?> c) {
+            LinkedHashSet<String> out = new LinkedHashSet<>(c.size());
+            for (Object o : c) {
+                if (o != null) {
+                    out.add(o.toString());
+                }
+            }
+            return out;
+        }
+        return Set.of();
+    }
+}
