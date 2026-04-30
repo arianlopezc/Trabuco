@@ -146,6 +146,22 @@
             <groupId>com.fasterxml.jackson.module</groupId>
             <artifactId>jackson-module-parameter-names</artifactId>
         </dependency>
+{{- if .AuthEnabled}}
+
+        <!-- Spring Security: enables the resource-server filter chain
+             configured in aiagent.config.security.AgentSecurityConfig.
+             The OIDC issuer is selected at runtime via
+             spring.security.oauth2.resourceserver.jwt.issuer-uri
+             (set via OIDC_ISSUER_URI env var) — provider-agnostic. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+{{- end}}
 
         <!-- Test Dependencies -->
         <dependency>
@@ -153,6 +169,15 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+{{- if .AuthEnabled}}
+        <!-- spring-security-test: post-processors and test utilities for
+             the JWT filter chain. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{- end}}
     </dependencies>
 
     <build>

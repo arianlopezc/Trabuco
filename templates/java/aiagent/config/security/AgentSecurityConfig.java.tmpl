@@ -1,0 +1,70 @@
+package {{.GroupID}}.aiagent.config.security;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+
+/**
+ * Resource-server configuration for the AIAgent Spring Boot
+ * application. The AIAgent runs as its own process, so it needs its
+ * own filter chain — Spring Security beans don't cross application
+ * contexts. Wires the same JWT validation, scope-based authority
+ * mapping, and ProblemDetail handler as the API module — single
+ * source of truth for token semantics across modules.
+ *
+ * <p>Coexists with the legacy {@code ApiKeyAuthFilter}: when the
+ * property {@code app.aiagent.api-key.enabled} is true (default),
+ * both filters run in sequence and either credential type is
+ * accepted. Set the property to {@code false} when only JWT auth is
+ * desired. This eases incremental migration of API-key consumers.
+ *
+ * <p>Method-level authorization is enabled via
+ * {@link EnableMethodSecurity}; controllers and tools use
+ * {@code @PreAuthorize("hasAuthority('SCOPE_agent:read')")} for the
+ * JWT path. Existing endpoints annotated with
+ * {@code @RequireScope("public")} continue to use the legacy
+ * tier-based check via {@code ScopeInterceptor} → {@code ScopeEnforcer}
+ * → {@code CallerContext}.
+ *
+ * <p>SECURITY: this configuration requires the resource-server
+ * starter to have a valid issuer or JWK set on startup. Set
+ * {@code OIDC_ISSUER_URI} (or the equivalent provider-specific env
+ * var documented in {@code docs/auth.md}) before running the
+ * application.
+ */
+@Configuration
+@EnableMethodSecurity
+public class AgentSecurityConfig {
+
+    private final JwtAuthenticationConverter jwtConverter;
+    private final AuthProblemDetailHandler authProblemHandler;
+
+    public AgentSecurityConfig(JwtAuthenticationConverter jwtConverter,
+                               AuthProblemDetailHandler authProblemHandler) {
+        this.jwtConverter = jwtConverter;
+        this.authProblemHandler = authProblemHandler;
+    }
+
+    @Bean
+    public SecurityFilterChain agentFilterChain(HttpSecurity http) throws Exception {
+        return http
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter))
+                .authenticationEntryPoint(authProblemHandler)
+                .accessDeniedHandler(authProblemHandler))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(
+                    "/actuator/health/**",
+                    "/actuator/info",
+                    "/.well-known/agent.json"
+                ).permitAll()
+                .anyRequest().authenticated())
+            .build();
+    }
+}
