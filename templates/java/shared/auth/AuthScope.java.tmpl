@@ -1,0 +1,63 @@
+package {{.GroupID}}.shared.auth;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+
+/**
+ * Try-with-resources helper for setting {@link RequestContextHolder}
+ * and guaranteeing it gets cleared, even on exception. Use at the start
+ * of any execution that has identity context available — JobRunr
+ * handlers, message-broker listeners, scheduled tasks, AIAgent tool
+ * invocations.
+ *
+ * <p>Example — JobRunr handler:
+ * <pre>{@code
+ * public void handle(AuthenticatedRequest<MyJobRequest> wrapped) {
+ *     try (var scope = AuthScope.set(wrapped.caller().orElse(IdentityClaims.anonymous()))) {
+ *         doWork(wrapped.payload());
+ *     }
+ * }
+ * }</pre>
+ *
+ * <p>Example — message-broker listener using
+ * {@link DefaultAuthContextPropagator}:
+ * <pre>{@code
+ * Map<String, String> headers = readBrokerHeaders(message);
+ * IdentityClaims claims = propagator.fromHeaders(headers).orElse(IdentityClaims.anonymous());
+ * try (var scope = AuthScope.set(claims)) {
+ *     processMessage(message);
+ * }
+ * }</pre>
+ *
+ * <p>Idiomatic Trabuco: never set and clear {@link RequestContextHolder}
+ * by hand in business code — use {@code AuthScope} so a thrown exception
+ * still triggers {@code clear()} and prevents identity leakage across
+ * virtual-thread carrier reuse.
+ */
+public final class AuthScope implements AutoCloseable {
+
+    private final IdentityClaims previous;
+
+    private AuthScope(IdentityClaims previous) {
+        this.previous = previous;
+    }
+
+    /**
+     * Sets {@code claims} as the current request context, returning a
+     * scope handle that restores the previous context (or clears it,
+     * if there was no previous context) on {@link #close()}.
+     */
+    public static AuthScope set(IdentityClaims claims) {
+        IdentityClaims prev = RequestContextHolder.getOptional().orElse(null);
+        RequestContextHolder.set(claims);
+        return new AuthScope(prev);
+    }
+
+    @Override
+    public void close() {
+        if (previous == null) {
+            RequestContextHolder.clear();
+        } else {
+            RequestContextHolder.set(previous);
+        }
+    }
+}
