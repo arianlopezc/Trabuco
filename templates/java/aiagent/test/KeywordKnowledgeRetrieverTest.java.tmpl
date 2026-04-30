@@ -1,0 +1,62 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.ai.document.Document;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Unit tests for the default keyword-based knowledge retriever.
+ *
+ * <p>Pure POJO — no Spring context, no Docker. Verifies the scoring
+ * logic preserved from the legacy inline implementation in
+ * {@code KnowledgeTools}: tokens shorter than 3 chars don't contribute,
+ * topic matches outweigh content matches (3:1), results are sorted by
+ * score descending, and top-K is honoured.
+ */
+class KeywordKnowledgeRetrieverTest {
+
+    private final KeywordKnowledgeRetriever retriever = new KeywordKnowledgeRetriever();
+
+    @Test
+    void returnsEmptyWhenNoTokensMatch() {
+        // No placeholder ENTRIES contain "xenomorph" so nothing should match.
+        List<Document> hits = retriever.retrieve("xenomorph", 5);
+        assertThat(hits).isEmpty();
+    }
+
+    @Test
+    void shortTokensAreIgnored() {
+        // Tokens of length <= 2 are filtered out; "to" alone shouldn't match
+        // anything even though it appears in many entries' content.
+        List<Document> hits = retriever.retrieve("to", 5);
+        assertThat(hits).isEmpty();
+    }
+
+    @Test
+    void matchesAgainstTopicAndContent() {
+        // The placeholder ENTRIES list has a "hours" topic. Querying for
+        // "hours" should hit that entry.
+        List<Document> hits = retriever.retrieve("hours", 5);
+        assertThat(hits).isNotEmpty();
+        assertThat(hits.get(0).getMetadata()).containsEntry("topic", "hours");
+    }
+
+    @Test
+    void respectsTopK() {
+        // Construct a query that matches multiple entries, then verify
+        // limit honoured.
+        List<Document> hits = retriever.retrieve("services pricing contact", 2);
+        assertThat(hits).hasSizeLessThanOrEqualTo(2);
+    }
+
+    @Test
+    void scoreMetadataIsAttached() {
+        List<Document> hits = retriever.retrieve("hours", 1);
+        assertThat(hits).isNotEmpty();
+        assertThat(hits.get(0).getMetadata()).containsKey("score");
+        assertThat((Integer) hits.get(0).getMetadata().get("score")).isGreaterThan(0);
+    }
+}

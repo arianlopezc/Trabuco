@@ -1,46 +1,52 @@
 package {{.GroupID}}.aiagent.knowledge;
 
+import org.springframework.ai.document.Document;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
-import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Knowledge-base lookup exposed to the agent as an explicit Spring AI
+ * {@code @Tool}. The agent can choose to invoke it when the user asks
+ * a knowledge question; the LLM sees the description and decides.
+ *
+ * <p>The retrieval is delegated to a {@link KnowledgeRetriever} bean —
+ * {@link KeywordKnowledgeRetriever} by default, replaced transparently
+ * by {@code VectorKnowledgeRetriever} once a Spring AI {@code VectorStore}
+ * is wired (Phase B). The tool surface stays the same regardless.
+ *
+ * <p>Note: when the vector path is active, Spring AI's
+ * {@code RetrievalAugmentationAdvisor} (added to the agent's
+ * {@code ChatClient} in Phase B) also injects retrieved context into
+ * every prompt automatically. The two paths are complementary —
+ * advisor-based retrieval supplies ambient context, the
+ * {@code @Tool} path lets the LLM ask explicit questions.
+ */
 @Component
 public class KnowledgeTools {
+
+    private static final int TOP_K = 3;
+
+    private final KnowledgeRetriever retriever;
+
+    public KnowledgeTools(KnowledgeRetriever retriever) {
+        this.retriever = retriever;
+    }
 
     @Tool(description = "Ask a natural language question about {{.ProjectNamePascal}} — services, policies, hours, pricing, and more")
     public String askQuestion(
             @ToolParam(description = "The question to answer") String query) {
-        String lower = query.toLowerCase();
-        String[] tokens = lower.split("\\s+");
+        List<Document> docs = retriever.retrieve(query, TOP_K);
 
-        var scored = KnowledgeBase.ENTRIES.stream()
-            .map(entry -> {
-                String content = entry.get("content").toLowerCase();
-                String topic = entry.get("topic").toLowerCase();
-                int score = 0;
-                for (String token : tokens) {
-                    if (token.length() <= 2) continue;
-                    if (content.contains(token)) score++;
-                    if (topic.contains(token)) score += 3;
-                }
-                return new ScoredEntry(score, entry.get("content"));
-            })
-            .filter(e -> e.score > 0)
-            .sorted(Comparator.comparingInt(ScoredEntry::score).reversed())
-            .limit(3)
-            .toList();
-
-        if (scored.isEmpty()) {
+        if (docs.isEmpty()) {
             return "I don't have information about that. Please contact support directly.";
         }
 
-        return scored.stream()
-            .map(ScoredEntry::content)
+        return docs.stream()
+            .map(Document::getText)
             .collect(Collectors.joining("\n\n"));
     }
-
-    private record ScoredEntry(int score, String content) {}
 }
