@@ -6,9 +6,19 @@
 -- application's `public` schema. See VectorFlywayConfig for the
 -- second-Flyway-bean wiring.
 
--- PGVector extension — installs the `vector` data type at database level.
--- IF NOT EXISTS so the migration is idempotent across rebuilds.
-CREATE EXTENSION IF NOT EXISTS vector;
+-- PGVector extension — installs the `vector` data type and the
+-- similarity-search operators (`<=>`, `<->`, `<#>`) at database level.
+--
+-- Forced into the `public` schema explicitly. Without `WITH SCHEMA public`,
+-- Flyway's defaultSchema=vector setting causes CREATE EXTENSION to land
+-- the operators in the `vector` schema — and Spring AI's PgVectorStore
+-- emits queries like `WHERE embedding <=> ?` without qualifying the
+-- operator, so it must be reachable on every connection's default
+-- search_path. Pinning to `public` keeps the operators globally
+-- accessible while leaving the documents *table* isolated in `vector`.
+--
+-- IF NOT EXISTS is idempotent across rebuilds; subsequent runs are no-ops.
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 -- The documents table holds chunks emitted by DocumentIngestionService
 -- (text + metadata + the embedding vector). Spring AI's PgVectorStore

@@ -1,8 +1,6 @@
 package {{.GroupID}}.aiagent.knowledge;
 
 import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
@@ -13,19 +11,21 @@ import java.util.Map;
  * Default {@link KnowledgeRetriever} — keyword-based scoring against the
  * static {@link KnowledgeBase#ENTRIES} list.
  *
- * <p>Active when no Spring AI {@code VectorStore} bean is wired. As soon
- * as a vector-store starter is on the classpath
- * ({@code spring-ai-starter-vector-store-pgvector|qdrant|mongodb-atlas})
- * and the corresponding {@code spring.ai.vectorstore.*} properties are
- * set, the {@code @ConditionalOnMissingBean(VectorStore.class)} on this
- * class steps it aside in favour of {@code VectorKnowledgeRetriever}.
+ * <p>Always-wired component. When a vector-store starter is also on
+ * the classpath, {@code KnowledgeBeansConfiguration} additionally
+ * registers a {@code VectorKnowledgeRetriever} bean marked
+ * {@code @Primary}, so autowiring of {@link KnowledgeRetriever} resolves
+ * to the vector path. The keyword instance still exists in the context
+ * — this is intentional. Two singletons cost effectively nothing, and
+ * leaving the keyword bean around lets components that need it
+ * specifically (e.g., diagnostics, fallback behaviour, tests) inject by
+ * concrete type.
  *
  * <p>Scoring matches the legacy implementation that previously lived in
  * {@code KnowledgeTools.askQuestion}: tokens longer than two characters
  * contribute +1 if found in {@code content}, +3 if found in {@code topic}.
  */
 @Component
-@ConditionalOnMissingBean(VectorStore.class)
 public class KeywordKnowledgeRetriever implements KnowledgeRetriever {
 
     @Override

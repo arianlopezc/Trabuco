@@ -3,8 +3,6 @@ package {{.GroupID}}.aiagent.knowledge;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
@@ -15,17 +13,20 @@ import java.util.Map;
  * up to a token budget) before embedding + storing — over-long inputs
  * are silently split into multiple stored chunks.
  *
- * <p>Conditional on a {@code VectorStore} bean — when the project ships
- * with {@code VectorStore=none} or no vector starter on classpath, this
- * service is not loaded.
+ * <p>Wired by {@code KnowledgeBeansConfiguration} as a regular
+ * {@code @Bean}. {@code KnowledgeBeansConfiguration} is itself emitted
+ * by Trabuco only when a vector store is selected — when the project
+ * ships with {@code VectorStore=none} this class file is not generated
+ * and the configuration class doesn't reference it.
  *
  * <p>Authorization is enforced at the controller layer
  * ({@code IngestionController.@RequireScope("partner")}). This service
  * trusts its caller; do not invoke it directly from unauthenticated
  * paths.
+ *
+ * <p>This class deliberately does NOT carry {@code @Service} — see the
+ * timing comment in {@code VectorKnowledgeRetriever}.
  */
-@Service
-@ConditionalOnBean(VectorStore.class)
 public class DocumentIngestionService {
 
     private final VectorStore vectorStore;
