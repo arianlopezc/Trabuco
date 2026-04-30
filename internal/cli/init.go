@@ -184,6 +184,14 @@ func runInit(cmd *cobra.Command, args []string) {
 			return
 		}
 
+		// Validate vector-store flag value (cross-flag rules are applied
+		// after the cfg is constructed via ResolveVectorStore — that's
+		// where pgvector → SQLDatastore auto-add etc. happens).
+		if vsErr := config.ValidateVectorStoreFlag(flagVectorStore); vsErr != "" {
+			color.Red("\nError: %s\n", vsErr)
+			return
+		}
+
 		// Parse and validate AI agents
 		var aiAgents []string
 		if flagAIAgents != "" {
@@ -299,6 +307,29 @@ func runInit(cmd *cobra.Command, args []string) {
 		cfg.Review.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
+	// Apply vector-store cross-flag rules (auto-add SQLDatastore for
+	// pgvector, coerce nosql-database for mongodb, surface conflicts
+	// like pgvector + mysql). Snapshot inputs first so we can tell the
+	// user when we changed something on their behalf.
+	preModules := strings.Join(cfg.Modules, ",")
+	preDatabase := cfg.Database
+	preNoSQLDatabase := cfg.NoSQLDatabase
+	if vsErr := cfg.ResolveVectorStore(); vsErr != "" {
+		color.Red("\nError: %s\n", vsErr)
+		return
+	}
+	if cfg.HasVectorStore() {
+		if strings.Join(cfg.Modules, ",") != preModules {
+			yellow.Fprintf(os.Stderr, "\nNotice: --vector-store=%s — auto-added required module(s); modules now: %s\n", cfg.VectorStore, strings.Join(cfg.Modules, ", "))
+		}
+		if cfg.Database != preDatabase && cfg.VectorStore == config.VectorStorePgVector {
+			yellow.Fprintf(os.Stderr, "\nNotice: --vector-store=pgvector — set --database=postgresql (was '%s')\n", preDatabase)
+		}
+		if cfg.NoSQLDatabase != preNoSQLDatabase && cfg.VectorStore == config.VectorStoreMongoDB {
+			yellow.Fprintf(os.Stderr, "\nNotice: --vector-store=mongodb — set --nosql-database=mongodb (was '%s')\n", preNoSQLDatabase)
+		}
+	}
+
 	// Display summary
 	fmt.Println()
 	yellow.Println("─────────────────────────────────────────")
@@ -313,6 +344,9 @@ func runInit(cmd *cobra.Command, args []string) {
 	}
 	if cfg.HasModule(config.ModuleNoSQLDatastore) {
 		fmt.Printf("  NoSQL DB:   %s\n", cfg.NoSQLDatabase)
+	}
+	if cfg.HasVectorStore() {
+		fmt.Printf("  Vector RAG: %s\n", cfg.VectorStore)
 	}
 	if cfg.HasModule(config.ModuleWorker) {
 		storageType := cfg.JobRunrStorageType()
