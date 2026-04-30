@@ -17,6 +17,17 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mysql.MySQLContainer;
+{{- end}}
 
 import java.util.Map;
 
@@ -53,7 +64,26 @@ import static org.assertj.core.api.Assertions.assertThat;
     properties = "trabuco.auth.enabled=true"
 )
 @Import({AuthEndToEndTest.RealJwtConfig.class, AuthEndToEndTest.SecuredTestEndpoints.class})
+{{- if and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))}}
+@Testcontainers(disabledWithoutDocker = true)
+{{- end}}
 class AuthEndToEndTest {
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+
+    // RANDOM_PORT boots the full app context; with SQLDatastore in the
+    // project, that includes Spring Data JDBC + Flyway against the
+    // datasource. Testcontainers + @ServiceConnection provides a real
+    // Postgres so the context loads.
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:15-alpine");
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+
+    // See comment in AuthEndToEndTest (postgres variant).
+    @Container
+    @ServiceConnection
+    static MySQLContainer mysql = new MySQLContainer("mysql:8.0");
+{{- end}}
 
     @TestConfiguration
     static class RealJwtConfig {

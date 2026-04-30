@@ -188,6 +188,37 @@
             <scope>test</scope>
         </dependency>
 {{- end}}
+{{- if and (and .AuthEnabled (.HasModule "SQLDatastore")) (or (eq .Database "postgresql") (eq .Database "mysql"))}}
+        <!-- Testcontainers: the auth tests boot the full Spring context
+             via @SpringBootTest. With SQLDatastore in the project, that
+             context wires Spring Data JDBC + Flyway against the configured
+             datasource — which CI doesn't provide. spring-boot-testcontainers
+             gives us @ServiceConnection so the test class declares a
+             container and Spring auto-binds spring.datasource.* to it. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{- if eq .Database "postgresql"}}
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{- else if eq .Database "mysql"}}
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{- end}}
+{{- end}}
     </dependencies>
 
     <build>

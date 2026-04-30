@@ -156,8 +156,14 @@ func TestCompilation_ModelAndAPI(t *testing.T) {
 		GroupID:     "com.test.modelapi",
 		ArtifactID:  "model-api",
 		JavaVersion: "21",
-		Modules:     []string{"Model", "API"},
-		Database:    "",
+		// Shared is a hard dependency of API since the always-generate
+		// auth refactor — the dormant OIDC scaffolding in API imports
+		// shared.auth.JwtClaimsExtractor + RequestContextHolder. The CLI
+		// auto-resolves Shared via ResolveDependencies; tests that
+		// construct ProjectConfig directly (like this one) must include
+		// it explicitly.
+		Modules:  []string{"Model", "Shared", "API"},
+		Database: "",
 	}
 
 	projectDir := generateProject(t, tempDir, cfg)
@@ -206,8 +212,10 @@ func TestCompilation_ModelSQLDatastoreAPI(t *testing.T) {
 		GroupID:     "com.test.modelsqlapi",
 		ArtifactID:  "model-sql-api",
 		JavaVersion: "21",
-		Modules:     []string{"Model", "SQLDatastore", "API"},
-		Database:    "postgresql",
+		// Shared auto-resolved by the CLI; included explicitly here
+		// because this test bypasses ResolveDependencies.
+		Modules:  []string{"Model", "SQLDatastore", "Shared", "API"},
+		Database: "postgresql",
 	}
 
 	projectDir := generateProject(t, tempDir, cfg)
@@ -256,8 +264,10 @@ func TestCompilation_MySQLDatabase(t *testing.T) {
 		GroupID:     "com.test.mysql",
 		ArtifactID:  "mysql-project",
 		JavaVersion: "21",
-		Modules:     []string{"Model", "SQLDatastore", "API"},
-		Database:    "mysql",
+		// Shared auto-resolved by the CLI; included explicitly here
+		// because this test bypasses ResolveDependencies.
+		Modules:  []string{"Model", "SQLDatastore", "Shared", "API"},
+		Database: "mysql",
 	}
 
 	projectDir := generateProject(t, tempDir, cfg)
@@ -659,8 +669,12 @@ func TestCompilation_AIAgentMinimal(t *testing.T) {
 		GroupID:     "com.test.aiminimal",
 		ArtifactID:  "ai-minimal",
 		JavaVersion: "21",
-		Modules:     []string{"Model", "AIAgent"},
-		Database:    "",
+		// Shared is a hard dep of AIAgent post-always-generate refactor
+		// (auth scaffolding imports shared.auth.*). Auto-resolved by the
+		// CLI; included explicitly here because this test bypasses
+		// ResolveDependencies.
+		Modules:  []string{"Model", "Shared", "AIAgent"},
+		Database: "",
 	}
 
 	projectDir := generateProject(t, tempDir, cfg)
