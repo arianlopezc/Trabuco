@@ -7,14 +7,15 @@ import (
 
 // ArchitecturePattern represents a pre-built combination of modules for common use cases.
 type ArchitecturePattern struct {
-	Name            string   `json:"name"`
-	Description     string   `json:"description"`
-	UseCases        []string `json:"use_cases"`
-	Modules         []string `json:"modules"`
-	RecommendedDB   string   `json:"recommended_database,omitempty"`
-	RecommendedNoDB string   `json:"recommended_nosql_database,omitempty"`
-	RecommendedBrkr string   `json:"recommended_broker,omitempty"`
-	Constraints     []string `json:"constraints,omitempty"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description"`
+	UseCases          []string `json:"use_cases"`
+	Modules           []string `json:"modules"`
+	RecommendedDB     string   `json:"recommended_database,omitempty"`
+	RecommendedNoDB   string   `json:"recommended_nosql_database,omitempty"`
+	RecommendedBrkr   string   `json:"recommended_broker,omitempty"`
+	RecommendedVector string   `json:"recommended_vector_store,omitempty"`
+	Constraints       []string `json:"constraints,omitempty"`
 	// keywords are internal terms used for matching against requirements.
 	keywords []string
 }
@@ -123,6 +124,16 @@ var patternCatalog = []ArchitecturePattern{
 		Constraints: []string{"Requires ANTHROPIC_API_KEY for LLM features", "LLM-dependent features gracefully degrade without API key"},
 		keywords:    []string{"ai", "agent", "llm", "claude", "chatbot", "intelligent", "natural language", "mcp", "tool calling", "guardrail", "multi-agent"},
 	},
+	{
+		Name:              "ai-agent-rag",
+		Description:       "AI agent with vector-search RAG — Spring AI agent + PGVector inside Postgres + ambient retrieval-augmentation advisor + ingestion endpoint",
+		UseCases:          []string{"knowledge-base Q&A", "documentation assistant", "retrieval-augmented chatbot", "internal search bot", "domain-grounded LLM"},
+		Modules:           []string{"Model", "SQLDatastore", "Shared", "API", "AIAgent"},
+		RecommendedDB:     "postgresql",
+		RecommendedVector: "pgvector",
+		Constraints:       []string{"Requires ANTHROPIC_API_KEY for chat (ingestion + retrieval work without it)", "Default embedding is local ONNX (intfloat/e5-small-v2, 384-dim) — swap to OpenAI/Bedrock/Vertex for production-grade retrieval. See docs/vector-rag.md."},
+		keywords:          []string{"rag", "retrieval augmented", "knowledge base", "semantic search", "vector search", "embedding", "qa bot", "document search", "vector database", "pgvector", "qdrant", "atlas vector"},
+	},
 }
 
 // scorePatterns scores all patterns against requirements and returns them sorted by score (descending).
@@ -206,6 +217,7 @@ func buildRecommendedConfig(patterns []scoredPattern) *recommendedConfig {
 		Database:      top.RecommendedDB,
 		NoSQLDatabase: top.RecommendedNoDB,
 		MessageBroker: top.RecommendedBrkr,
+		VectorStore:   top.RecommendedVector,
 		Confidence:    confidence,
 		Reasoning:     reasoning,
 	}

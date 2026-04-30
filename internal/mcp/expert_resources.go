@@ -221,12 +221,6 @@ func registerLimitationsResource(s *server.MCPServer) {
 					Keywords:    []string{"train", "fine-tune", "rlhf", "model training"},
 				},
 				{
-					Category:    "Vector Database & Semantic RAG",
-					Description: "AIAgent module uses keyword-based knowledge retrieval. Does not include vector databases, embeddings, or semantic search.",
-					Workaround:  "Add pgvector, Pinecone, or Weaviate manually. Spring AI's RetrievalAugmentationAdvisor integrates with 20+ vector stores.",
-					Keywords:    []string{"vector", "embedding", "semantic search", "rag", "retrieval augmented"},
-				},
-				{
 					Category:    "Chat UI & Frontend",
 					Description: "AIAgent module provides backend APIs only (/chat, /ask, /a2a). Does not include a frontend chat interface.",
 					Workaround:  "Build a React/Next.js frontend that calls the /chat endpoint, or use an open-source chat UI like Open WebUI or Chatbot UI.",

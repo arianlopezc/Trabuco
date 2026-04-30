@@ -84,6 +84,9 @@ func registerInitProject(s *server.MCPServer, version string) {
 		mcp.WithString("message_broker",
 			mcp.Description("Message broker: kafka, rabbitmq, sqs, pubsub (required if EventConsumer selected)"),
 		),
+		mcp.WithString("vector_store",
+			mcp.Description("Vector RAG backend for AIAgent: pgvector, qdrant, mongodb, or none. Default: none (keyword retrieval). pgvector auto-adds SQLDatastore + forces postgresql; mongodb requires Atlas (see docs/vector-rag.md)"),
+		),
 		mcp.WithString("java_version",
 			mcp.Description("Java version: 21, 25, or 26 (default: 21)"),
 		),
@@ -105,10 +108,17 @@ func registerInitProject(s *server.MCPServer, version string) {
 		database := req.GetString("database", "")
 		nosqlDatabase := req.GetString("nosql_database", "")
 		messageBroker := req.GetString("message_broker", "")
+		vectorStore := req.GetString("vector_store", "")
 		javaVersion := req.GetString("java_version", "21")
 		aiAgentsStr := req.GetString("ai_agents", "")
 		outputDir := req.GetString("output_dir", "")
 		skipBuild := req.GetBool("skip_build", true)
+
+		// Validate vector-store value (cross-flag rules applied below
+		// after cfg construction).
+		if vsErr := config.ValidateVectorStoreFlag(vectorStore); vsErr != "" {
+			return toolError(vsErr), nil
+		}
 
 		// Validate name
 		if !projectNameRegex.MatchString(name) {
@@ -168,7 +178,15 @@ func registerInitProject(s *server.MCPServer, version string) {
 			Database:      database,
 			NoSQLDatabase: nosqlDatabase,
 			MessageBroker: messageBroker,
+			VectorStore:   vectorStore,
 			AIAgents:      aiAgents,
+		}
+
+		// Apply vector-store cross-flag rules (auto-add SQLDatastore for
+		// pgvector, coerce nosql-database for mongodb, surface
+		// conflicts). Mutates cfg in-place.
+		if vsErr := cfg.ResolveVectorStore(); vsErr != "" {
+			return toolError(vsErr), nil
 		}
 
 		// Change to output dir if specified
@@ -426,6 +444,7 @@ type recommendedConfig struct {
 	Database      string `json:"database,omitempty"`
 	NoSQLDatabase string `json:"nosql_database,omitempty"`
 	MessageBroker string `json:"message_broker,omitempty"`
+	VectorStore   string `json:"vector_store,omitempty"`
 	Confidence    string `json:"confidence"`
 	Reasoning     string `json:"reasoning"`
 }

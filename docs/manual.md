@@ -74,6 +74,7 @@ For migrating an existing Spring Boot project, see
 - **Code quality enforcement** — Google Java Format (Spotless), Maven Enforcer, and auto-formatting hooks
 - **Architecture tests** — ArchUnit rules enforce constructor injection, layer boundaries, and no cyclic dependencies
 - **AI Agent module** — Production-ready AI agent with Spring AI: tool calling, LLM guardrails, multi-agent orchestration, MCP server, A2A protocol, and knowledge base
+- **Vector RAG (optional)** — Pass `--vector-store=pgvector|qdrant|mongodb` and the AI Agent module ships embedding configuration, ingestion endpoints, similarity-search retrieval, and Spring AI's `RetrievalAugmentationAdvisor`. PGVector inside Postgres is the default integration; full guide: [`docs/vector-rag.md`](./vector-rag.md)
 - **AI-friendly** — Generates context files, coding rules, quality specs, and task prompts for Claude, Cursor, GitHub Copilot, and Codex
 - **CLI MCP server** — `trabuco mcp` exposes all CLI functionality as structured tools for AI coding agents
 
