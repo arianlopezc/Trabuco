@@ -117,7 +117,12 @@ class AuthEndToEndTest {
 
     @Test
     void healthEndpointAccessibleWithoutToken() {
-        ResponseEntity<String> resp = restTemplate.getForEntity("/actuator/health", String.class);
+        // /actuator/health/liveness rather than /actuator/health: the
+        // aggregated /health endpoint returns 503 in CI when broker /
+        // datastore HealthIndicators can't reach their backends. This
+        // test exists to verify auth permits the request, not to
+        // validate every HealthIndicator. Liveness is dependency-free.
+        ResponseEntity<String> resp = restTemplate.getForEntity("/actuator/health/liveness", String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 

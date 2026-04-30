@@ -83,7 +83,14 @@ class SecurityIntegrationTest {
 
     @Test
     void healthEndpointIsPermittedWithoutToken() throws Exception {
-        mvc.perform(get("/actuator/health"))
+        // Use the liveness probe instead of /actuator/health so this test
+        // asserts only "auth didn't block the request". /actuator/health
+        // aggregates every HealthIndicator on the classpath (DB, Kafka,
+        // RabbitMQ, etc.); in CI without those services running it
+        // returns 503 — which would mask whether the auth chain
+        // permitted the request. /actuator/health/liveness is a
+        // dependency-free probe that confirms the JVM is alive.
+        mvc.perform(get("/actuator/health/liveness"))
             .andExpect(status().isOk());
     }
 

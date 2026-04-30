@@ -64,7 +64,10 @@ class AuthDormantTest {
 
     @Test
     void healthEndpointReturnsOkWithoutToken() throws Exception {
-        mvc.perform(get("/actuator/health"))
+        // See SecurityIntegrationTest for why we hit the liveness probe
+        // rather than /actuator/health: aggregated /health returns 503
+        // when broker / datastore HealthIndicators can't connect.
+        mvc.perform(get("/actuator/health/liveness"))
             .andExpect(status().isOk());
     }
 
