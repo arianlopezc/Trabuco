@@ -5,6 +5,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mysql.MySQLContainer;
+{{- end}}
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -29,14 +40,34 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+{{- if and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))}}
+@Testcontainers(disabledWithoutDocker = true)
+{{- end}}
 class AuthDormantTest {
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+
+    // The auth dormant test boots the full Spring context. With SQLDatastore
+    // in the project, that needs a real DB; Testcontainers provides one.
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:15-alpine");
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+
+    // See comment in AuthDormantTest (postgres variant).
+    @Container
+    @ServiceConnection
+    static MySQLContainer mysql = new MySQLContainer("mysql:8.0");
+{{- end}}
 
     @Autowired
     private MockMvc mvc;
 
     @Test
     void healthEndpointReturnsOkWithoutToken() throws Exception {
-        mvc.perform(get("/actuator/health"))
+        // See SecurityIntegrationTest for why we hit the liveness probe
+        // rather than /actuator/health: aggregated /health returns 503
+        // when broker / datastore HealthIndicators can't connect.
+        mvc.perform(get("/actuator/health/liveness"))
             .andExpect(status().isOk());
     }
 

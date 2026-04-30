@@ -9,6 +9,17 @@ import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mysql.MySQLContainer;
+{{- end}}
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -41,7 +52,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "trabuco.auth.enabled=true",
     "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://test.example.com/jwks"
 })
+{{- if and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))}}
+{{- /* (this conditional matches when SQLDatastore is selected with a real RDBMS) */}}
+@Testcontainers(disabledWithoutDocker = true)
+{{- end}}
 class SecurityIntegrationTest {
+{{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
+
+    // The auth tests boot the full Spring context. When SQLDatastore is in
+    // the project, that context wires Spring Data JDBC + Flyway against the
+    // configured datasource — which CI doesn't provide. Testcontainers spins
+    // up a real Postgres for the duration of the test class; @ServiceConnection
+    // (Spring Boot 3.4+) auto-binds spring.datasource.* to it.
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:15-alpine");
+{{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
+
+    // See comment in SecurityIntegrationTest (postgres variant).
+    @Container
+    @ServiceConnection
+    static MySQLContainer mysql = new MySQLContainer("mysql:8.0");
+{{- end}}
 
     @MockBean
     private JwtDecoder jwtDecoder;
@@ -51,7 +83,14 @@ class SecurityIntegrationTest {
 
     @Test
     void healthEndpointIsPermittedWithoutToken() throws Exception {
-        mvc.perform(get("/actuator/health"))
+        // Use the liveness probe instead of /actuator/health so this test
+        // asserts only "auth didn't block the request". /actuator/health
+        // aggregates every HealthIndicator on the classpath (DB, Kafka,
+        // RabbitMQ, etc.); in CI without those services running it
+        // returns 503 — which would mask whether the auth chain
+        // permitted the request. /actuator/health/liveness is a
+        // dependency-free probe that confirms the JVM is alive.
+        mvc.perform(get("/actuator/health/liveness"))
             .andExpect(status().isOk());
     }
 
