@@ -1,0 +1,49 @@
+package {{.GroupID}}.aiagent.config;
+
+import {{.GroupID}}.aiagent.knowledge.DocumentIngestionService;
+import {{.GroupID}}.aiagent.knowledge.KnowledgeRetriever;
+import {{.GroupID}}.aiagent.knowledge.VectorKnowledgeRetriever;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+
+/**
+ * Wires the vector-side knowledge beans for the AIAgent module.
+ *
+ * <p>This configuration is emitted by Trabuco only when a vector-store
+ * starter has been selected (pgvector / qdrant / mongodb-atlas). At
+ * that point a Spring AI {@link VectorStore} bean is auto-configured
+ * from the starter, so we can take it as a constructor parameter
+ * without any conditional gymnastics.
+ *
+ * <p>Why no {@code @ConditionalOnBean(VectorStore.class)}: that
+ * conditional is unreliable on user code because Spring evaluates it
+ * BEFORE auto-configuration registers the bean. The cleaner fix is
+ * generator-time conditional emission — Trabuco only writes this file
+ * when a vector store is selected, guaranteeing the {@link VectorStore}
+ * dependency is satisfiable at runtime. If the user ends up with the
+ * starter on classpath but no running backend, that is a runtime
+ * configuration problem (handled by Spring AI's own auto-config), not
+ * something this class should try to mask.
+ *
+ * <p>{@code @Primary} on {@link VectorKnowledgeRetriever}: the
+ * always-emitted {@code KeywordKnowledgeRetriever} is also a
+ * {@link KnowledgeRetriever} bean. With two beans of the same type in
+ * the context, autowiring (e.g., in {@code KnowledgeTools}) needs a
+ * tie-breaker — {@code @Primary} makes the vector path win.
+ */
+@Configuration
+public class KnowledgeBeansConfiguration {
+
+    @Bean
+    @Primary
+    public KnowledgeRetriever vectorKnowledgeRetriever(VectorStore vectorStore) {
+        return new VectorKnowledgeRetriever(vectorStore);
+    }
+
+    @Bean
+    public DocumentIngestionService documentIngestionService(VectorStore vectorStore) {
+        return new DocumentIngestionService(vectorStore);
+    }
+}

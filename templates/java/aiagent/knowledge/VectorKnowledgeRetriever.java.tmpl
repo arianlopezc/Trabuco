@@ -3,8 +3,6 @@ package {{.GroupID}}.aiagent.knowledge;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
@@ -12,22 +10,25 @@ import java.util.List;
  * Vector-similarity {@link KnowledgeRetriever} backed by a Spring AI
  * {@link VectorStore}.
  *
- * <p>Active whenever a {@code VectorStore} bean is wired
- * ({@code @ConditionalOnBean(VectorStore.class)}). The embedding model
- * is resolved from the Spring context via the
+ * <p>Wired by {@code KnowledgeBeansConfiguration} as an
+ * {@code @Primary} {@link KnowledgeRetriever} bean when a
+ * {@code VectorStore} is on the classpath (i.e., a vector-store
+ * starter is selected). The embedding model is resolved via the
  * {@code spring-ai-starter-model-transformers} starter (default —
  * pure-Java ONNX, no API key, ~80 MB one-time model download cached
  * under {@code ~/.djl.ai/}). Swap to OpenAI / Bedrock / Vertex AI by
  * replacing the embeddings starter in the AIAgent {@code pom.xml}; no
  * code change required here.
  *
- * <p>When this bean is present, {@link KeywordKnowledgeRetriever} is
- * automatically excluded by Spring's
- * {@code @ConditionalOnMissingBean(VectorStore.class)} guard — only one
- * retriever runs at a time.
+ * <p>This class is deliberately NOT annotated with {@code @Component}
+ * or {@code @ConditionalOnBean}. Spring evaluates
+ * {@code @ConditionalOnBean(VectorStore.class)} on user-scanned
+ * components BEFORE the vector-store auto-config registers the bean —
+ * the conditional silently fails. {@code KnowledgeBeansConfiguration}
+ * declares this as a regular {@code @Bean} that takes
+ * {@link VectorStore} as a constructor parameter; Spring resolves the
+ * dependency in the normal lifecycle.
  */
-@Component
-@ConditionalOnBean(VectorStore.class)
 public class VectorKnowledgeRetriever implements KnowledgeRetriever {
 
     private final VectorStore vectorStore;

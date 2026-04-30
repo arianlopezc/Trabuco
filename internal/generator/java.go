@@ -843,6 +843,18 @@ func (g *Generator) generateAIAgentModule() error {
 			struct{ tmpl, out string }{"java/aiagent/config/VectorFlywayConfig.java.tmpl", filepath.Join("config", "VectorFlywayConfig.java")},
 		)
 	}
+	if g.config.HasVectorStore() {
+		// Wires VectorKnowledgeRetriever (@Primary) and
+		// DocumentIngestionService as plain @Bean methods that take
+		// VectorStore as a parameter. Generator-time conditional
+		// emission means VectorStore is guaranteed to exist at runtime
+		// when this file is generated — no @ConditionalOnBean
+		// gymnastics needed (and they wouldn't work reliably anyway,
+		// see the Javadoc on the configuration class).
+		configFiles = append(configFiles,
+			struct{ tmpl, out string }{"java/aiagent/config/KnowledgeBeansConfiguration.java.tmpl", filepath.Join("config", "KnowledgeBeansConfiguration.java")},
+		)
+	}
 	for _, f := range configFiles {
 		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
 			return fmt.Errorf("failed to generate %s: %w", f.out, err)
@@ -1053,6 +1065,16 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/test/PlaceholderToolsTest.java.tmpl", filepath.Join("tool", "PlaceholderToolsTest.java")},
 		{"java/aiagent/test/TaskManagerTest.java.tmpl", filepath.Join("task", "TaskManagerTest.java")},
 		{"java/aiagent/test/KeywordKnowledgeRetrieverTest.java.tmpl", filepath.Join("knowledge", "KeywordKnowledgeRetrieverTest.java")},
+	}
+	// PGVector + Postgres + SQLDatastore is the only combination where
+	// the integration test can compile and boot — the test imports
+	// PostgreSQLContainer and relies on the V1 vector migration. Other
+	// vector-store flavors (qdrant, mongodb-atlas) get their own
+	// integration scaffolding in a future phase.
+	if g.config.VectorStoreIsPgVector() && g.config.HasModule(config.ModuleSQLDatastore) && g.config.Database == config.DatabasePostgreSQL {
+		testFiles = append(testFiles,
+			struct{ tmpl, out string }{"java/aiagent/test/VectorRagIntegrationTest.java.tmpl", filepath.Join("knowledge", "VectorRagIntegrationTest.java")},
+		)
 	}
 	for _, f := range testFiles {
 		if err := g.writeTemplate(f.tmpl, g.testJavaPath("AIAgent", f.out)); err != nil {
