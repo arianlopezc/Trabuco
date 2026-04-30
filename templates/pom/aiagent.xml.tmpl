@@ -115,6 +115,29 @@
                 </exclusion>
             </exclusions>
         </dependency>
+{{- if .HasVectorStore}}
+
+        <!-- Spring AI - Transformers embedding model. Pure-Java ONNX
+             runtime running intfloat/e5-small-v2 (384-dim). Downloads
+             the model once on first boot (~80 MB cached under
+             ~/.djl.ai), then runs locally — no API key, no external
+             service. Acceptable for FAQ / internal-knowledge retrieval;
+             swap to OpenAI / Bedrock / Vertex for high-stakes use cases
+             (see docs/vector-rag.md).
+
+             Embedding model is shared across all vector-store flavors
+             (pgvector, qdrant, mongodb-atlas). The store-specific
+             starter below is what differs per chosen backend.
+
+             If you swap embedding providers, update the vector
+             dimensionality in the matching schema/collection (vector(N)
+             column for pgvector V1 migration, collection size for
+             qdrant, Atlas vector index numDimensions for mongodb). -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-transformers</artifactId>
+        </dependency>
+{{- end}}
 {{- if .VectorStoreIsPgVector}}
 
         <!-- Spring AI - PGVector store. Reads spring.ai.vectorstore.pgvector.*
@@ -126,21 +149,41 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
         </dependency>
+{{- end}}
+{{- if .VectorStoreIsQdrant}}
 
-        <!-- Spring AI - Transformers embedding model. Pure-Java ONNX
-             runtime running intfloat/e5-small-v2 (384-dim). Downloads
-             the model once on first boot (~80 MB cached under
-             ~/.djl.ai), then runs locally — no API key, no external
-             service. Production-grade quality? Acceptable for FAQ /
-             internal-knowledge use cases; swap to OpenAI / Bedrock /
-             Vertex for high-stakes retrieval (see docs/vector-rag.md).
+        <!-- Spring AI - Qdrant store. Reads spring.ai.vectorstore.qdrant.*
+             from application.yml. Spring AI initialises the collection
+             on first use (initialize-schema=true); collection vector
+             size is inferred from the active EmbeddingModel.
 
-             If you swap embedding providers, update the vector(N)
-             column type in V1__create_vector_schema.sql to match the
-             new dimensionality before the first ingestion. -->
+             Local dev: run `docker run -p 6333:6333 -p 6334:6334
+             qdrant/qdrant`. The Spring AI client uses the gRPC port
+             (6334) by default. -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-transformers</artifactId>
+            <artifactId>spring-ai-starter-vector-store-qdrant</artifactId>
+        </dependency>
+{{- end}}
+{{- if .VectorStoreIsMongoAtlas}}
+
+        <!-- Spring AI - MongoDB Atlas Vector Search. Reads
+             spring.ai.vectorstore.mongodb.* from application.yml.
+
+             IMPORTANT: $vectorSearch is an Atlas-only feature —
+             community/self-hosted MongoDB cannot serve queries from
+             this store. The vector search index MUST be created
+             out-of-band in Atlas (UI / Atlas CLI / API) BEFORE the app
+             can serve retrieval; Spring AI does not create it.
+             initialize-schema=false in application.yml reflects this.
+             See docs/vector-rag.md for index DDL.
+
+             This module pulls the MongoDB driver transitively. If your
+             project does not already include NoSQLDatastore=mongodb,
+             configure spring.data.mongodb.uri here too. -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-mongodb-atlas</artifactId>
         </dependency>
 {{- end}}
 

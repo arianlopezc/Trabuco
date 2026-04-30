@@ -56,6 +56,17 @@ spring:
           max-tokens: ${AI_MAX_TOKENS:1024}
     retry:
       max-attempts: ${AI_RETRY_MAX_ATTEMPTS:2}
+{{- if .HasVectorStore}}
+    # Local ONNX embeddings via spring-ai-starter-model-transformers.
+    # No API key required; ~80 MB model downloads once and caches under
+    # ~/.djl.ai/. Shared across all vector-store flavors. Use a real
+    # provider in production for higher-quality retrieval — see
+    # docs/vector-rag.md.
+    embedding:
+      transformer:
+        onnx:
+          model-output-name: last_hidden_state
+{{- end}}
 {{- if .VectorStoreIsPgVector}}
     # Vector store — PGVector backend in the same Postgres datasource as
     # the application's domain tables, but isolated in its own schema
@@ -75,14 +86,40 @@ spring:
         # Must match the vector(N) declared in V1__create_vector_schema.sql.
         # Update both together when swapping embedding providers.
         dimensions: 384
-    # Local ONNX embeddings via spring-ai-starter-model-transformers.
-    # No API key required; ~80 MB model downloads once and caches under
-    # ~/.djl.ai/. Use a real provider in production for higher-quality
-    # retrieval — see docs/vector-rag.md.
-    embedding:
-      transformer:
-        onnx:
-          model-output-name: last_hidden_state
+{{- end}}
+{{- if .VectorStoreIsQdrant}}
+    # Vector store — standalone Qdrant container. Spring AI initializes
+    # the collection on first use; vector size is inferred from the
+    # active EmbeddingModel.
+    #
+    # Local dev: `docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant`.
+    # The Spring AI client uses gRPC (6334) by default. For Qdrant
+    # Cloud, set QDRANT_HOST + QDRANT_API_KEY and flip QDRANT_USE_TLS.
+    vectorstore:
+      qdrant:
+        host: ${QDRANT_HOST:localhost}
+        port: ${QDRANT_PORT:6334}
+        api-key: ${QDRANT_API_KEY:}
+        collection-name: ${QDRANT_COLLECTION:documents}
+        use-tls: ${QDRANT_USE_TLS:false}
+        initialize-schema: true
+{{- end}}
+{{- if .VectorStoreIsMongoAtlas}}
+    # Vector store — MongoDB Atlas Vector Search. NOTE: $vectorSearch is
+    # an Atlas-only feature; community / self-hosted MongoDB cannot
+    # serve queries through this store.
+    #
+    # The vector search index MUST be created out-of-band in Atlas
+    # (UI / Atlas CLI / API) BEFORE the app can serve retrieval —
+    # Spring AI does not create it. See docs/vector-rag.md for the
+    # index definition. initialize-schema=false reflects this.
+    vectorstore:
+      mongodb:
+        collection-name: ${MONGODB_VECTOR_COLLECTION:vector_store}
+        database-name: ${MONGODB_VECTOR_DATABASE:{{.ProjectName}}}
+        path-name: ${MONGODB_VECTOR_PATH:embedding}
+        index-name: ${MONGODB_VECTOR_INDEX:vector_index}
+        initialize-schema: false
 {{- end}}
 {{- if .HasModule "SQLDatastore"}}
 
@@ -137,6 +174,15 @@ spring:
           max-idle: 8
           min-idle: 0
 {{- end}}
+{{- end}}
+{{- if .VectorStoreNeedsStandaloneMongoConnection}}
+
+  # MongoDB connection — required by spring-ai-starter-vector-store-mongodb-atlas.
+  # NoSQLDatastore=mongodb is not selected, so the AIAgent module wires
+  # the connection here. Point MONGODB_URI at your Atlas cluster.
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
 {{- end}}
 
 {{- if .AuthEnabled}}

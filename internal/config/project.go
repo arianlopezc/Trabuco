@@ -433,6 +433,21 @@ func (c *ProjectConfig) VectorStoreIsMongoAtlas() bool {
 	return c.VectorStore == VectorStoreMongoDB
 }
 
+// VectorStoreNeedsStandaloneMongoConnection returns true when the project
+// uses MongoDB Atlas as its vector store but does NOT also have a
+// NoSQLDatastore=mongodb wiring a Mongo connection. In that case the
+// AIAgent application.yml needs its own spring.data.mongodb.uri so the
+// Atlas vector-store starter has somewhere to connect; otherwise the
+// connection comes from the NoSQL block above and a second emission
+// would be a duplicate YAML key. (Phase E auto-adds NoSQLDatastore so
+// most users never hit the standalone branch.)
+func (c *ProjectConfig) VectorStoreNeedsStandaloneMongoConnection() bool {
+	if !c.VectorStoreIsMongoAtlas() {
+		return false
+	}
+	return !(c.HasModule(ModuleNoSQLDatastore) && c.NoSQLDatabase == DatabaseMongoDB)
+}
+
 // AuthEnabled returns true when auth scaffolding should be generated for
 // the project. Auth code is emitted whenever a consuming module (API or
 // AIAgent) is selected — the resulting files live alongside the rest of
