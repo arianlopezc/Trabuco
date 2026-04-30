@@ -1,0 +1,35 @@
+package {{.GroupID}}.api.config.security;
+
+import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import org.springdoc.core.customizers.OpenApiCustomizer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * Adds an OpenAPI 3 {@code bearerAuth} security scheme and applies it
+ * as a default requirement on every operation.
+ *
+ * <p>The "Authorize" button in Swagger UI accepts a JWT and attaches
+ * it as {@code Authorization: Bearer ...} on every "Try it out" call.
+ */
+@Configuration
+public class OpenApiSecurityConfig {
+
+    private static final String SCHEME_NAME = "bearerAuth";
+
+    @Bean
+    public OpenApiCustomizer bearerAuthCustomizer() {
+        return (OpenAPI api) -> {
+            api.components(new Components().addSecuritySchemes(SCHEME_NAME,
+                new SecurityScheme()
+                    .type(SecurityScheme.Type.HTTP)
+                    .scheme("bearer")
+                    .bearerFormat("JWT")
+                    .description("OIDC-issued JWT bearer token")));
+            api.addSecurityItem(new SecurityRequirement().addList(SCHEME_NAME));
+        };
+    }
+}

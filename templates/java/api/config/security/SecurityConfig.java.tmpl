@@ -1,0 +1,65 @@
+package {{.GroupID}}.api.config.security;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+
+/**
+ * Resource server configuration: stateless JWT validation against an
+ * external OIDC issuer. The IdP is selected by
+ * {@code spring.security.oauth2.resourceserver.jwt.issuer-uri} in
+ * {@code application.yml}; no code changes per provider for RFC-conformant
+ * IdPs (Keycloak, Okta, generic OIDC). Auth0 and Cognito require a custom
+ * {@code JwtClaimsExtractor} bean (in Shared) to handle non-standard
+ * claim layouts.
+ *
+ * <p>Method-level authorization is enabled via
+ * {@link EnableMethodSecurity}; controllers use
+ * {@code @PreAuthorize("hasAuthority(AuthorityScope.AUTHORITY_*)")}.
+ *
+ * <p>SECURITY: this configuration requires the resource-server starter to
+ * have a valid issuer or JWK set on startup. Set {@code OIDC_ISSUER_URI}
+ * (or the equivalent provider-specific env var documented in
+ * {@code docs/auth.md}) before running the application.
+ */
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig {
+
+    private final JwtAuthenticationConverter jwtConverter;
+    private final AuthProblemDetailHandler authProblemHandler;
+
+    public SecurityConfig(JwtAuthenticationConverter jwtConverter,
+                          AuthProblemDetailHandler authProblemHandler) {
+        this.jwtConverter = jwtConverter;
+        this.authProblemHandler = authProblemHandler;
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        return http
+            .csrf(AbstractHttpConfigurer::disable)
+            .cors(cors -> {})
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter))
+                .authenticationEntryPoint(authProblemHandler)
+                .accessDeniedHandler(authProblemHandler))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(
+                    "/actuator/health/**",
+                    "/actuator/info",
+                    "/actuator/prometheus",
+                    "/swagger-ui/**",
+                    "/v3/api-docs/**",
+                    "/api-docs/**",
+                    "/error"
+                ).permitAll()
+                .anyRequest().authenticated())
+            .build();
+    }
+}

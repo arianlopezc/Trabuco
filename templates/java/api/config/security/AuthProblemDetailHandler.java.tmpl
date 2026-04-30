@@ -1,0 +1,71 @@
+package {{.GroupID}}.api.config.security;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Emits RFC 7807 {@code application/problem+json} responses for
+ * authentication and authorization failures. Aligned with
+ * {@link {{.GroupID}}.api.config.GlobalExceptionHandler}'s
+ * {@code urn:problem-type:*} URI scheme so all errors look uniform.
+ *
+ * <p>Sanitization: the wire response never includes exception
+ * messages, stack traces, scopes the caller actually has, or claim
+ * contents — only "what's required" and "why it failed at a high
+ * level". Detailed diagnostics go to the server log
+ * (correlation-ID-tagged) for support.
+ */
+@Component
+public class AuthProblemDetailHandler implements AuthenticationEntryPoint, AccessDeniedHandler {
+
+    private static final URI UNAUTHORIZED_TYPE = URI.create("urn:problem-type:unauthorized");
+    private static final URI FORBIDDEN_TYPE    = URI.create("urn:problem-type:forbidden");
+
+    private final ObjectMapper objectMapper;
+
+    public AuthProblemDetailHandler(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
+
+    @Override
+    public void commence(HttpServletRequest request, HttpServletResponse response,
+                         AuthenticationException authException) throws IOException {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problem.setType(UNAUTHORIZED_TYPE);
+        problem.setTitle("Unauthorized");
+        problem.setDetail("Bearer token is missing or invalid.");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        write(response, HttpStatus.UNAUTHORIZED, problem);
+    }
+
+    @Override
+    public void handle(HttpServletRequest request, HttpServletResponse response,
+                       AccessDeniedException accessDeniedException) throws IOException {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        problem.setType(FORBIDDEN_TYPE);
+        problem.setTitle("Forbidden");
+        problem.setDetail("Token is valid but lacks required scope.");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        write(response, HttpStatus.FORBIDDEN, problem);
+    }
+
+    private void write(HttpServletResponse response, HttpStatus status, ProblemDetail problem) throws IOException {
+        response.setStatus(status.value());
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write(objectMapper.writeValueAsString(problem));
+    }
+}
