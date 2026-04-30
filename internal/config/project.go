@@ -459,3 +459,79 @@ func (c *ProjectConfig) VectorStoreNeedsStandaloneMongoConnection() bool {
 func (c *ProjectConfig) AuthEnabled() bool {
 	return c.HasModule(ModuleAPI) || c.HasModule(ModuleAIAgent)
 }
+
+// ValidateVectorStoreFlag returns "" when the value is one of the
+// recognized vector-store flavors (or empty), and an error message
+// otherwise. Pure value validation — does not look at modules or
+// other flags. Use ResolveVectorStore for the cross-flag rules.
+func ValidateVectorStoreFlag(vectorStore string) string {
+	switch vectorStore {
+	case "", VectorStoreNone, VectorStorePgVector, VectorStoreQdrant, VectorStoreMongoDB:
+		return ""
+	}
+	return "Invalid --vector-store value '" + vectorStore + "'. Valid options: pgvector, qdrant, mongodb, none"
+}
+
+// ResolveVectorStore enforces the cross-flag rules for the vector
+// store and adjusts the config in-place when a default is unambiguous.
+// Returns "" on success or a human-readable error message.
+//
+// Rules per backend:
+//
+//   - "" / "none": no-op.
+//
+//   - "pgvector": pgvector lives inside the application's Postgres
+//     datastore. Forces Database=postgresql; auto-adds SQLDatastore
+//     when missing. Errors when Database is already set to a different
+//     SQL flavor, or when NoSQLDatastore is selected (mutually
+//     exclusive with SQLDatastore).
+//
+//   - "qdrant": standalone server, no module/database constraints.
+//
+//   - "mongodb": MongoDB Atlas Vector Search. Coexists with
+//     NoSQLDatastore=mongodb (auto-coerces NoSQLDatabase) or runs
+//     standalone (Phase C VectorStoreNeedsStandaloneMongoConnection
+//     wires its own connection). Errors when NoSQLDatastore is
+//     present with a non-mongo NoSQLDatabase (e.g. redis).
+//
+// All non-empty backends require AIAgent — RAG without an agent has
+// no consumer.
+func (c *ProjectConfig) ResolveVectorStore() string {
+	if c.VectorStore == "" || c.VectorStore == VectorStoreNone {
+		return ""
+	}
+
+	if !c.HasModule(ModuleAIAgent) {
+		return "--vector-store=" + c.VectorStore + " requires the AIAgent module — vector RAG has no consumer otherwise. Add AIAgent to --modules or drop --vector-store."
+	}
+
+	switch c.VectorStore {
+	case VectorStorePgVector:
+		if c.HasModule(ModuleNoSQLDatastore) {
+			return "--vector-store=pgvector conflicts with the NoSQLDatastore module. Pgvector lives inside the application's Postgres SQLDatastore; pick one or the other."
+		}
+		// CLI default for --database is "postgresql", so an unset
+		// value also lands here. Treat anything-other-than-postgresql
+		// as an explicit user request that conflicts with pgvector.
+		if c.Database != "" && c.Database != DatabasePostgreSQL {
+			return "--vector-store=pgvector requires --database=postgresql, got '" + c.Database + "'. Pgvector lives in the application's Postgres datastore; switch to postgresql or pick a different vector store."
+		}
+		c.Database = DatabasePostgreSQL
+		if !c.HasModule(ModuleSQLDatastore) {
+			c.Modules = ResolveDependencies(append(c.Modules, ModuleSQLDatastore))
+		}
+
+	case VectorStoreMongoDB:
+		if c.HasModule(ModuleNoSQLDatastore) && c.NoSQLDatabase != "" && c.NoSQLDatabase != DatabaseMongoDB {
+			return "--vector-store=mongodb requires --nosql-database=mongodb, got '" + c.NoSQLDatabase + "'. Atlas Vector Search is only available on MongoDB; switch to mongodb or pick a different vector store."
+		}
+		if c.HasModule(ModuleNoSQLDatastore) {
+			c.NoSQLDatabase = DatabaseMongoDB
+		}
+
+	case VectorStoreQdrant:
+		// No constraints. Qdrant is its own server.
+	}
+
+	return ""
+}
