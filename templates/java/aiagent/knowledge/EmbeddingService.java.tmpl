@@ -1,0 +1,52 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Service;
+
+/**
+ * Thin wrapper around Spring AI's {@link EmbeddingModel}. Lets ingestion
+ * code (and any custom retrieval extensions) embed text without taking a
+ * direct dependency on a specific embedding provider.
+ *
+ * <p>The actual {@code EmbeddingModel} bean comes from whichever
+ * {@code spring-ai-starter-model-*} is on the AIAgent classpath. Default
+ * is {@code spring-ai-starter-model-transformers} (local ONNX, 384-dim,
+ * no API key) — see {@code docs/vector-rag.md} for switching to OpenAI /
+ * Bedrock / Vertex for production-grade quality.
+ *
+ * <p>{@code @ConditionalOnBean(EmbeddingModel.class)}: the bean only
+ * loads when an embedding starter is wired. Without one, the
+ * {@code @ConditionalOnBean(VectorStore.class)} on
+ * {@link VectorKnowledgeRetriever} is also false (Spring AI's
+ * vector-store starters refuse to autoconfigure without an embedder),
+ * so the keyword path remains active.
+ */
+@Service
+@ConditionalOnBean(EmbeddingModel.class)
+public class EmbeddingService {
+
+    private final EmbeddingModel embeddingModel;
+
+    public EmbeddingService(EmbeddingModel embeddingModel) {
+        this.embeddingModel = embeddingModel;
+    }
+
+    /**
+     * Embed a single text string. The dimensionality is determined by
+     * the wired model — 384 for the default transformer (e5-small-v2),
+     * 1536 for OpenAI text-embedding-3-small, etc.
+     */
+    public float[] embed(String text) {
+        return embeddingModel.embed(text);
+    }
+
+    /**
+     * Returns the embedding model's output dimensionality. Useful when
+     * generating Flyway migrations that need to declare the
+     * {@code vector(N)} column width.
+     */
+    public int dimensions() {
+        return embeddingModel.dimensions();
+    }
+}

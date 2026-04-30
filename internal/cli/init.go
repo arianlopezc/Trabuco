@@ -37,6 +37,7 @@ var (
 	flagAIAgents      string
 	flagCI            string
 	flagReview        string // "full" (default), "minimal", or "off"
+	flagVectorStore   string // "pgvector", "qdrant", "mongodb", "none", "" (Phase E adds smart defaults + interactive prompt)
 	flagIncludeClaude bool   // Deprecated: use flagAIAgents instead
 	flagStrict        bool
 	flagSkipBuild     bool
@@ -79,6 +80,7 @@ func init() {
 	initCmd.Flags().StringVar(&flagAIAgents, "ai-agents", "", "Comma-separated AI agents: claude,cursor,copilot,codex (non-interactive)")
 	initCmd.Flags().StringVar(&flagCI, "ci", "", "CI provider to generate (github)")
 	initCmd.Flags().StringVar(&flagReview, "review", "full", "Review automation: full (subagents + hooks + skills), minimal (no Stop hook guard), off (no review artifacts). Only applies when Claude is among --ai-agents.")
+	initCmd.Flags().StringVar(&flagVectorStore, "vector-store", "", "Vector RAG backend for AIAgent: pgvector, qdrant, mongodb, or none (default: keyword retrieval only). Only meaningful when AIAgent is selected.")
 	initCmd.Flags().BoolVar(&flagIncludeClaude, "include-claude", false, "Deprecated: use --ai-agents=claude instead")
 	initCmd.Flags().BoolVar(&flagStrict, "strict", false, "Fail if specified Java version is not detected (non-interactive)")
 	initCmd.Flags().BoolVar(&flagSkipBuild, "skip-build", false, "Skip running 'mvn clean install' after generation")
@@ -263,6 +265,7 @@ func runInit(cmd *cobra.Command, args []string) {
 			MessageBroker:       flagMessageBroker,
 			AIAgents:            aiAgents,
 			CIProvider:          flagCI,
+			VectorStore:         flagVectorStore,
 			Review: config.ReviewConfig{
 				Mode:        flagReview,
 				GeneratedAt: time.Now().UTC().Format(time.RFC3339),

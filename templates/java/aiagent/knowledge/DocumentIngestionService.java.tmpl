@@ -1,0 +1,69 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Ingest documents into the wired {@link VectorStore}. Chunks text with
+ * Spring AI's {@link TokenTextSplitter} (preserves sentence boundaries
+ * up to a token budget) before embedding + storing — over-long inputs
+ * are silently split into multiple stored chunks.
+ *
+ * <p>Conditional on a {@code VectorStore} bean — when the project ships
+ * with {@code VectorStore=none} or no vector starter on classpath, this
+ * service is not loaded.
+ *
+ * <p>Authorization is enforced at the controller layer
+ * ({@code IngestionController.@RequireScope("partner")}). This service
+ * trusts its caller; do not invoke it directly from unauthenticated
+ * paths.
+ */
+@Service
+@ConditionalOnBean(VectorStore.class)
+public class DocumentIngestionService {
+
+    private final VectorStore vectorStore;
+    private final TokenTextSplitter splitter;
+
+    public DocumentIngestionService(VectorStore vectorStore) {
+        this.vectorStore = vectorStore;
+        // Defaults: 1000-token chunks, 50-token overlap, sentence-aware.
+        // Tune via the constructor when finer control is needed:
+        //   new TokenTextSplitter(chunkSize, minChunkSize,
+        //                         minChunkLengthToEmbed, maxNumChunks,
+        //                         keepSeparator)
+        this.splitter = new TokenTextSplitter();
+    }
+
+    /**
+     * Ingest a single text document with metadata. The text is split,
+     * each chunk is embedded by the wired EmbeddingModel (transparent
+     * to the caller), and all chunks are persisted to the vector store.
+     */
+    public void ingest(String text, Map<String, Object> metadata) {
+        Document doc = Document.builder()
+            .text(text)
+            .metadata(metadata == null ? Map.of() : metadata)
+            .build();
+        List<Document> chunks = splitter.apply(List.of(doc));
+        vectorStore.add(chunks);
+    }
+
+    /**
+     * Bulk ingest. Each input document is independently chunked; all
+     * resulting chunks are stored in one round-trip to the vector store.
+     */
+    public void ingest(List<Document> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return;
+        }
+        List<Document> chunks = splitter.apply(documents);
+        vectorStore.add(chunks);
+    }
+}

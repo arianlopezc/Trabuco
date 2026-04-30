@@ -1,0 +1,85 @@
+package {{.GroupID}}.aiagent.protocol;
+
+import {{.GroupID}}.aiagent.knowledge.DocumentIngestionService;
+import {{.GroupID}}.aiagent.security.RequireScope;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * REST endpoints for ingesting documents into the AIAgent's vector store.
+ *
+ * <p>Conditional on a {@link VectorStore} bean — when the project ships
+ * without a vector store this controller is not loaded.
+ *
+ * <p>Authorization (legacy API-key path):
+ * {@code @RequireScope("partner")} routes ingestion through
+ * {@code ScopeInterceptor} → {@code ScopeEnforcer}. The legacy path is
+ * default-on (governed by {@code app.aiagent.api-key.enabled}, default
+ * {@code true}), so ingestion works out of the box.
+ *
+ * <p>To switch to JWT (after flipping {@code trabuco.auth.enabled=true}):
+ * replace each {@code @RequireScope("partner")} with
+ * {@code @org.springframework.security.access.prepost.PreAuthorize(
+ * "hasAuthority('SCOPE_admin')")} (or
+ * {@code AuthorityScope.AUTHORITY_ADMIN} if you've imported the
+ * Model-side constant). Do not stack both annotations — pick one.
+ */
+@RestController
+@RequestMapping("/ingest")
+@ConditionalOnBean(VectorStore.class)
+public class IngestionController {
+
+    private final DocumentIngestionService ingestionService;
+
+    public IngestionController(DocumentIngestionService ingestionService) {
+        this.ingestionService = ingestionService;
+    }
+
+    /**
+     * Ingest a single text document with optional metadata.
+     *
+     * <p>Request body:
+     * <pre>{
+     *   "text": "...",
+     *   "metadata": { "source": "faq.md", "version": 3 }
+     * }</pre>
+     */
+    @PostMapping
+    @RequireScope("partner")
+    public ResponseEntity<Map<String, Object>> ingest(@RequestBody IngestRequest req) {
+        ingestionService.ingest(req.text(), req.metadata());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(
+            Map.of("status", "ingested", "chunks", "split-and-stored"));
+    }
+
+    /**
+     * Bulk-ingest a list of pre-built documents (each with its own
+     * text + metadata). Useful for batch loading from external sources
+     * — file-based ingestion would parse a directory and POST here.
+     */
+    @PostMapping("/batch")
+    @RequireScope("partner")
+    public ResponseEntity<Map<String, Object>> ingestBatch(@RequestBody List<IngestRequest> requests) {
+        List<org.springframework.ai.document.Document> docs = requests.stream()
+            .map(r -> org.springframework.ai.document.Document.builder()
+                .text(r.text())
+                .metadata(r.metadata() == null ? Map.of() : r.metadata())
+                .build())
+            .toList();
+        ingestionService.ingest(docs);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(
+            Map.of("status", "ingested", "count", requests.size()));
+    }
+
+    /**
+     * Request payload — text + optional metadata. Java {@code record}
+     * for compact serialization.
+     */
+    public record IngestRequest(String text, Map<String, Object> metadata) {}
+}

@@ -1,0 +1,60 @@
+package {{.GroupID}}.aiagent.config;
+
+import org.flywaydb.core.Flyway;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
+import org.springframework.boot.autoconfigure.flyway.FlywayMigrationInitializer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import javax.sql.DataSource;
+
+/**
+ * Second {@link Flyway} bean that owns the {@code vector} schema —
+ * separate from the application's main {@code public} schema, separate
+ * migration history table.
+ *
+ * <p>Why two schemas in one Postgres? The PGVector extension installs
+ * the {@code vector} type at the database level, but we keep its tables
+ * (embeddings, indexes) cleanly partitioned. The application owns
+ * {@code public} (entities, FK-free domain tables); the AIAgent owns
+ * {@code vector} (RAG store). One backup, one connection pool, no DDL
+ * collisions, easy to drop the RAG schema without touching domain data.
+ *
+ * <p>Spring Boot's {@link FlywayAutoConfiguration} only wires ONE
+ * Flyway bean from {@code spring.flyway.*} properties. This config
+ * adds a second one, sharing the configured {@link DataSource} but
+ * with its own location ({@code db/vector-migration}) and history
+ * table ({@code flyway_schema_history_vector}). The
+ * {@link FlywayMigrationInitializer} runs it at startup, after the
+ * primary Flyway has finished.
+ *
+ * <p>{@code @ConditionalOnProperty} ties activation to the same property
+ * Spring AI's PGVector starter reads — when the user hasn't configured
+ * pgvector at all, this config and its migration are dormant.
+ */
+@Configuration
+@ConditionalOnProperty(prefix = "spring.ai.vectorstore.pgvector", name = "table-name")
+@AutoConfigureAfter(FlywayAutoConfiguration.class)
+public class VectorFlywayConfig {
+
+    @Bean
+    public Flyway flywayVector(DataSource dataSource) {
+        return Flyway.configure()
+            .dataSource(dataSource)
+            .schemas("vector")
+            .defaultSchema("vector")
+            .table("flyway_schema_history_vector")
+            .locations("classpath:db/vector-migration")
+            .baselineOnMigrate(true)
+            .createSchemas(true)
+            .load();
+    }
+
+    @Bean
+    public FlywayMigrationInitializer flywayVectorInitializer(@Qualifier("flywayVector") Flyway flywayVector) {
+        return new FlywayMigrationInitializer(flywayVector, null);
+    }
+}

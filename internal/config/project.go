@@ -31,6 +31,20 @@ type ProjectConfig struct {
 	// CI/CD Provider
 	CIProvider string // "github" or "" (empty = none)
 
+	// VectorStore: vector-similarity backend for the AIAgent module's
+	// RAG (Retrieval-Augmented Generation) layer. Empty / "none" =
+	// keyword-only knowledge retrieval (the default). When set, the
+	// AIAgent module ships embedding + vector-store dependencies and a
+	// VectorKnowledgeRetriever that supplants the keyword fallback via
+	// @ConditionalOnMissingBean(VectorStore.class).
+	//   - "pgvector"  — PGVector inside the existing Postgres datastore
+	//                   (separate `vector` schema, separate Flyway bean)
+	//   - "qdrant"    — standalone Qdrant container (best raw perf)
+	//   - "mongodb"   — MongoDB Atlas Vector Search (cloud-only;
+	//                   community Mongo cannot serve $vectorSearch)
+	//   - "" / "none" — no RAG; keyword retrieval only
+	VectorStore string
+
 	// Review: on-turn code review automation (subagents + hooks + skills)
 	Review ReviewConfig
 
@@ -379,6 +393,44 @@ func (c *ProjectConfig) ReviewEnabled() bool {
 // Stop hook guard that ensures the code-reviewer subagent is invoked.
 func (c *ProjectConfig) ReviewEmitsStopHook() bool {
 	return c.Review.Mode == ReviewModeFull
+}
+
+// Vector store constants
+const (
+	VectorStoreNone     = "none"
+	VectorStorePgVector = "pgvector"
+	VectorStoreQdrant   = "qdrant"
+	VectorStoreMongoDB  = "mongodb"
+)
+
+// HasVectorStore returns true when the project should ship vector-store
+// scaffolding (embedding starter, VectorKnowledgeRetriever, ingestion).
+// AIAgent must be selected for the vector path to be useful — RAG without
+// an agent has no consumer in any pattern Trabuco generates.
+func (c *ProjectConfig) HasVectorStore() bool {
+	if !c.HasModule(ModuleAIAgent) {
+		return false
+	}
+	return c.VectorStore != "" && c.VectorStore != VectorStoreNone
+}
+
+// VectorStoreIsPgVector returns true when the PGVector flavor is selected.
+// Implies a Postgres SQLDatastore is also present (the CLI auto-resolves
+// this in Phase E).
+func (c *ProjectConfig) VectorStoreIsPgVector() bool {
+	return c.VectorStore == VectorStorePgVector
+}
+
+// VectorStoreIsQdrant returns true for the standalone Qdrant container.
+func (c *ProjectConfig) VectorStoreIsQdrant() bool {
+	return c.VectorStore == VectorStoreQdrant
+}
+
+// VectorStoreIsMongoAtlas returns true when the project uses MongoDB
+// Atlas Vector Search. Note: community Mongo cannot serve $vectorSearch
+// — generated code still works but only against Atlas.
+func (c *ProjectConfig) VectorStoreIsMongoAtlas() bool {
+	return c.VectorStore == VectorStoreMongoDB
 }
 
 // AuthEnabled returns true when auth scaffolding should be generated for

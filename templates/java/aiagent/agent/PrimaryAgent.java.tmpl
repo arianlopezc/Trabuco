@@ -4,15 +4,34 @@ import {{.GroupID}}.aiagent.tool.PlaceholderTools;
 import {{.GroupID}}.aiagent.knowledge.KnowledgeTools;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
+import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
+
+import java.util.Optional;
 
 /**
  * Primary agent that handles user-facing conversations.
  *
  * This agent has access to domain tools, knowledge tools, and can delegate
  * to the specialist agent for domain-specific sub-tasks.
+ *
+ * <p>When a Spring AI {@link VectorStore} is wired (via the optional
+ * {@code spring-ai-starter-vector-store-*} starter), the primary agent
+ * additionally installs a {@link RetrievalAugmentationAdvisor} on its
+ * {@link ChatClient}. The advisor performs ambient RAG: every user
+ * message triggers a similarity search; the top hits are injected into
+ * the prompt as context before the LLM call. This is complementary to
+ * the {@code KnowledgeTools.@Tool} path — the advisor supplies passive
+ * context, the tool lets the LLM ask explicit questions.
+ *
+ * <p>When no {@code VectorStore} bean exists, {@code Optional.empty()}
+ * is injected and no advisor is added — the keyword-based
+ * {@code KnowledgeTools} path remains the only retrieval surface.
  */
 @Component
 @ConditionalOnBean(ChatModel.class)
@@ -43,10 +62,28 @@ public class PrimaryAgent {
     public PrimaryAgent(ChatModel chatModel,
                         PlaceholderTools placeholderTools,
                         KnowledgeTools knowledgeTools,
-                        SpecialistAgentTool specialistAgentTool) {
-        this.chatClient = ChatClient.builder(chatModel)
+                        SpecialistAgentTool specialistAgentTool,
+                        Optional<VectorStore> vectorStore) {
+        ChatClient.Builder builder = ChatClient.builder(chatModel)
             .defaultSystem(SYSTEM_PROMPT)
-            .defaultTools(placeholderTools, knowledgeTools, specialistAgentTool)
+            .defaultTools(placeholderTools, knowledgeTools, specialistAgentTool);
+
+        // Add ambient RAG when a VectorStore is wired. The advisor
+        // intercepts every prompt, retrieves similar documents, and
+        // injects them as context. No code change needed in tools or
+        // controllers — the agent's responses just become more
+        // grounded once you've ingested documents.
+        vectorStore.ifPresent(vs -> builder.defaultAdvisors(buildRagAdvisor(vs)));
+
+        this.chatClient = builder.build();
+    }
+
+    private static Advisor buildRagAdvisor(VectorStore vectorStore) {
+        return RetrievalAugmentationAdvisor.builder()
+            .documentRetriever(VectorStoreDocumentRetriever.builder()
+                .vectorStore(vectorStore)
+                .topK(4)
+                .build())
             .build();
     }
 
