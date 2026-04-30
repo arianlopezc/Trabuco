@@ -56,6 +56,34 @@ spring:
           max-tokens: ${AI_MAX_TOKENS:1024}
     retry:
       max-attempts: ${AI_RETRY_MAX_ATTEMPTS:2}
+{{- if .VectorStoreIsPgVector}}
+    # Vector store — PGVector backend in the same Postgres datasource as
+    # the application's domain tables, but isolated in its own schema
+    # (`vector`) with its own Flyway history. The schema is created and
+    # migrated by VectorFlywayConfig + db/vector-migration; we set
+    # initialize-schema=false so Spring AI's PgVectorStore doesn't try
+    # to create the table itself.
+    vectorstore:
+      pgvector:
+        schema-name: vector
+        table-name: documents
+        initialize-schema: false
+        # Cosine distance matches the normalized embeddings the default
+        # transformer model emits. Switch to EUCLIDEAN_DISTANCE or
+        # NEGATIVE_INNER_PRODUCT only if your embedding model demands it.
+        distance-type: COSINE_DISTANCE
+        # Must match the vector(N) declared in V1__create_vector_schema.sql.
+        # Update both together when swapping embedding providers.
+        dimensions: 384
+    # Local ONNX embeddings via spring-ai-starter-model-transformers.
+    # No API key required; ~80 MB model downloads once and caches under
+    # ~/.djl.ai/. Use a real provider in production for higher-quality
+    # retrieval — see docs/vector-rag.md.
+    embedding:
+      transformer:
+        onnx:
+          model-output-name: last_hidden_state
+{{- end}}
 {{- if .HasModule "SQLDatastore"}}
 
   # Database configuration

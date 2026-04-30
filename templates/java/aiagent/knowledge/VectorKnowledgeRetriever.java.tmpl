@@ -1,0 +1,48 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+
+/**
+ * Vector-similarity {@link KnowledgeRetriever} backed by a Spring AI
+ * {@link VectorStore}.
+ *
+ * <p>Active whenever a {@code VectorStore} bean is wired
+ * ({@code @ConditionalOnBean(VectorStore.class)}). The embedding model
+ * is resolved from the Spring context via the
+ * {@code spring-ai-starter-model-transformers} starter (default —
+ * pure-Java ONNX, no API key, ~80 MB one-time model download cached
+ * under {@code ~/.djl.ai/}). Swap to OpenAI / Bedrock / Vertex AI by
+ * replacing the embeddings starter in the AIAgent {@code pom.xml}; no
+ * code change required here.
+ *
+ * <p>When this bean is present, {@link KeywordKnowledgeRetriever} is
+ * automatically excluded by Spring's
+ * {@code @ConditionalOnMissingBean(VectorStore.class)} guard — only one
+ * retriever runs at a time.
+ */
+@Component
+@ConditionalOnBean(VectorStore.class)
+public class VectorKnowledgeRetriever implements KnowledgeRetriever {
+
+    private final VectorStore vectorStore;
+
+    public VectorKnowledgeRetriever(VectorStore vectorStore) {
+        this.vectorStore = vectorStore;
+    }
+
+    @Override
+    public List<Document> retrieve(String query, int topK) {
+        SearchRequest request = SearchRequest.builder()
+            .query(query)
+            .topK(topK)
+            .build();
+        List<Document> results = vectorStore.similaritySearch(request);
+        return results == null ? List.of() : results;
+    }
+}

@@ -115,6 +115,34 @@
                 </exclusion>
             </exclusions>
         </dependency>
+{{- if .VectorStoreIsPgVector}}
+
+        <!-- Spring AI - PGVector store. Reads spring.ai.vectorstore.pgvector.*
+             from application.yml; writes/reads the `documents` table in
+             the `vector` schema (DDL owned by VectorFlywayConfig +
+             db/vector-migration/V1__create_vector_schema.sql, NOT by
+             Spring AI's auto-init — initialize-schema is set false). -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+        </dependency>
+
+        <!-- Spring AI - Transformers embedding model. Pure-Java ONNX
+             runtime running intfloat/e5-small-v2 (384-dim). Downloads
+             the model once on first boot (~80 MB cached under
+             ~/.djl.ai), then runs locally — no API key, no external
+             service. Production-grade quality? Acceptable for FAQ /
+             internal-knowledge use cases; swap to OpenAI / Bedrock /
+             Vertex for high-stakes retrieval (see docs/vector-rag.md).
+
+             If you swap embedding providers, update the vector(N)
+             column type in V1__create_vector_schema.sql to match the
+             new dimensionality before the first ingestion. -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-transformers</artifactId>
+        </dependency>
+{{- end}}
 
         <!-- Resilience4j Circuit Breaker -->
         <dependency>

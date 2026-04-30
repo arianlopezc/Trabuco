@@ -835,9 +835,27 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/config/McpServerConfig.java.tmpl", filepath.Join("config", "McpServerConfig.java")},
 		{"java/aiagent/config/WebConfig.java.tmpl", filepath.Join("config", "WebConfig.java")},
 	}
+	if g.config.VectorStoreIsPgVector() {
+		// Second Flyway bean for the vector schema. Only emitted when
+		// PGVector is selected — Qdrant and Mongo Atlas paths don't
+		// share a Postgres datasource, so they don't need this.
+		configFiles = append(configFiles,
+			struct{ tmpl, out string }{"java/aiagent/config/VectorFlywayConfig.java.tmpl", filepath.Join("config", "VectorFlywayConfig.java")},
+		)
+	}
 	for _, f := range configFiles {
 		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
 			return fmt.Errorf("failed to generate %s: %w", f.out, err)
+		}
+	}
+
+	// ─── Vector schema migration (PGVector only) ────────────────────────
+	if g.config.VectorStoreIsPgVector() {
+		if err := g.writeTemplate(
+			"java/aiagent/migration/V1__create_vector_schema.sql.tmpl",
+			g.resourcePath("AIAgent", filepath.Join("db", "vector-migration", "V1__create_vector_schema.sql")),
+		); err != nil {
+			return fmt.Errorf("failed to generate vector-schema migration: %w", err)
 		}
 	}
 
@@ -908,14 +926,23 @@ func (g *Generator) generateAIAgentModule() error {
 	// ─── Knowledge ──────────────────────────────────────────────────────
 	// KnowledgeRetriever is the strategy interface for fetching relevant
 	// documents; KeywordKnowledgeRetriever is the default token-scoring
-	// implementation (active when no VectorStore bean is wired). When a
-	// vector store is configured (Phase B), VectorKnowledgeRetriever
-	// supplants it via @ConditionalOnMissingBean(VectorStore.class).
+	// implementation (active when no VectorStore bean is wired). When
+	// HasVectorStore is true, VectorKnowledgeRetriever supplants it via
+	// @ConditionalOnMissingBean(VectorStore.class), and the Spring AI
+	// VectorStore + EmbeddingModel beans come from the conditionally-
+	// added starters in aiagent.xml.tmpl.
 	knowledgeFiles := []struct{ tmpl, out string }{
 		{"java/aiagent/knowledge/KnowledgeBase.java.tmpl", filepath.Join("knowledge", "KnowledgeBase.java")},
 		{"java/aiagent/knowledge/KnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "KnowledgeRetriever.java")},
 		{"java/aiagent/knowledge/KeywordKnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "KeywordKnowledgeRetriever.java")},
 		{"java/aiagent/knowledge/KnowledgeTools.java.tmpl", filepath.Join("knowledge", "KnowledgeTools.java")},
+	}
+	if g.config.HasVectorStore() {
+		knowledgeFiles = append(knowledgeFiles,
+			struct{ tmpl, out string }{"java/aiagent/knowledge/VectorKnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "VectorKnowledgeRetriever.java")},
+			struct{ tmpl, out string }{"java/aiagent/knowledge/EmbeddingService.java.tmpl", filepath.Join("knowledge", "EmbeddingService.java")},
+			struct{ tmpl, out string }{"java/aiagent/knowledge/DocumentIngestionService.java.tmpl", filepath.Join("knowledge", "DocumentIngestionService.java")},
+		)
 	}
 	for _, f := range knowledgeFiles {
 		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
@@ -930,6 +957,14 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/protocol/DiscoveryController.java.tmpl", filepath.Join("protocol", "DiscoveryController.java")},
 		{"java/aiagent/protocol/StreamingController.java.tmpl", filepath.Join("protocol", "StreamingController.java")},
 		{"java/aiagent/protocol/WebhookController.java.tmpl", filepath.Join("protocol", "WebhookController.java")},
+	}
+	if g.config.HasVectorStore() {
+		// Ingestion REST endpoint (POST /ingest, /ingest/batch). Conditional
+		// because the underlying DocumentIngestionService only loads when a
+		// VectorStore bean is wired.
+		protocolFiles = append(protocolFiles,
+			struct{ tmpl, out string }{"java/aiagent/protocol/IngestionController.java.tmpl", filepath.Join("protocol", "IngestionController.java")},
+		)
 	}
 	for _, f := range protocolFiles {
 		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
