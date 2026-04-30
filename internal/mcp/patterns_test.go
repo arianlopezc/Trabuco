@@ -135,6 +135,26 @@ func TestPatternMatching_HeadlessProcessor(t *testing.T) {
 	requireTopPattern(t, patterns, "worker-only")
 }
 
+func TestPatternMatching_RAGKnowledgeBase(t *testing.T) {
+	// Strong RAG signal — should land on ai-agent-rag
+	patterns := scorePatterns("knowledge base Q&A bot with retrieval-augmented generation and vector search")
+	requireTopPattern(t, patterns, "ai-agent-rag")
+	requireModules(t, patterns[0], "Model", "SQLDatastore", "Shared", "API", "AIAgent")
+	if patterns[0].RecommendedVector != "pgvector" {
+		t.Errorf("Expected RecommendedVector=pgvector, got %q", patterns[0].RecommendedVector)
+	}
+	if patterns[0].RecommendedDB != "postgresql" {
+		t.Errorf("Expected RecommendedDB=postgresql, got %q", patterns[0].RecommendedDB)
+	}
+}
+
+func TestPatternMatching_PlainAgentBeatsRAGAgentForGenericChat(t *testing.T) {
+	// Generic chatbot ask without RAG-specific terms — ai-agent should
+	// outrank ai-agent-rag (the RAG pattern's keywords are RAG-specific).
+	patterns := scorePatterns("chatbot with tool calling and guardrails")
+	requireTopPattern(t, patterns, "ai-agent")
+}
+
 func TestPatternMatching_MCPServerRemoved(t *testing.T) {
 	// MCP server pattern was removed — AI tool requests should no longer match it
 	patterns := scorePatterns("MCP server for AI tool integration")

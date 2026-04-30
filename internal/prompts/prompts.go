@@ -139,6 +139,41 @@ func RunPrompts() (*config.ProjectConfig, error) {
 		cfg.MessageBroker = normalizeMessageBrokerChoice(cfg.MessageBroker)
 	}
 
+	// 7b. Vector RAG store (only if AIAgent is selected). Default
+	// suggestion follows the just-chosen datastore so the prompt can
+	// be one keystroke (Enter) for the common combinations:
+	//   AIAgent + SQLDatastore=postgresql        → suggest pgvector
+	//   AIAgent + NoSQLDatastore=mongodb         → suggest mongodb (Atlas)
+	//   anything else                             → suggest none
+	// User can always override; ResolveVectorStore() validates the
+	// final combination and rejects conflicts.
+	if cfg.HasModule(config.ModuleAIAgent) {
+		options := []string{
+			"None - Keyword retrieval only (no embedding model, no vector store)",
+			"PGVector - Vector store inside the application's Postgres datastore",
+			"Qdrant - Standalone gRPC server (best raw performance)",
+			"MongoDB Atlas - Atlas Vector Search ($vectorSearch is Atlas-only)",
+		}
+		defaultChoice := options[0]
+		switch {
+		case cfg.HasModule(config.ModuleSQLDatastore) && cfg.Database == config.DatabasePostgreSQL:
+			defaultChoice = options[1]
+		case cfg.HasModule(config.ModuleNoSQLDatastore) && cfg.NoSQLDatabase == config.DatabaseMongoDB:
+			defaultChoice = options[3]
+		}
+
+		var ragChoice string
+		if err := survey.AskOne(&survey.Select{
+			Message: "Vector RAG store:",
+			Options: options,
+			Default: defaultChoice,
+			Help:    "Adds embedding configuration, ingestion endpoint, and similarity-search retrieval to the AIAgent module. See docs/vector-rag.md.",
+		}, &ragChoice); err != nil {
+			return nil, err
+		}
+		cfg.VectorStore = normalizeVectorStoreChoice(ragChoice)
+	}
+
 	// 8. AI coding agent context files
 	agentOptions := config.GetAIAgentDisplayOptions()
 	var selectedAgentIndices []int
@@ -296,6 +331,19 @@ func normalizeMessageBrokerChoice(choice string) string {
 		return config.BrokerPubSub
 	default:
 		return config.BrokerKafka
+	}
+}
+
+func normalizeVectorStoreChoice(choice string) string {
+	switch {
+	case strings.HasPrefix(choice, "PGVector"):
+		return config.VectorStorePgVector
+	case strings.HasPrefix(choice, "Qdrant"):
+		return config.VectorStoreQdrant
+	case strings.HasPrefix(choice, "MongoDB Atlas"):
+		return config.VectorStoreMongoDB
+	default:
+		return ""
 	}
 }
 

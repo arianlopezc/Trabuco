@@ -39,6 +39,10 @@ TRABUCO MODULE DECISION TREE:
 5. Does the user need background jobs? → Add Worker (uses SQL database for job storage)
 6. Does the user need message broker consumers? → Add EventConsumer (pick kafka, rabbitmq, sqs, or pubsub)
 7. Does the user need AI/LLM capabilities? → Add AIAgent (tool calling, guardrails, multi-agent, MCP server, A2A)
+8. Does the user need vector search / RAG? → Add AIAgent + pass --vector-store=pgvector|qdrant|mongodb
+   - pgvector: same Postgres datastore (auto-adds SQLDatastore + forces postgresql)
+   - qdrant: standalone gRPC server, best raw perf
+   - mongodb: Atlas Vector Search ($vectorSearch is Atlas-only — community Mongo cannot serve queries)
 
 COMMON PITFALLS TO AVOID:
 - Do NOT select both SQLDatastore and NoSQLDatastore — they conflict
@@ -71,7 +75,6 @@ WHAT TRABUCO DOES NOT GENERATE:
 - Kubernetes manifests, Terraform, cloud deployment
 - Custom business logic or production database schemas
 - Rate limiting (available in AIAgent module; for API-only projects, add manually), multi-tenancy, API versioning
-- Vector DB / semantic RAG (AIAgent uses keyword retrieval)
 
 POST-GENERATION STEPS:
 1. Replace placeholder entities in Model/ with real domain objects
@@ -338,6 +341,37 @@ HOW TO USE THE A2A PROTOCOL:
 3. Other agents discover your agent's skills via the card
 4. Implement skill handlers in the a2a/ package
 5. Use A2A to connect multiple Trabuco agents or third-party agents
+
+HOW TO ENABLE VECTOR RAG (RETRIEVAL-AUGMENTED GENERATION):
+1. Generate the project with --vector-store=<flavor>:
+   - pgvector: same Postgres datastore (auto-adds SQLDatastore + forces postgresql)
+   - qdrant:   standalone gRPC server (best raw performance; runs in Docker)
+   - mongodb:  Atlas Vector Search (Atlas-only — community Mongo cannot serve $vectorSearch)
+2. Default embedding model is local ONNX (intfloat/e5-small-v2, 384-dim).
+   No API key required. To swap: replace spring-ai-starter-model-transformers
+   with spring-ai-starter-model-{openai,bedrock,vertex-ai-embedding} and
+   update the dimensionality (vector(N) for pgvector V1 migration, Atlas
+   index numDimensions for mongodb).
+3. Two retrieval surfaces are wired automatically:
+   - KnowledgeTools.@Tool askKnowledge — LLM-controlled lookups
+   - RetrievalAugmentationAdvisor on PrimaryAgent's ChatClient —
+     ambient RAG: every prompt triggers a similarity search,
+     top-K (default 4) prepends the prompt as context.
+4. Ingest documents via DocumentIngestionService.ingest(text, metadata)
+   programmatically, or POST /ingest (gated by @RequireScope("partner")
+   on the legacy API-key path).
+5. PGVector + Postgres: an integration test (VectorRagIntegrationTest)
+   boots a real pgvector/pgvector:pg16 Testcontainer and asserts the
+   ingest → similarity-search round-trip.
+6. MongoDB Atlas: the vector index MUST be created out-of-band in
+   Atlas (UI/CLI/API) — Spring AI cannot create it.
+   Full guide with index DDL: docs/vector-rag.md.
+7. The retriever pair (Vector when wired, Keyword as fallback) is
+   wired via @Bean methods in KnowledgeBeansConfiguration with
+   @Primary on the vector path. NOT via @Component +
+   @ConditionalOnBean — that pattern is unreliable on user-scanned
+   components because Spring evaluates the conditional before the
+   vector-store auto-config registers VectorStore.
 
 WHEN TO USE LLM vs DETERMINISTIC CODE:
 - Use LLM: natural language understanding, classification, summarization, creative content
