@@ -35,10 +35,18 @@ case "{skill_name}" -> {
 }
 ```
 
-**Scope options:**
+**Scope options (legacy API-key path, governed by `app.aiagent.api-key.enabled`):**
 - `"anonymous"` — no authentication required
 - `"public"` — requires public-read-key
 - `"partner"` — requires partner-secret-key
+
+**JWT path (governed by `trabuco.auth.enabled=true` + `OIDC_ISSUER_URI`):**
+When the OIDC chain is active, A2A callers send a JWT bearer token instead
+of an API key. Replace the `ScopeEnforcer.requireScope(...)` line with
+`@PreAuthorize("hasAuthority('SCOPE_<scope>')")` on the underlying tool
+method, or with a programmatic `SecurityContextHolder` check inside the
+handler. The two systems coexist; pick one per skill or run both during
+migration.
 
 ### 2. Update Agent Card
 

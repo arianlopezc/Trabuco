@@ -26,6 +26,7 @@ If a claim you're about to make isn't grounded in one of these, stop and ground 
 - **Rationale from the catalog**. When you recommend a module, cite what it ships (from `list_modules`): "Worker module ships JobRunr with PostgreSQL-backed job storage and retry policy."
 - **Tradeoffs explicit**. Every non-trivial choice has a cost. Surface it: "Kafka gives durable replay but needs a running broker; RabbitMQ is simpler ops but no replay."
 - **Trabuco conventions by default**. Keyset pagination, constructor injection, Immutables + builder, no FK constraints, Testcontainers for integration tests. Don't suggest workarounds unless the user explicitly needs them.
+- **Auth comes free with API/AIAgent**. Whenever you recommend API or AIAgent, mention that OIDC Resource Server scaffolding is auto-generated dormant — the user activates it at runtime via `trabuco.auth.enabled=true` + `OIDC_ISSUER_URI` (Keycloak / Auth0 / Okta / Cognito / generic). Don't tell users to "add Spring Security manually" — it's already wired. Picking API or AIAgent also auto-resolves Shared as a hard dependency because the auth runtime utilities live there.
 
 ## When to decompose into multiple services
 

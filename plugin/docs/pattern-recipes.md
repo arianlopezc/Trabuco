@@ -4,6 +4,10 @@ Concrete playbooks for common requirements. Each recipe names the modules, the i
 
 For live pattern data, read `trabuco://patterns`. This doc is the *playbook* — what to do once a pattern is chosen.
 
+## Authentication note (applies to every recipe with API or AIAgent)
+
+Every recipe below that includes API or AIAgent gets OIDC Resource Server scaffolding **auto-generated and dormant**: `IdentityClaims` / `AuthorityScope` / `AuthenticatedRequest` in Model, `JwtClaimsExtractor` / `RequestContextHolder` / `AuthContextPropagator` in Shared, dual `SecurityFilterChain` (JWT chain + permit-all fallback) and RFC 7807 ProblemDetail handlers in API/AIAgent. The recipe-level "after generation" steps assume you'll activate auth at runtime when you have an IdP ready: set `trabuco.auth.enabled=true` and `OIDC_ISSUER_URI=<your IdP discovery URL>`. Until then, every endpoint is open via the permit-all chain — fine for local dev, do not deploy to prod that way. Per-provider config: see `docs/auth.md`.
+
 ---
 
 ## "CRUD REST API over a relational database"

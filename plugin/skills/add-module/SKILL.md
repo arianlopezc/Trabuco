@@ -33,5 +33,6 @@ argument-hint: "[module name]"
 ## Rules
 
 - **Never add a module without explicit confirmation** when the project is large (>5 modules already present).
-- **Respect module dependencies**. Some modules require others (e.g., EventConsumer needs Events; AIAgent benefits from Shared). If the user picks a module with missing prerequisites, offer to add the prerequisite first.
-- **After adding AIAgent**, remind the user about A2A agent card at `/.well-known/agent.json` and the MCP server exposure on localhost:8080.
+- **Respect module dependencies**. Some modules require others (e.g., EventConsumer needs Events; API and AIAgent both have Shared as a hard dependency now because the auth runtime utilities live in Shared). If the user picks a module with missing prerequisites, offer to add the prerequisite first — `add_module` resolves them automatically but it's good to surface.
+- **After adding API or AIAgent**, remind the user that OIDC Resource Server scaffolding has been added dormant: `application.yml` now exposes `trabuco.auth.enabled` (default false) and `spring.security.oauth2.resourceserver.jwt.issuer-uri` (sourced from `OIDC_ISSUER_URI`). Activating both flips the JWT chain on; the project documents the matrix in `docs/auth.md`.
+- **After adding AIAgent**, remind the user about A2A agent card at `/.well-known/agent.json`, the MCP server exposure on localhost:8080, AND the legacy `ApiKeyAuthFilter` that coexists with the new JWT chain (governed by independent `app.aiagent.api-key.enabled` property, default on for backward compatibility).

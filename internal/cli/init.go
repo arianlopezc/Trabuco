@@ -56,6 +56,13 @@ This command will interactively prompt you for:
 
 Note: SQLDatastore and NoSQLDatastore cannot be selected together.
 
+OIDC Resource Server auth scaffolding is auto-generated whenever API
+or AIAgent is selected. It ships dormant — set the property
+'trabuco.auth.enabled=true' (and OIDC_ISSUER_URI) at runtime to
+activate JWT validation. Picking API or AIAgent also auto-resolves
+Shared as a hard dependency (the auth runtime utilities live there).
+See docs/auth.md for per-provider recipes.
+
 For non-interactive mode, provide all required flags:
   trabuco init --name=myproject --group-id=com.company.project --modules=Model,SQLDatastore --database=postgresql`,
 	Run: runInit,

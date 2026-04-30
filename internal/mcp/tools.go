@@ -52,7 +52,9 @@ func registerInitProject(s *server.MCPServer, version string) {
 				"Trabuco generates a complete project skeleton with working code, tests, Docker configs, CI pipelines, and AI context files. "+
 				"GENERATES: Multi-module Maven project with Spring Boot 3.4, Spring Data JDBC (not JPA), Immutables for DTOs/entities, "+
 				"Testcontainers for integration tests, Spotless for code formatting, JaCoCo for coverage, and Docker Compose for local development. "+
-				"DOES NOT GENERATE: Authentication/authorization, frontend/UI code, GraphQL endpoints, Kubernetes manifests, "+
+				"When API or AIAgent module is selected, also generates OIDC Resource Server scaffolding (dual SecurityFilterChain, JWT validation, "+
+				"RFC 7807 ProblemDetail handlers, Model+Shared auth utilities) — dormant by default, activated by trabuco.auth.enabled=true at runtime. "+
+				"DOES NOT GENERATE: Identity-provider side (login forms, token issuance, user management), frontend/UI code, GraphQL endpoints, Kubernetes manifests, "+
 				"Terraform/cloud deployment configs, custom business logic, or production database schemas. "+
 				"The project includes placeholder entities that should be replaced with real domain objects. "+
 				"ARCHITECTURE: Enforces clean multi-module separation — Model (data), Datastore (persistence), Shared (business logic), "+
@@ -250,11 +252,16 @@ func registerInitProject(s *server.MCPServer, version string) {
 
 		// Build boundaries
 		boundaries := []string{
-			"No authentication/authorization — add Spring Security manually",
+			"No identity-provider side (login, token issuance, user management). Auth scaffolding is resource-server only — pair with a hosted IdP.",
 			"No frontend/UI — backend only",
 			"No production database schema — only placeholder migrations",
 			"No Kubernetes/deployment manifests — Docker Compose for local dev only",
 			"Placeholder entities should be replaced with real domain objects",
+		}
+		if hasModule(resolvedModules, config.ModuleAPI) || hasModule(resolvedModules, config.ModuleAIAgent) {
+			boundaries = append(boundaries,
+				"Auth scaffolding generated dormant. Activate at runtime by setting trabuco.auth.enabled=true and OIDC_ISSUER_URI. See docs/auth.md.",
+			)
 		}
 
 		return toolJSON(map[string]any{
@@ -586,8 +593,8 @@ func detectUnsupported(lower string) []string {
 		keywords []string
 		message  string
 	}{
-		{[]string{"auth", "login", "oauth", "jwt", "session", "permission", "rbac", "role"},
-			"Authentication/authorization: Add Spring Security manually after generation"},
+		{[]string{"login", "signup", "password reset", "mfa", "user management", "auth server", "oauth server", "idp", "identity provider", "token issuance", "session"},
+			"Authentication identity-provider side (login forms, signup, password reset, MFA, token issuance, user management) is NOT generated. Trabuco's auth scaffolding is resource-server only — pair with a hosted IdP (Keycloak / Auth0 / Okta / Cognito) and validate its tokens via the OIDC chain that ships dormant in API/AIAgent (activate with trabuco.auth.enabled=true). See docs/auth.md."},
 		{[]string{"frontend", "react", "angular", "vue", "ui", "html", "css", "template"},
 			"Frontend/UI: Trabuco generates backend only. Use a separate frontend framework"},
 		{[]string{"graphql"},

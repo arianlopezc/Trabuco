@@ -45,7 +45,7 @@ These are limitations in scope, not philosophy. A motivated user can add them wi
 
 These were limitations in 1.10 and earlier. Resolved in 1.11; mention them only if a user is on an old version.
 
-- **Authentication / authorization** — `--auth=oidc` (since 1.11) generates a Spring Security 6 OAuth2 Resource Server with JWT validation against an external OIDC issuer (Keycloak / Auth0 / Okta / Cognito / generic). Universal data types (`IdentityClaims`, `AuthorityScope`) live in Model; cross-module utilities (`RequestContextHolder`, `JwtClaimsExtractor`, `AuthScope`, `DefaultAuthContextPropagator`) in Shared; HTTP filter chain in API and AIAgent. AIAgent's legacy tier-based API-key path coexists via `@ConditionalOnProperty(matchIfMissing=true)`. Full guide: `docs/auth.md`.
+- **Authentication / authorization (resource-server side)** — Whenever API or AIAgent is selected (since 1.11), Trabuco emits a complete Spring Security 6 OAuth2 Resource Server scaffolding. Dual `SecurityFilterChain` beans (JWT chain when `trabuco.auth.enabled=true`; permit-all chain by default), `JwtAuthenticationConverter` populating `RequestContextHolder`, RFC 7807 ProblemDetail handlers for 401/403, RSA-signed e2e test utilities, regression backstop for the dormant default. Provider-agnostic: works with Keycloak / Auth0 / Okta / Cognito / generic OIDC. Universal data types (`IdentityClaims`, `AuthorityScope`, `AuthenticatedRequest`) in Model; cross-module utilities (`RequestContextHolder`, `JwtClaimsExtractor`, `AuthScope`, `DefaultAuthContextPropagator`) in Shared; filter chain + tests in API and AIAgent. The scaffolding ships **dormant** — no auth is enforced at runtime until `trabuco.auth.enabled=true` and `OIDC_ISSUER_URI` are configured. AIAgent's legacy `ApiKeyAuthFilter` coexists, governed by its own `app.aiagent.api-key.enabled` property (default on). Full guide: `docs/auth.md`.
 
 ## Not-limitations — things users *think* are missing but aren't
 
@@ -63,7 +63,7 @@ Say this when:
 - The user wants a **different framework family** — Quarkus, Micronaut, Dropwizard, Ktor, Helidon. Trabuco is Spring Boot-only.
 - The project needs **Boot 2.x** compatibility — Trabuco targets 3.4.2 only.
 - The project needs **non-JVM languages** — Trabuco is JVM-only.
-- **Auth IS the project** (e.g., building an OAuth server / IdP) — Trabuco scaffolds resource-server-side validation only (`--auth=oidc` generates an OIDC Resource Server). It does NOT generate identity-provider-side code (login forms, token issuance, user management).
+- **Auth IS the project** (e.g., building an OAuth server / IdP) — Trabuco scaffolds resource-server-side validation only (auto-emitted with API/AIAgent, dormant until `trabuco.auth.enabled=true`). It does NOT generate identity-provider-side code (login forms, token issuance, MFA, password reset, user management). Use a hosted IdP for the producer side.
 
 Being honest about fit saves the user from generating a project they'll fight for weeks. Don't oversell.
 

@@ -143,10 +143,10 @@ func registerLimitationsResource(s *server.MCPServer) {
 
 			limitations := []limitation{
 				{
-					Category:    "Authentication & Authorization",
-					Description: "No login, OAuth, JWT, session management, RBAC, or permission systems",
-					Workaround:  "Add Spring Security manually after generation",
-					Keywords:    []string{"auth", "login", "oauth", "jwt", "session", "permission", "rbac", "role"},
+					Category:    "Identity Provider (login forms, token issuance)",
+					Description: "Trabuco scaffolds a resource-server only — JWT validation against an external OIDC issuer (Keycloak / Auth0 / Okta / Cognito / generic). It does NOT generate the producer side: login forms, password handling, MFA, token issuance, refresh-token rotation, PKCE flows, or user-management UI.",
+					Workaround:  "Pair Trabuco with a hosted IdP (Keycloak self-hosted, Auth0, Okta, Cognito). Trabuco's auth scaffolding ships dormant in API/AIAgent — set trabuco.auth.enabled=true and OIDC_ISSUER_URI to validate the IdP's tokens. See docs/auth.md.",
+					Keywords:    []string{"login form", "token issuance", "password", "mfa", "user management", "idp", "identity provider", "auth server", "oauth server", "refresh token", "pkce"},
 				},
 				{
 					Category:    "Frontend & UI",
