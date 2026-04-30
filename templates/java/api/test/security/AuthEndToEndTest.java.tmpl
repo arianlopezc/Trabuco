@@ -1,0 +1,176 @@
+package {{.GroupID}}.api.config.security;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * End-to-end test of the auth scaffolding with a real HTTP server,
+ * real signed JWTs, and real signature verification.
+ *
+ * <p>Differences from {@code SecurityIntegrationTest}:
+ * <ul>
+ *   <li>Uses {@code @SpringBootTest(webEnvironment = RANDOM_PORT)} so a
+ *       real Tomcat boots on an ephemeral port — exercises the full
+ *       servlet container, not just MockMvc.</li>
+ *   <li>The {@link JwtDecoder} is the production
+ *       {@code NimbusJwtDecoder} configured with a test RSA public key
+ *       — real signature verification, not a Mockito mock.</li>
+ *   <li>JWTs are real RS256-signed tokens from
+ *       {@link SignedJwtTestSupport} — round-tripped through HTTP
+ *       headers, parsed by Spring, validated against the public key.</li>
+ *   <li>An inline {@link SecuredTestEndpoints} controller exposes a
+ *       scope-protected endpoint so the 403 path can be exercised.</li>
+ * </ul>
+ *
+ * <p>This is the highest-fidelity validation of the auth chain short
+ * of integrating with a real IdP — covers signature, expiry, scope,
+ * and ProblemDetail emission over the wire.
+ */
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    // Auth scaffolding is generated dormant by default; the e2e suite
+    // explicitly enables the JWT chain so the 401/403 paths can be
+    // exercised end-to-end.
+    properties = "trabuco.auth.enabled=true"
+)
+@Import({AuthEndToEndTest.RealJwtConfig.class, AuthEndToEndTest.SecuredTestEndpoints.class})
+class AuthEndToEndTest {
+
+    @TestConfiguration
+    static class RealJwtConfig {
+        @Bean
+        JwtDecoder jwtDecoder() {
+            return SignedJwtTestSupport.decoderWithPublicKey();
+        }
+    }
+
+    /**
+     * Inline test-only controller that exposes a scope-protected endpoint.
+     * Defined here rather than in production sources so production code
+     * stays clean of test scaffolding.
+     */
+    @RestController
+    static class SecuredTestEndpoints {
+        @GetMapping("/test/any-authenticated")
+        public String anyAuthenticated() {
+            return "ok-any-authenticated";
+        }
+
+        @GetMapping("/test/admin-only")
+        @PreAuthorize("hasAuthority('SCOPE_admin')")
+        public String adminOnly() {
+            return "ok-admin-only";
+        }
+    }
+
+    @Autowired
+    private TestRestTemplate restTemplate;
+
+    @Test
+    void healthEndpointAccessibleWithoutToken() {
+        ResponseEntity<String> resp = restTemplate.getForEntity("/actuator/health", String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void protectedEndpointReturns401ProblemDetailWithoutToken() {
+        ResponseEntity<Map<String, Object>> resp = exchange("/test/any-authenticated", null);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(resp.getHeaders().getContentType())
+            .as("emits RFC 7807 ProblemDetail content type")
+            .isNotNull();
+        assertThat(resp.getHeaders().getContentType().toString())
+            .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        assertThat(resp.getBody()).isNotNull();
+        assertThat(resp.getBody().get("type")).isEqualTo("urn:problem-type:unauthorized");
+    }
+
+    @Test
+    void protectedEndpointAccessibleWithValidSignedJwt() {
+        String token = SignedJwtTestSupport.signedJwt("user-42", "agent:read");
+        ResponseEntity<String> resp = stringExchange("/test/any-authenticated", token);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resp.getBody()).isEqualTo("ok-any-authenticated");
+    }
+
+    @Test
+    void expiredJwtReturns401() {
+        String expired = SignedJwtTestSupport.expiredJwt("user-42", "agent:read");
+        ResponseEntity<Map<String, Object>> resp = exchange("/test/any-authenticated", expired);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(resp.getBody().get("type")).isEqualTo("urn:problem-type:unauthorized");
+    }
+
+    @Test
+    void jwtSignedWithDifferentKeyReturns401() {
+        String forged = SignedJwtTestSupport.tokenSignedWithDifferentKey("user-42", "agent:read");
+        ResponseEntity<Map<String, Object>> resp = exchange("/test/any-authenticated", forged);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(resp.getBody().get("type")).isEqualTo("urn:problem-type:unauthorized");
+    }
+
+    @Test
+    void scopeProtectedEndpointReturns403WhenScopeIsMissing() {
+        // Token has agent:read but the endpoint requires SCOPE_admin
+        String token = SignedJwtTestSupport.signedJwt("user-42", "agent:read");
+        ResponseEntity<Map<String, Object>> resp = exchange("/test/admin-only", token);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(resp.getBody()).isNotNull();
+        assertThat(resp.getBody().get("type")).isEqualTo("urn:problem-type:forbidden");
+    }
+
+    @Test
+    void scopeProtectedEndpointAccessibleWithRequiredScope() {
+        String token = SignedJwtTestSupport.signedJwt("user-42", "admin");
+        ResponseEntity<String> resp = stringExchange("/test/admin-only", token);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resp.getBody()).isEqualTo("ok-admin-only");
+    }
+
+    // ─── helpers ───────────────────────────────────────────────────────
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private ResponseEntity<Map<String, Object>> exchange(String path, String bearerToken) {
+        HttpHeaders headers = new HttpHeaders();
+        if (bearerToken != null) {
+            headers.setBearerAuth(bearerToken);
+        }
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        ResponseEntity<Map> resp = restTemplate.exchange(path, HttpMethod.GET, entity, Map.class);
+        return (ResponseEntity) resp;
+    }
+
+    private ResponseEntity<String> stringExchange(String path, String bearerToken) {
+        HttpHeaders headers = new HttpHeaders();
+        if (bearerToken != null) {
+            headers.setBearerAuth(bearerToken);
+        }
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        return restTemplate.exchange(path, HttpMethod.GET, entity, String.class);
+    }
+}

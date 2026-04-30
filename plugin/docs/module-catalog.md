@@ -10,10 +10,10 @@ This doc does NOT duplicate the module catalog — for that, read `trabuco://mod
 | **SQLDatastore** | Spring Data JDBC, Flyway, PostgreSQL/MySQL | Relational data with clear entity shape | Pure cache, pure document store, or truly stateless |
 | **NoSQLDatastore** | MongoDB or Redis repositories | Flexible schemas, key-value, caching | Relational needs, reporting queries |
 | **Shared** | Services + Resilience4j circuit breaker | Any non-trivial business logic orchestration | One-file CRUD that's just `repo.findAll()` |
-| **API** | Spring MVC REST + OpenAPI + correlation IDs + health | HTTP frontend needed | Worker-only, pure event consumer, AI-only |
+| **API** | Spring MVC REST + OpenAPI + correlation IDs + health + dormant OIDC Resource Server | HTTP frontend needed | Worker-only, pure event consumer, AI-only |
 | **Worker** | JobRunr (background, scheduled, delayed, batch) | Async tasks, cron, retries, long-running jobs | Purely request/response; fire-and-forget over events |
 | **EventConsumer** | Kafka/RabbitMQ/SQS/Pub/Sub listeners + `EventPublisher` | Event-driven, CQRS, replay semantics, cross-service choreography | Intra-service only; `@Async` is enough |
-| **AIAgent** | Spring AI + guardrails + A2A + MCP server + knowledge base | LLM-backed features, tool calling, agent-to-agent | Hardcoded ML inference, embeddings-only RAG |
+| **AIAgent** | Spring AI + guardrails + A2A + MCP server + knowledge base + dormant OIDC Resource Server (alongside legacy ApiKeyAuthFilter) | LLM-backed features, tool calling, agent-to-agent | Hardcoded ML inference, embeddings-only RAG |
 
 **Internal modules** (auto-included, never select directly): `Jobs` (auto with Worker), `Events` (auto with EventConsumer).
 
@@ -51,7 +51,7 @@ When the requirement genuinely doesn't map, use `suggest_architecture` — it sc
 
 Every module has a `does_not_include` field — read it. Common surprises:
 
-- API does NOT include authentication, authorization, rate limiting, or API versioning. Those are the user's problem.
+- API auto-includes OIDC Resource Server scaffolding (since 1.11) — generated dormant, activated at runtime via `trabuco.auth.enabled=true` + `OIDC_ISSUER_URI`. The runtime utilities live in Shared, so picking API auto-resolves Shared as a hard dependency. API does NOT include rate limiting (Bucket4j config is wired in `application.yml` but disabled by default), API versioning strategies, or identity-provider-side flows (login forms, token issuance — pair with a hosted IdP).
 - SQLDatastore does NOT include JPA/Hibernate (Spring Data JDBC only) — users expecting `@OneToMany` will be surprised.
 - Worker's dashboard is JobRunr's default; there's no custom monitoring UI.
 - AIAgent does NOT include a frontend chat UI, vector DB, or fine-tuning — it's a backend agent framework.

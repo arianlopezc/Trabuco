@@ -22,8 +22,12 @@ spring:
       enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
 {{- if .AuthEnabled}}
   # OAuth2 Resource Server — JWT validation against an external OIDC issuer.
-  # Same configuration shape as the API module; both apps validate tokens
-  # against the same issuer for consistent cross-app identity.
+  # Dormant by default: AgentSecurityConfig.agentPermitAllFilterChain is
+  # active until trabuco.auth.enabled (below) is flipped to true. Same
+  # configuration shape as the API module; both apps validate tokens
+  # against the same issuer for consistent cross-app identity. When
+  # OIDC_ISSUER_URI is unset, Spring's IssuerUriCondition skips
+  # JwtDecoder creation, so an empty default is safe.
   #
   # Provider examples (set OIDC_ISSUER_URI to one of these):
   #   Keycloak:    http://localhost:8180/realms/myrealm
@@ -107,7 +111,22 @@ spring:
 {{- end}}
 {{- end}}
 
-# Agent authentication
+{{- if .AuthEnabled}}
+
+# Trabuco runtime feature flags
+# Auth scaffolding ships dormant — flip enabled to true (and set
+# OIDC_ISSUER_URI above) to activate JWT validation against the
+# configured OIDC issuer. When false, AgentSecurityConfig.agentPermitAllFilterChain
+# is the active SecurityFilterChain and the legacy ApiKeyAuthFilter
+# (governed independently by app.aiagent.api-key.enabled) handles
+# authentication. The generated source for both chains is identical
+# regardless of this value; it gates the runtime wiring only.
+trabuco:
+  auth:
+    enabled: ${TRABUCO_AUTH_ENABLED:false}
+{{- end}}
+
+# Agent authentication (legacy API-key path — independent of trabuco.auth.enabled)
 agent:
   auth:
     keys:

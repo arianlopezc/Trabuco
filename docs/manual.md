@@ -47,6 +47,7 @@ For migrating an existing Spring Boot project, see
 ## Features
 
 - **Claude Code plugin** — Drive scaffolding, extension, and architecture advice conversationally via `/trabuco:*` skills and specialist subagents. Published in [Anthropic's community marketplace](https://github.com/anthropics/claude-plugins-community): `/plugin marketplace add anthropics/claude-plugins-community` then `/plugin install trabuco@claude-community`. See [Claude Code plugin](#claude-code-plugin) below.
+- **OIDC Resource Server (auto-generated, runtime-gated)** — Whenever API or AIAgent is selected, Trabuco emits Spring Security 6 OAuth2 Resource Server scaffolding: dual `SecurityFilterChain` beans (JWT chain + permit-all fallback), JWT-to-`Authentication` converter, scope-based authority mapping, RFC 7807 ProblemDetail handlers, RSA-signed e2e test utilities, and a regression backstop for the dormant default. Universal data types (`IdentityClaims`, `AuthorityScope`, `AuthenticatedRequest`) live in Model; cross-module utilities (`RequestContextHolder`, `JwtClaimsExtractor`, `AuthContextPropagator`) in Shared; filter chains in API and AIAgent. The scaffolding ships **dormant** — no auth is enforced at runtime until you set `trabuco.auth.enabled=true` (and configure `OIDC_ISSUER_URI`). Provider-agnostic: works with Keycloak, Auth0, Okta, AWS Cognito, or any RFC-conformant OIDC issuer. AIAgent's legacy `ApiKeyAuthFilter` coexists, governed by its own `app.aiagent.api-key.enabled` property (default on). Full guide: [`docs/auth.md`](auth.md).
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
 - **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
 - **Project health checks** — Validate project structure and consistency with `trabuco doctor`
@@ -576,7 +577,9 @@ myapp/
 │   └── src/main/
 │       ├── java/.../aiagent/
 │       │   ├── config/              # ChatClient, MCP server, WebConfig
-│       │   ├── security/            # Auth filter, scopes, guardrails, rate limiter
+│       │   │   └── security/        # AgentSecurityConfig (dual chain — JWT vs permit-all),
+│       │   │                        # JwtAuthenticationConverter, AuthProblemDetailHandler
+│       │   ├── security/            # Legacy ApiKeyAuthFilter, scopes, guardrails, rate limiter
 │       │   ├── tool/                # @Tool-annotated domain tools
 │       │   ├── agent/               # Primary + Specialist agents
 │       │   ├── brain/               # Scratchpad, reflection service
@@ -839,9 +842,17 @@ The Primary Agent decides when to delegate — same mechanism as any other tool 
 **Security pipeline (every request):**
 
 ```
-Request → ApiKeyAuthFilter → ScopeInterceptor → RateLimiter
+Request → SecurityFilterChain (one of):
+            • agentOauth2FilterChain   (when trabuco.auth.enabled=true)
+            • agentPermitAllFilterChain (default, dormant)
+        → ApiKeyAuthFilter (when app.aiagent.api-key.enabled=true, default)
+        → ScopeInterceptor → RateLimiter
         → InputGuardrailAdvisor (LLM) → Agent → OutputGuardrailAdvisor (regex) → Response
 ```
+
+The two auth paths coexist by design. Default state (JWT off, API-key on)
+matches pre-1.11 AIAgent behavior. Flip both properties to migrate to
+JWT-only. See [`docs/auth.md`](auth.md) for the full matrix.
 
 **Graceful degradation:** All LLM-dependent beans use `@ConditionalOnBean(ChatModel.class)`. Without an `ANTHROPIC_API_KEY`, the application starts and serves non-AI endpoints (capabilities, health). The `/chat` endpoint returns a helpful message instead of failing.
 

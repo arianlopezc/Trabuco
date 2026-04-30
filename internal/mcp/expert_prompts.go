@@ -54,14 +54,24 @@ WHAT TRABUCO GENERATES:
 - Testcontainers for integration tests, Spotless for formatting
 - Docker Compose for local development
 - CI workflow, AI context files, code quality enforcement
+- OIDC Resource Server scaffolding when API or AIAgent is selected
+  (auto-generated and dormant; activated by trabuco.auth.enabled=true).
+  IdentityClaims/AuthorityScope in Model, JwtClaimsExtractor +
+  RequestContextHolder + AuthContextPropagator in Shared, dual
+  SecurityFilterChain (JWT or permit-all) in API/AIAgent. Works
+  provider-agnostic against Keycloak / Auth0 / Okta / Cognito /
+  generic OIDC. Full guide: docs/auth.md.
 
 WHAT TRABUCO DOES NOT GENERATE:
-- Authentication/authorization (add Spring Security manually)
+- Identity-provider side (login forms, token issuance, MFA, user
+  management). Trabuco's auth is resource-server only — pair it
+  with a hosted IdP.
 - Frontend/UI (backend only)
 - GraphQL, gRPC, WebSockets (REST only)
 - Kubernetes manifests, Terraform, cloud deployment
 - Custom business logic or production database schemas
 - Rate limiting (available in AIAgent module; for API-only projects, add manually), multi-tenancy, API versioning
+- Vector DB / semantic RAG (AIAgent uses keyword retrieval)
 
 POST-GENERATION STEPS:
 1. Replace placeholder entities in Model/ with real domain objects
@@ -337,8 +347,19 @@ WHEN TO USE LLM vs DETERMINISTIC CODE:
 
 SECURITY PIPELINE:
 auth → scope → rate limit → guardrail → agent → output guardrail
-1. Authentication: verify the caller's identity
-2. Scope: check permissions for the requested operation
+1. Authentication: AIAgent ships TWO coexisting paths.
+   - OIDC JWT validation via AgentSecurityConfig (dual chain — gated
+     on trabuco.auth.enabled property). Validates tokens from any
+     RFC-conformant OIDC issuer (Keycloak / Auth0 / Okta / Cognito).
+     RFC 7807 ProblemDetail for 401/403.
+   - Legacy ApiKeyAuthFilter (gated on app.aiagent.api-key.enabled,
+     default true). Tier-based API keys feed CallerContext for the
+     existing @RequireScope annotation.
+   Both run side-by-side; flip either property to migrate. Default
+   state matches pre-1.11 AIAgent behavior (API-key on, JWT dormant).
+2. Scope: @PreAuthorize("hasAuthority('SCOPE_*')") on @Tool methods
+   for the JWT path; @RequireScope("public") + ScopeInterceptor for
+   the legacy path.
 3. Rate limit: throttle requests per user/API key
 4. Input guardrail: validate the prompt against domain rules
 5. Agent: process the request with the LLM

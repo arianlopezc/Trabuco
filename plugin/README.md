@@ -119,6 +119,11 @@ The CLI runs on macOS (arm64/amd64), Linux (arm64/amd64), and Windows
 - [Migration guide](https://github.com/arianlopezc/Trabuco/blob/main/docs/migration-guide.md)
   — how the 14-phase migration works, gates, decisions, rollback,
   troubleshooting.
+- [Auth scaffolding guide](https://github.com/arianlopezc/Trabuco/blob/main/docs/auth.md)
+  — OIDC Resource Server (auto-generated when API or AIAgent is selected,
+  dormant until `trabuco.auth.enabled=true`), per-provider recipes for
+  Keycloak / Auth0 / Okta / Cognito / generic OIDC, dual SecurityFilterChain
+  pattern, coexistence with the legacy `ApiKeyAuthFilter`.
 - [Plugin docs](./docs/) — when to use Trabuco, when not to, and the
   catalog of patterns it generates.
 

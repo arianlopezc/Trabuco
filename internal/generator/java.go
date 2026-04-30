@@ -85,13 +85,15 @@ func (g *Generator) generateModelModule() error {
 		}
 	}
 
-	// Auth model files (only if --auth=oidc is enabled).
-	// IdentityClaims and AuthorityScope are universal data — read by API
-	// filters, Worker handlers, EventConsumer listeners, and AIAgent
-	// tools — so they live in Model alongside the rest of the project's
-	// schemas. AuthenticatedRequest is a generic wrapper used at async
-	// boundaries (job parameters, broker bodies) when callers want to
-	// carry identity inline rather than via headers.
+	// Auth model files (emitted whenever a consuming module — API or
+	// AIAgent — is selected; the runtime gate is the
+	// {@code trabuco.auth.enabled} property in the generated app's yaml,
+	// not a generator-time switch). IdentityClaims and AuthorityScope are
+	// universal data — read by API filters, Worker handlers, EventConsumer
+	// listeners, and AIAgent tools — so they live in Model alongside the
+	// rest of the project's schemas. AuthenticatedRequest is a generic
+	// wrapper used at async boundaries (job parameters, broker bodies) when
+	// callers want to carry identity inline rather than via headers.
 	if g.config.AuthEnabled() {
 		modelAuthFiles := []struct {
 			tmpl string
@@ -105,6 +107,14 @@ func (g *Generator) generateModelModule() error {
 			if err := g.writeTemplate(f.tmpl, g.javaPath("Model", filepath.Join("auth", f.out))); err != nil {
 				return fmt.Errorf("failed to generate %s: %w", f.out, err)
 			}
+		}
+		// Jackson round-trip test for AuthenticatedRequest — verifies it
+		// (de)serializes cleanly across module / process boundaries.
+		if err := g.writeTemplate(
+			"java/model/test/auth/AuthenticatedRequestTest.java.tmpl",
+			g.testJavaPath("Model", filepath.Join("auth", "AuthenticatedRequestTest.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate AuthenticatedRequestTest.java: %w", err)
 		}
 	}
 
@@ -301,12 +311,16 @@ func (g *Generator) generateSharedModule() error {
 		return fmt.Errorf("failed to generate ArchitectureTest.java: %w", err)
 	}
 
-	// Auth utilities (only if --auth=oidc is enabled).
+	// Auth utilities (emitted whenever a consuming module — API or
+	// AIAgent — is selected; the runtime gate is
+	// {@code trabuco.auth.enabled} in the generated app's yaml).
 	// Logic — RequestContextHolder, JwtClaimsExtractor (interface +
 	// default impl), AuthContextPropagator (interface + default impl),
 	// AuthScope (try-with-resources helper) — lives in Shared. The
 	// data types these reference (IdentityClaims, AuthenticatedRequest)
-	// are in Model.
+	// are in Model. MockJwtFactory is a test utility for minting fake
+	// JWTs/Authentications/Decoders — also in Shared so all modules
+	// that depend on Shared (test scope) can use it.
 	if g.config.AuthEnabled() {
 		authFiles := []struct {
 			tmpl string
@@ -321,6 +335,25 @@ func (g *Generator) generateSharedModule() error {
 		}
 		for _, f := range authFiles {
 			if err := g.writeTemplate(f.tmpl, g.javaPath("Shared", filepath.Join("auth", f.out))); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", f.out, err)
+			}
+		}
+		// Test utility + unit tests for the auth utilities — same
+		// package as production auth types so tests can use it
+		// without import gymnastics. SignedJwtTestSupport is the
+		// e2e helper used by API/AuthEndToEndTest; lives in Shared
+		// so AIAgent or any other module can reuse it.
+		sharedAuthTestFiles := []struct {
+			tmpl string
+			out  string
+		}{
+			{"java/shared/test/auth/MockJwtFactory.java.tmpl", "MockJwtFactory.java"},
+			{"java/shared/test/auth/AuthScopeTest.java.tmpl", "AuthScopeTest.java"},
+			{"java/shared/test/auth/DefaultAuthContextPropagatorTest.java.tmpl", "DefaultAuthContextPropagatorTest.java"},
+			{"java/shared/test/auth/MockJwtFactoryTest.java.tmpl", "MockJwtFactoryTest.java"},
+		}
+		for _, f := range sharedAuthTestFiles {
+			if err := g.writeTemplate(f.tmpl, g.testJavaPath("Shared", filepath.Join("auth", f.out))); err != nil {
 				return fmt.Errorf("failed to generate %s: %w", f.out, err)
 			}
 		}
@@ -421,12 +454,13 @@ func (g *Generator) generateAPIModule() error {
 		return fmt.Errorf("failed to generate OpenAPIConfig.java: %w", err)
 	}
 
-	// Auth filter chain (only if --auth=oidc is enabled).
-	// The HTTP-specific concerns — Spring Security filter chain, JWT
-	// to Authentication conversion, ProblemDetail-formatted 401/403,
-	// OpenAPI bearer scheme — live in API. Cross-module identity
-	// utilities live in Shared (Phase A) and the underlying data types
-	// live in Model (Phase A).
+	// API auth filter chain (emitted whenever API is selected — auth
+	// scaffolding ships with the REST tier and stays dormant until
+	// {@code trabuco.auth.enabled=true} flips it on). The HTTP-specific
+	// concerns — Spring Security dual filter chains, JWT to Authentication
+	// conversion, ProblemDetail-formatted 401/403, OpenAPI bearer scheme —
+	// live in API. Cross-module identity utilities live in Shared and the
+	// underlying data types live in Model.
 	if g.config.AuthEnabled() {
 		apiAuthFiles := []struct {
 			tmpl string
@@ -443,12 +477,32 @@ func (g *Generator) generateAPIModule() error {
 				return fmt.Errorf("failed to generate %s: %w", f.out, err)
 			}
 		}
-		// Integration test for the resource-server filter chain.
+		// Integration test for the resource-server filter chain
+		// (MockMvc + @MockBean JwtDecoder — fast, no real HTTP).
 		if err := g.writeTemplate(
 			"java/api/test/security/SecurityIntegrationTest.java.tmpl",
 			g.testJavaPath("API", filepath.Join("config", "security", "SecurityIntegrationTest.java")),
 		); err != nil {
 			return fmt.Errorf("failed to generate SecurityIntegrationTest.java: %w", err)
+		}
+		// End-to-end test (real Tomcat + real signed JWTs + real
+		// signature verification via NimbusJwtDecoder) plus its
+		// helper. Higher fidelity than SecurityIntegrationTest.
+		apiE2EFiles := []struct {
+			tmpl string
+			out  string
+		}{
+			{"java/api/test/security/SignedJwtTestSupport.java.tmpl", "SignedJwtTestSupport.java"},
+			{"java/api/test/security/AuthEndToEndTest.java.tmpl", "AuthEndToEndTest.java"},
+			// Regression backstop for the dormant default — verifies
+			// that when trabuco.auth.enabled is unset the permit-all
+			// chain is the active SecurityFilterChain (no 401 leakage).
+			{"java/api/test/security/AuthDormantTest.java.tmpl", "AuthDormantTest.java"},
+		}
+		for _, f := range apiE2EFiles {
+			if err := g.writeTemplate(f.tmpl, g.testJavaPath("API", filepath.Join("config", "security", f.out))); err != nil {
+				return fmt.Errorf("failed to generate %s: %w", f.out, err)
+			}
 		}
 	}
 
@@ -732,11 +786,12 @@ func (g *Generator) generateEventConsumerModule() error {
 }
 
 // generateAIAgentModuleAuthFiles emits the OIDC-based security scaffolding
-// for AIAgent: AgentSecurityConfig (filter chain), JwtAuthenticationConverter
+// for AIAgent: AgentSecurityConfig (dual filter chains gated on
+// {@code trabuco.auth.enabled}), JwtAuthenticationConverter
 // (Jwt → Authentication + RequestContextHolder population), and
 // AuthProblemDetailHandler (RFC 7807 401/403 emission). Coexists with the
-// legacy ApiKeyAuthFilter, which becomes @ConditionalOnProperty when
-// AuthEnabled — see ApiKeyAuthFilter.java.tmpl.
+// legacy ApiKeyAuthFilter, which is governed by its own
+// {@code app.aiagent.api-key.enabled} property and stays on by default.
 func (g *Generator) generateAIAgentModuleAuthFiles() error {
 	files := []struct {
 		tmpl string
@@ -805,10 +860,12 @@ func (g *Generator) generateAIAgentModule() error {
 		}
 	}
 
-	// OIDC-based security scaffolding (only when --auth=oidc).
+	// OIDC-based security scaffolding (emitted whenever AIAgent is
+	// selected; runtime-activated via {@code trabuco.auth.enabled}).
 	// AgentSecurityConfig + JwtAuthenticationConverter +
-	// AuthProblemDetailHandler — coexists with the legacy ApiKeyAuthFilter
-	// above, which becomes @ConditionalOnProperty when AuthEnabled.
+	// AuthProblemDetailHandler — coexists with the legacy
+	// ApiKeyAuthFilter above (governed by its own
+	// {@code app.aiagent.api-key.enabled} property).
 	if g.config.AuthEnabled() {
 		if err := g.generateAIAgentModuleAuthFiles(); err != nil {
 			return err

@@ -73,8 +73,9 @@ The plugin requires the `trabuco` CLI on PATH — install it first (or after; th
 
 - **Multi-module Maven** — clean compile-time boundaries between Model, SQLDatastore/NoSQLDatastore, Shared, API, Worker, EventConsumer, AIAgent.
 - **Spring Boot 3.4 + Java 21/25** — Spring Data JDBC (no JPA), Flyway migrations, virtual threads on by default, Testcontainers for real integration tests.
+- **OIDC Resource Server scaffolding (auto-generated for API/AIAgent)** — Spring Security 6 dual `SecurityFilterChain`, JWT validation, scope-mapped authorities, RFC 7807 ProblemDetail handlers, RSA-signed e2e tests. **Ships dormant** — flip `trabuco.auth.enabled=true` and set `OIDC_ISSUER_URI` to validate tokens from Keycloak / Auth0 / Okta / Cognito / generic OIDC. No CLI flag, no half-installed projects. Full guide: [`docs/auth.md`](docs/auth.md).
 - **Production observability** — RFC 7807 Problem Details, OpenTelemetry auto-instrumentation, Prometheus metrics, correlation IDs, health probes.
-- **AI Agent module** — Spring AI with tools, LLM guardrails, MCP server, A2A protocol, multi-agent orchestration, knowledge base, webhooks.
+- **AI Agent module** — Spring AI with tools, LLM guardrails, MCP server, A2A protocol, multi-agent orchestration, knowledge base, webhooks. The OIDC chain coexists with the legacy `ApiKeyAuthFilter` (governed by an independent property) for incremental migration.
 - **AI collaboration layer** — `.ai/prompts/` task guides, `JAVA_CODE_QUALITY.md` spec, per-agent rule files for Claude Code / Codex / Cursor / GitHub Copilot.
 - **Migration of existing repos** — `trabuco migrate` runs a 14-phase orchestrated flow with per-phase approval gates and atomic rollback.
 - **CI that knows your modules** — `--ci github` emits a workflow with the exact Docker services your modules need.

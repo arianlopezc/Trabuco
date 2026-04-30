@@ -1,0 +1,85 @@
+package {{.GroupID}}.shared.auth;
+
+import {{.GroupID}}.model.auth.IdentityClaims;
+import {{.GroupID}}.model.auth.ImmutableIdentityClaims;
+import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Verifies the header serialization round-trip and edge cases for
+ * {@link DefaultAuthContextPropagator}: serializing claims to headers
+ * preserves all the values that come back via {@code fromHeaders}, and
+ * malformed inputs return {@code Optional.empty()} instead of throwing.
+ */
+class DefaultAuthContextPropagatorTest {
+
+    private final DefaultAuthContextPropagator propagator = new DefaultAuthContextPropagator();
+
+    @Test
+    void roundTripFullClaims() {
+        IdentityClaims original = ImmutableIdentityClaims.builder()
+            .subject("user-42")
+            .email(Optional.of("user@example.com"))
+            .tenantId(Optional.of("tenant-7"))
+            .scopes(Set.of("agent:read", "agent:write"))
+            .rawClaims(Map.of("custom", "value"))
+            .build();
+
+        Map<String, String> headers = propagator.toHeaders(original);
+        Optional<IdentityClaims> decoded = propagator.fromHeaders(headers);
+
+        assertThat(decoded).isPresent();
+        IdentityClaims got = decoded.get();
+        assertThat(got.subject()).isEqualTo("user-42");
+        assertThat(got.email()).hasValue("user@example.com");
+        assertThat(got.tenantId()).hasValue("tenant-7");
+        assertThat(got.scopes()).containsExactlyInAnyOrder("agent:read", "agent:write");
+    }
+
+    @Test
+    void rawClaimsAreNotSerialized() {
+        IdentityClaims original = ImmutableIdentityClaims.builder()
+            .subject("user-42")
+            .scopes(Set.of())
+            .rawClaims(Map.of("large-payload", "should-not-cross-the-wire"))
+            .build();
+
+        Map<String, String> headers = propagator.toHeaders(original);
+
+        assertThat(headers.values())
+            .as("rawClaims is intentionally not serialized into headers")
+            .noneMatch(v -> v.contains("should-not-cross-the-wire"));
+    }
+
+    @Test
+    void minimalClaimsRoundTrip() {
+        IdentityClaims original = ImmutableIdentityClaims.builder()
+            .subject("anon-user")
+            .scopes(Set.of())
+            .rawClaims(Map.of())
+            .build();
+
+        Optional<IdentityClaims> decoded = propagator.fromHeaders(propagator.toHeaders(original));
+
+        assertThat(decoded).isPresent();
+        assertThat(decoded.get().subject()).isEqualTo("anon-user");
+        assertThat(decoded.get().email()).isEmpty();
+        assertThat(decoded.get().scopes()).isEmpty();
+    }
+
+    @Test
+    void missingSubjectHeaderReturnsEmpty() {
+        Map<String, String> headers = Map.of("X-Identity-Email", "u@example.com");
+        assertThat(propagator.fromHeaders(headers)).isEmpty();
+    }
+
+    @Test
+    void nullHeadersReturnsEmpty() {
+        assertThat(propagator.fromHeaders(null)).isEmpty();
+    }
+}

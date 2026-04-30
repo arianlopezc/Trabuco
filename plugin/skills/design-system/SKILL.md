@@ -35,7 +35,7 @@ If only ONE service will own the domain, use `/trabuco:new-project` instead.
 
 5. **Generate the workspace**: once locked, call `mcp__trabuco__generate_workspace` with the approved design. This creates a workspace root + per-service directories, each a full Trabuco project.
 
-6. **Next steps**: tell the user how to build the workspace (typically `mvn clean install` at the workspace root, or per-service), and how the A2A agent cards discover each other if AIAgent modules are involved.
+6. **Next steps**: tell the user how to build the workspace (typically `mvn clean install` at the workspace root, or per-service), and how the A2A agent cards discover each other if AIAgent modules are involved. **Auth across services**: every service whose module list includes API or AIAgent gets dormant OIDC Resource Server scaffolding. For consistent cross-service identity, point all services at the same `OIDC_ISSUER_URI` (one IdP, multiple resource servers) and flip `trabuco.auth.enabled=true` when ready. The same `IdentityClaims` shape lives in each service's Model module so token claims propagate cleanly via headers / event payloads. Full guide: `docs/auth.md`.
 
 ## Rules
 

@@ -35,11 +35,17 @@ then adds the specified module along with any required dependencies.
 Available modules:
   SQLDatastore    - SQL repositories, Flyway migrations
   NoSQLDatastore  - NoSQL repositories (MongoDB, Redis)
-  Shared          - Services, Circuit breaker
-  API             - REST endpoints
+  Shared          - Services, Circuit breaker, auth utilities
+  API             - REST endpoints + dormant OIDC Resource Server
   Worker          - Background jobs (JobRunr)
   EventConsumer   - Event listeners (Kafka, RabbitMQ, SQS, Pub/Sub)
+  AIAgent         - Spring AI agent + dormant OIDC Resource Server
   MCP             - MCP server for AI tool integration
+
+Adding API or AIAgent auto-resolves Shared as a dependency (it holds
+the auth runtime utilities) and emits OIDC Resource Server scaffolding
+that stays dormant until 'trabuco.auth.enabled=true' is set at runtime.
+See docs/auth.md for per-provider recipes.
 
 Examples:
   trabuco add SQLDatastore

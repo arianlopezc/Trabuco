@@ -1,7 +1,7 @@
 {
   "name": "trabuco",
   "version": "1.10.1",
-  "description": "Conversational Java/Spring Boot project generation, extension, and migration. Exposes the Trabuco CLI's architecture advisor, module catalog, scaffolding, and the orchestrated 14-phase migration of legacy Spring Boot 2.x/3.x repos inside Claude Code. Grounded in Trabuco's opinionated conventions — keyset pagination, constructor injection, no FK constraints, Testcontainers patterns, A2A/MCP-ready AI agent module.",
+  "description": "Conversational Java/Spring Boot project generation, extension, and migration. Exposes the Trabuco CLI's architecture advisor, module catalog, scaffolding (including dormant-by-default OIDC Resource Server auth for API/AIAgent), and the orchestrated 14-phase migration of legacy Spring Boot 2.x/3.x repos inside Claude Code. Grounded in Trabuco's opinionated conventions — keyset pagination, constructor injection, no FK constraints, Testcontainers patterns, A2A/MCP-ready AI agent module.",
   "author": {
     "name": "Arian Lopez",
     "url": "https://github.com/arianlopezc/Trabuco"
@@ -19,6 +19,9 @@
     "microservices",
     "ai-agent",
     "scaffolding",
-    "mcp"
+    "mcp",
+    "oidc",
+    "spring-security",
+    "auth"
   ]
 }

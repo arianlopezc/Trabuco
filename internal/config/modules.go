@@ -106,14 +106,19 @@ var ModuleRegistry = []Module{
 		ConflictsWith:  []string{},
 	},
 	{
-		Name:           ModuleAPI,
-		Description:    "REST endpoints, Validation",
-		UseCase:        "Adds a Spring Boot REST API with OpenAPI documentation, CORS, correlation IDs, and health endpoints. Choose when building HTTP services.",
-		WhenToUse:      "User mentions: REST, API, endpoints, HTTP, web service, backend, server, controller, Swagger",
-		DoesNotInclude: "Does not include authentication, authorization, rate limiting, API versioning, pagination helpers, or GraphQL",
+		Name:        ModuleAPI,
+		Description: "REST endpoints, Validation",
+		UseCase:     "Adds a Spring Boot REST API with OpenAPI documentation, CORS, correlation IDs, and health endpoints. Choose when building HTTP services.",
+		WhenToUse:   "User mentions: REST, API, endpoints, HTTP, web service, backend, server, controller, Swagger",
+		// Auth scaffolding (RFC 7807 ProblemDetail, JWT validation, scope
+		// mapping) ships with the REST tier and lives dormant until the
+		// trabuco.auth.enabled property flips it on. The runtime utilities
+		// (RequestContextHolder, JwtClaimsExtractor, AuthContextPropagator)
+		// live in Shared, so Shared is a hard dependency.
+		DoesNotInclude: "Does not include rate limiting, API versioning, pagination helpers, or GraphQL. Auth scaffolding is generated dormant by default and activated via trabuco.auth.enabled.",
 		Required:       false,
 		Internal:       false,
-		Dependencies:   []string{ModuleModel},
+		Dependencies:   []string{ModuleModel, ModuleShared},
 		ConflictsWith:  []string{},
 	},
 	{
@@ -158,8 +163,11 @@ var ModuleRegistry = []Module{
 		DoesNotInclude: "Does not include model training, fine-tuning, vector database, or RAG with embeddings. Uses keyword-based knowledge retrieval. Does not include a frontend chat UI.",
 		Required:       false,
 		Internal:       false,
-		Dependencies:   []string{ModuleModel},
-		ConflictsWith:  []string{},
+		// Shared holds the cross-module auth runtime
+		// (RequestContextHolder, JwtClaimsExtractor, AuthContextPropagator)
+		// that the always-generated AIAgent JWT scaffolding imports.
+		Dependencies:  []string{ModuleModel, ModuleShared},
+		ConflictsWith: []string{},
 	},
 }
 

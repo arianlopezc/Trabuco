@@ -35,6 +35,7 @@ Guide the user from a natural-language requirement to a generated, opinionated J
 6. **Next steps**: once generated, tell the user:
    - `cd <project>` and run `mvn clean install` to verify build
    - If AIAgent module was included, `mvn spring-boot:run -pl AIAgent` starts the agent with MCP + A2A surfaces
+   - **If API or AIAgent was selected**: OIDC Resource Server scaffolding has been generated, dormant by default. To activate auth, set `trabuco.auth.enabled=true` and configure `OIDC_ISSUER_URI` to your IdP discovery endpoint (Keycloak / Auth0 / Okta / Cognito / generic). See `docs/auth.md` in the generated project for per-provider recipes. Until then, every endpoint is open via the permit-all `SecurityFilterChain` — fine for local dev, do not deploy to prod that way.
    - Skills like `/add-entity`, `/add-endpoint`, `/add-test` are now available *inside the generated project's .claude/skills/*
    - Ask if they want you to pre-add an entity or endpoint (delegate to `/add-module` or direct MCP tool calls)
 

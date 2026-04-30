@@ -39,8 +39,13 @@ Trabuco is the right tool for your problem.
   hard stops, strong warnings, and red flags. Honest framing for when
   Trabuco is the wrong tool.
 - **[Limitations](../plugin/docs/limitations.md)** — what Trabuco
-  doesn't generate (auth, frontend, vector RAG, K8s) and how to plan
-  around the gaps.
+  doesn't generate (frontend UI, identity-provider side, vector RAG, K8s)
+  and how to plan around the gaps. Auth scaffolding (resource-server side)
+  ships built-in for API/AIAgent — see [`auth.md`](auth.md).
+- **[Authentication](auth.md)** — OIDC Resource Server scaffolding
+  generated for API/AIAgent: dual SecurityFilterChain pattern, dormant
+  by default, activated via `trabuco.auth.enabled=true`. Per-provider
+  recipes for Keycloak, Auth0, Okta, AWS Cognito, generic OIDC.
 
 ## Other entry points
 
