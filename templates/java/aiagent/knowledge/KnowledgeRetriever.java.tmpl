@@ -1,0 +1,36 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.springframework.ai.document.Document;
+
+import java.util.List;
+
+/**
+ * Strategy for fetching knowledge-base documents relevant to a query.
+ *
+ * <p>Two implementations ship with the AIAgent module:
+ * <ul>
+ *   <li>{@link KeywordKnowledgeRetriever} — token-overlap scoring against
+ *       the static {@link KnowledgeBase#ENTRIES}. Active by default;
+ *       {@code @ConditionalOnMissingBean(VectorStore.class)} steps aside
+ *       when a vector store is wired.</li>
+ *   <li>(Phase B) {@code VectorKnowledgeRetriever} — Spring AI
+ *       {@code VectorStore} similarity search over embedded documents.
+ *       Active when {@code spring-ai-starter-vector-store-*} is on the
+ *       classpath and {@code spring.ai.vectorstore.*} is configured.</li>
+ * </ul>
+ *
+ * <p>{@link Document} is Spring AI's universal content+metadata wrapper
+ * — using it (instead of a {@code Map<String, String>}) means the
+ * keyword path returns the same shape as the vector path, and either
+ * implementation can feed Spring AI's {@code RetrievalAugmentationAdvisor}
+ * without further conversion.
+ */
+public interface KnowledgeRetriever {
+
+    /**
+     * Return up to {@code topK} documents most relevant to {@code query}.
+     * Implementations should never throw on empty results — return an
+     * empty list when nothing matches.
+     */
+    List<Document> retrieve(String query, int topK);
+}

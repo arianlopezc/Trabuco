@@ -906,8 +906,15 @@ func (g *Generator) generateAIAgentModule() error {
 	}
 
 	// ─── Knowledge ──────────────────────────────────────────────────────
+	// KnowledgeRetriever is the strategy interface for fetching relevant
+	// documents; KeywordKnowledgeRetriever is the default token-scoring
+	// implementation (active when no VectorStore bean is wired). When a
+	// vector store is configured (Phase B), VectorKnowledgeRetriever
+	// supplants it via @ConditionalOnMissingBean(VectorStore.class).
 	knowledgeFiles := []struct{ tmpl, out string }{
 		{"java/aiagent/knowledge/KnowledgeBase.java.tmpl", filepath.Join("knowledge", "KnowledgeBase.java")},
+		{"java/aiagent/knowledge/KnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "KnowledgeRetriever.java")},
+		{"java/aiagent/knowledge/KeywordKnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "KeywordKnowledgeRetriever.java")},
 		{"java/aiagent/knowledge/KnowledgeTools.java.tmpl", filepath.Join("knowledge", "KnowledgeTools.java")},
 	}
 	for _, f := range knowledgeFiles {
@@ -1010,6 +1017,7 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/test/ReflectionDecisionTest.java.tmpl", filepath.Join("brain", "ReflectionDecisionTest.java")},
 		{"java/aiagent/test/PlaceholderToolsTest.java.tmpl", filepath.Join("tool", "PlaceholderToolsTest.java")},
 		{"java/aiagent/test/TaskManagerTest.java.tmpl", filepath.Join("task", "TaskManagerTest.java")},
+		{"java/aiagent/test/KeywordKnowledgeRetrieverTest.java.tmpl", filepath.Join("knowledge", "KeywordKnowledgeRetrieverTest.java")},
 	}
 	for _, f := range testFiles {
 		if err := g.writeTemplate(f.tmpl, g.testJavaPath("AIAgent", f.out)); err != nil {

@@ -1,0 +1,61 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.stereotype.Component;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Default {@link KnowledgeRetriever} — keyword-based scoring against the
+ * static {@link KnowledgeBase#ENTRIES} list.
+ *
+ * <p>Active when no Spring AI {@code VectorStore} bean is wired. As soon
+ * as a vector-store starter is on the classpath
+ * ({@code spring-ai-starter-vector-store-pgvector|qdrant|mongodb-atlas})
+ * and the corresponding {@code spring.ai.vectorstore.*} properties are
+ * set, the {@code @ConditionalOnMissingBean(VectorStore.class)} on this
+ * class steps it aside in favour of {@code VectorKnowledgeRetriever}.
+ *
+ * <p>Scoring matches the legacy implementation that previously lived in
+ * {@code KnowledgeTools.askQuestion}: tokens longer than two characters
+ * contribute +1 if found in {@code content}, +3 if found in {@code topic}.
+ */
+@Component
+@ConditionalOnMissingBean(VectorStore.class)
+public class KeywordKnowledgeRetriever implements KnowledgeRetriever {
+
+    @Override
+    public List<Document> retrieve(String query, int topK) {
+        String lower = query.toLowerCase();
+        String[] tokens = lower.split("\\s+");
+
+        return KnowledgeBase.ENTRIES.stream()
+            .map(entry -> new ScoredEntry(score(entry, tokens), entry))
+            .filter(s -> s.score > 0)
+            .sorted(Comparator.comparingInt(ScoredEntry::score).reversed())
+            .limit(topK)
+            .map(s -> Document.builder()
+                .text(s.entry.get("content"))
+                .metadata(Map.of("topic", s.entry.get("topic"), "score", s.score))
+                .build())
+            .toList();
+    }
+
+    private int score(Map<String, String> entry, String[] tokens) {
+        String content = entry.get("content").toLowerCase();
+        String topic = entry.get("topic").toLowerCase();
+        int score = 0;
+        for (String token : tokens) {
+            if (token.length() <= 2) continue;
+            if (content.contains(token)) score++;
+            if (topic.contains(token)) score += 3;
+        }
+        return score;
+    }
+
+    private record ScoredEntry(int score, Map<String, String> entry) {}
+}
