@@ -42,11 +42,17 @@ trap 'rm -rf "${WORKDIR}"' EXIT
 #   - crud-sql:      SQL datastore + worker — exercises perf/N+1 rule surface
 #   - aiagent-pubsub: AIAgent + GCP Pub/Sub — the exact shape that broke for the
 #                    user (Mockito/Jacoco/javax.annotation transitive bans)
+#   - aiagent-rag:   AIAgent + pgvector — exercises VectorRagIntegrationTest +
+#                    AgentWiringIntegrationTest (the only archetype that runs
+#                    the RAG round-trip and bean-wiring guards in self-CI).
+#                    Without it, those Testcontainer-backed tests never execute
+#                    in Trabuco's own CI even though they ship in the templates.
 #   - full-fat:      every module + RabbitMQ — max dependency surface
 ARCHETYPES=(
   "api-minimal|Model,API|"
   "crud-sql|Model,SQLDatastore,Shared,API,Worker,Jobs|--database=postgresql"
   "aiagent-pubsub|Model,SQLDatastore,Shared,Events,EventConsumer,AIAgent|--database=postgresql --message-broker=pubsub --ai-agents=claude"
+  "aiagent-rag|Model,SQLDatastore,Shared,API,AIAgent|--database=postgresql --vector-store=pgvector --ai-agents=claude"
   "full-fat|Model,SQLDatastore,Shared,Events,API,Worker,EventConsumer,AIAgent,Jobs|--database=postgresql --message-broker=rabbitmq --ai-agents=claude"
 )
 
