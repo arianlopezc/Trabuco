@@ -2,13 +2,50 @@ package {{.GroupID}}.aiagent.config;
 
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Wires named {@link ChatModel} beans for the agent / guardrail / specialist
+ * roles. All currently delegate to the project's primary {@code chatModel}
+ * (typically {@code anthropicChatModel} from {@code spring-ai-starter-model-anthropic});
+ * production deployments should differentiate by temperature, model variant,
+ * or even provider here.
+ *
+ * <p>This class deliberately does NOT carry {@code @ConditionalOnBean(ChatModel.class)}.
+ * The conditional was unreliable on a user-scanned {@code @Configuration}
+ * — Spring evaluates it BEFORE Spring AI's auto-configuration registers
+ * {@code ChatModel}, so the conditional silently fails and none of the
+ * beans below register. The AIAgent module is generated only when its
+ * Spring AI starter is also pulled, so {@code ChatModel} is guaranteed
+ * to be available at runtime; gating it again here is unnecessary and
+ * actively broken (see {@code KnowledgeBeansConfiguration} for the
+ * canonical Phase D writeup of this anti-pattern).
+ */
 @Configuration
-@ConditionalOnBean(ChatModel.class)
 public class ChatClientConfig {
+
+    /**
+     * Primary agent's {@link ChatModel}. Defaults to the auto-configured
+     * provider model (e.g. {@code anthropicChatModel} from
+     * {@code spring-ai-starter-model-anthropic}); production deployments
+     * may set a higher temperature or larger context window here.
+     *
+     * <p>Why this exists: when Trabuco generates the AIAgent module the
+     * provider auto-config registers a ChatModel under its own name
+     * ({@code anthropicChatModel} / {@code openaiChatModel} / ...). Once
+     * we also register {@link #specialistChatModel} and
+     * {@link #guardrailChatModel}, the context has multiple
+     * {@code ChatModel} beans — autowiring by type alone is ambiguous.
+     * This {@code primaryChatModel} alias lets {@code PrimaryAgent}
+     * inject by an explicit, provider-agnostic qualifier and matches
+     * the naming pattern of the specialist / guardrail beans.
+     */
+    @Bean
+    @Qualifier("primaryChatModel")
+    public ChatModel primaryChatModel(@Qualifier("anthropicChatModel") ChatModel anthropicChatModel) {
+        return anthropicChatModel;
+    }
 
     /**
      * Specialist agent uses the same model but could be configured separately.
@@ -16,8 +53,9 @@ public class ChatClientConfig {
      */
     @Bean
     @Qualifier("specialistChatModel")
-    public ChatModel specialistChatModel(ChatModel chatModel) {
-        return chatModel; // Same model for simplicity; production would use separate config
+    public ChatModel specialistChatModel(@Qualifier("anthropicChatModel") ChatModel anthropicChatModel) {
+        // Same model for simplicity; production would use separate config
+        return anthropicChatModel;
     }
 
     /**
@@ -26,7 +64,7 @@ public class ChatClientConfig {
      */
     @Bean
     @Qualifier("guardrailChatModel")
-    public ChatModel guardrailChatModel(ChatModel chatModel) {
-        return chatModel;
+    public ChatModel guardrailChatModel(@Qualifier("anthropicChatModel") ChatModel anthropicChatModel) {
+        return anthropicChatModel;
     }
 }

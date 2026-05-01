@@ -1090,6 +1090,18 @@ func (g *Generator) generateAIAgentModule() error {
 	if g.config.VectorStoreIsPgVector() && g.config.HasModule(config.ModuleSQLDatastore) && g.config.Database == config.DatabasePostgreSQL {
 		testFiles = append(testFiles,
 			struct{ tmpl, out string }{"java/aiagent/test/VectorRagIntegrationTest.java.tmpl", filepath.Join("knowledge", "VectorRagIntegrationTest.java")},
+			// AgentWiringIntegrationTest guards against the
+			// @ConditionalOnBean(ChatModel.class) /
+			// @ConditionalOnBean(VectorStore.class) anti-pattern that
+			// previously left PrimaryAgent / SpecialistAgent /
+			// InputGuardrailAdvisor / IngestionController unregistered.
+			// Boots the full Spring context against a real Postgres
+			// + pgvector container, asserts each bean is in the
+			// context, and POSTs to /ingest to confirm the controller
+			// actually serves traffic. Same gating as
+			// VectorRagIntegrationTest because both rely on the
+			// pgvector Testcontainer image.
+			struct{ tmpl, out string }{"java/aiagent/test/AgentWiringIntegrationTest.java.tmpl", "AgentWiringIntegrationTest.java"},
 		)
 	}
 	for _, f := range testFiles {

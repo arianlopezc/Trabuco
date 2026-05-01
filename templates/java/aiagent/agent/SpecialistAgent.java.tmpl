@@ -5,7 +5,6 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
 /**
@@ -16,9 +15,11 @@ import org.springframework.stereotype.Component;
  *
  * TODO: Customize this agent for your domain (e.g., technical support,
  * operations, analytics, compliance review).
+ *
+ * <p>See {@code PrimaryAgent} for why this class deliberately does NOT
+ * carry {@code @ConditionalOnBean(ChatModel.class)}.
  */
 @Component
-@ConditionalOnBean(ChatModel.class)
 public class SpecialistAgent {
 
     private static final String SYSTEM_PROMPT = """

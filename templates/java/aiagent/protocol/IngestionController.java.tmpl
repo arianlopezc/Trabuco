@@ -2,8 +2,6 @@ package {{.GroupID}}.aiagent.protocol;
 
 import {{.GroupID}}.aiagent.knowledge.DocumentIngestionService;
 import {{.GroupID}}.aiagent.security.RequireScope;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,8 +12,21 @@ import java.util.Map;
 /**
  * REST endpoints for ingesting documents into the AIAgent's vector store.
  *
- * <p>Conditional on a {@link VectorStore} bean — when the project ships
- * without a vector store this controller is not loaded.
+ * <p>This file is emitted by Trabuco only when a vector-store starter
+ * is selected ({@code --vector-store=pgvector|qdrant|mongodb}). At
+ * generation time the matching Spring AI starter is also written into
+ * {@code aiagent/pom.xml}, so the {@code DocumentIngestionService} bean
+ * (which itself takes {@code VectorStore} as a parameter) is guaranteed
+ * to exist at runtime.
+ *
+ * <p>This class deliberately does NOT carry
+ * {@code @ConditionalOnBean(VectorStore.class)}. Spring evaluates that
+ * conditional on user-scanned {@code @RestController} classes BEFORE
+ * the vector-store auto-configuration registers {@code VectorStore}, so
+ * the controller would silently never register and every POST to
+ * {@code /ingest} would 404. Generator-time emission is the gate; a
+ * runtime conditional layered on top is unnecessary and broken (see
+ * {@code KnowledgeBeansConfiguration} for the canonical Phase D writeup).
  *
  * <p>Authorization (legacy API-key path):
  * {@code @RequireScope("partner")} routes ingestion through
@@ -32,7 +43,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/ingest")
-@ConditionalOnBean(VectorStore.class)
 public class IngestionController {
 
     private final DocumentIngestionService ingestionService;
