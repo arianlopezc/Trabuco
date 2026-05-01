@@ -15,6 +15,14 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.dao.OptimisticLockingFailureException;
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+import org.springframework.data.relational.core.conversion.DbActionExecutionException;
+{{- end}}
+{{- if .AuthEnabled}}
+import org.springframework.security.core.AuthenticationException;
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
 {{- if .UsesKafka}}
@@ -75,6 +83,26 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     problem.setInstance(URI.create(request.getRequestURI()));
     return problem;
   }
+
+  /**
+   * Handle authentication failures thrown from method-security AOP
+   * interceptors (parallel to {@link AccessDeniedException}). The filter-
+   * chain {@code AuthenticationEntryPoint} catches authentication failures
+   * that propagate up the filter chain; this handler covers the
+   * AOP-thrown variant — without it, those land at the catch-all 500
+   * instead of returning the standard 401 ProblemDetail.
+   */
+  @ExceptionHandler(AuthenticationException.class)
+  public ProblemDetail handleAuthentication(AuthenticationException ex, HttpServletRequest request) {
+    logger.debug("Method-level authentication failure: {}", ex.getMessage());
+
+    ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+    problem.setType(URI.create("urn:problem-type:unauthorized"));
+    problem.setTitle("Unauthorized");
+    problem.setDetail("Authentication is required to access this resource.");
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
+  }
 {{- end}}
 
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
@@ -111,6 +139,80 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     problem.setType(URI.create("urn:problem-type:data-integrity-violation"));
     problem.setInstance(URI.create(request.getRequestURI()));
     return problem;
+  }
+
+  /**
+   * Handle optimistic-lock failures (versioned-entity update conflict).
+   * Returns 409 Conflict — the resource was modified by another transaction
+   * between read and write. Caller should re-fetch and retry.
+   */
+  @ExceptionHandler(OptimisticLockingFailureException.class)
+  public ProblemDetail handleOptimisticLockingFailure(OptimisticLockingFailureException ex, HttpServletRequest request) {
+    logger.warn("Optimistic lock failure: {}", ex.getMessage());
+
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.CONFLICT,
+      "The resource was modified concurrently. Re-fetch and retry.");
+    problem.setTitle("Conflict");
+    problem.setType(URI.create("urn:problem-type:optimistic-lock-failed"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
+  }
+
+  /**
+   * Handle "expected one row, got zero" errors from getOne / getReferenceById /
+   * any code path that requires a result. Returns 404 Not Found rather than
+   * letting the generic catch-all turn it into 500.
+   */
+  @ExceptionHandler(EmptyResultDataAccessException.class)
+  public ProblemDetail handleEmptyResultDataAccess(EmptyResultDataAccessException ex, HttpServletRequest request) {
+    logger.debug("Resource not found: {}", ex.getMessage());
+
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+      HttpStatus.NOT_FOUND,
+      "The requested resource was not found");
+    problem.setTitle("Not Found");
+    problem.setType(URI.create("urn:problem-type:resource-not-found"));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    return problem;
+  }
+{{- end}}
+{{- if .HasModule "SQLDatastore"}}
+
+  /**
+   * Spring Data Relational (3.0+, used by Spring Data JDBC) wraps every
+   * {@code DataAccessException} thrown during aggregate execution in
+   * {@link DbActionExecutionException}. {@code DbActionExecutionException}
+   * is NOT a subclass of {@code DataAccessException}, so the more
+   * specific handlers above never match for repository-driven failures —
+   * Spring's resolver falls through to the catch-all 500. This handler
+   * unwraps {@code getCause()} and re-dispatches to the right HTTP status,
+   * restoring the contract documented above for SQL repositories.
+   *
+   * <p>If the cause is unrecognised we re-throw to let Spring's resolver
+   * find another match (or fall through to the catch-all).
+   */
+  @ExceptionHandler(DbActionExecutionException.class)
+  public ProblemDetail handleDbActionExecution(DbActionExecutionException ex, HttpServletRequest request) throws Exception {
+    Throwable cause = ex.getCause();
+    if (cause instanceof DuplicateKeyException dke) {
+      return handleDuplicateKey(dke, request);
+    }
+    if (cause instanceof DataIntegrityViolationException dive) {
+      return handleDataIntegrityViolation(dive, request);
+    }
+    if (cause instanceof OptimisticLockingFailureException ole) {
+      return handleOptimisticLockingFailure(ole, request);
+    }
+    if (cause instanceof EmptyResultDataAccessException erda) {
+      return handleEmptyResultDataAccess(erda, request);
+    }
+    // Unknown cause — bubble up to the catch-all so we still get a sanitized
+    // ProblemDetail and a server-side stack trace.
+    if (cause instanceof Exception e) {
+      throw e;
+    }
+    throw ex;
   }
 {{- end}}
 {{- if .HasModule "EventConsumer"}}

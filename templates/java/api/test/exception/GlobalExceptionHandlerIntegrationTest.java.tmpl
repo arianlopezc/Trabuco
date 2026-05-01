@@ -1,0 +1,106 @@
+package {{.GroupID}}.api.config;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.jdbc.Sql;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * End-to-end test that the {@code GlobalExceptionHandler} actually catches
+ * SQL constraint violations and returns RFC 7807 {@code application/problem+json}
+ * with the correct HTTP status — not the catch-all 500.
+ *
+ * <p>This test exists because Spring Data Relational (3.0+) wraps every
+ * {@link org.springframework.dao.DataAccessException} thrown during aggregate
+ * execution in {@link org.springframework.data.relational.core.conversion.DbActionExecutionException}.
+ * Without an explicit unwrap handler in {@code GlobalExceptionHandler},
+ * Spring's {@code ExceptionHandlerMethodResolver} can't match the more
+ * specific handlers (the wrapper isn't a subclass of {@code DataAccessException})
+ * and falls through to the catch-all 500. The handler-side fix lives in
+ * {@code GlobalExceptionHandler.handleDbActionExecution}; this test
+ * is the regression guard.
+ *
+ * <p>Why a Testcontainer rather than H2: the unique-constraint exception
+ * type we trigger is database-specific. H2's {@code MODE=PostgreSQL}
+ * approximates the syntax but emits a different SQLState that's translated
+ * to a different exception class. Real Postgres is the only way to assert
+ * the production behaviour.
+ *
+ * <p>Skipped when Docker is unavailable
+ * ({@code @Testcontainers(disabledWithoutDocker = true)}) so CI runners
+ * without Docker continue to pass the rest of the suite.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Testcontainers(disabledWithoutDocker = true)
+@Sql(statements =
+    "ALTER TABLE placeholders ADD CONSTRAINT placeholders_name_unique UNIQUE (name)",
+    executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
+class GlobalExceptionHandlerIntegrationTest {
+
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:15-alpine");
+
+    @Autowired
+    private TestRestTemplate restTemplate;
+
+    @Test
+    void duplicateInsertReturns409ConflictWithProblemDetail() {
+        Map<String, Object> body = Map.of("name", "duplicate-target", "description", "first");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        // First POST succeeds.
+        ResponseEntity<Map> first = restTemplate.exchange(
+            "/api/placeholders",
+            HttpMethod.POST,
+            new HttpEntity<>(body, headers),
+            Map.class);
+        assertThat(first.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        // Second POST with the same name violates the unique constraint
+        // added by the @Sql above. The wrapped DuplicateKeyException
+        // must be unwrapped by GlobalExceptionHandler.handleDbActionExecution
+        // and routed to handleDuplicateKey, returning 409 + ProblemDetail.
+        Map<String, Object> dup = Map.of("name", "duplicate-target", "description", "second");
+        ResponseEntity<Map> second = restTemplate.exchange(
+            "/api/placeholders",
+            HttpMethod.POST,
+            new HttpEntity<>(dup, headers),
+            Map.class);
+
+        assertThat(second.getStatusCode())
+            .as("duplicate POST must surface as 409 Conflict, not 500. If 500, the DbActionExecutionException unwrap handler is not registered or the dispatch chain regressed.")
+            .isEqualTo(HttpStatus.CONFLICT);
+
+        assertThat(second.getHeaders().getContentType()).isNotNull();
+        assertThat(second.getHeaders().getContentType().toString())
+            .as("error response must be RFC 7807 application/problem+json")
+            .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+
+        assertThat(second.getBody())
+            .as("ProblemDetail body must be parseable as a map")
+            .isNotNull();
+        assertThat(second.getBody().get("status"))
+            .as("ProblemDetail.status must be 409")
+            .isEqualTo(409);
+        assertThat(second.getBody().get("type"))
+            .as("ProblemDetail.type must classify the error as duplicate-resource")
+            .isEqualTo("urn:problem-type:duplicate-resource");
+    }
+}

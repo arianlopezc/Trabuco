@@ -506,6 +506,22 @@ func (g *Generator) generateAPIModule() error {
 		}
 	}
 
+	// GlobalExceptionHandler integration test — emitted only when both
+	// the SQLDatastore module and Postgres database are selected, since
+	// the test relies on a Postgres Testcontainer to surface real
+	// DataIntegrityViolation behaviour (H2's compatibility mode emits a
+	// different SQLState that translates to a different exception class).
+	// AuthEnabled is also required because the existing API pom only
+	// pulls Testcontainers test deps under the same gate.
+	if g.config.HasModule(config.ModuleAPI) && g.config.HasModule(config.ModuleSQLDatastore) && g.config.Database == config.DatabasePostgreSQL && g.config.AuthEnabled() {
+		if err := g.writeTemplate(
+			"java/api/test/exception/GlobalExceptionHandlerIntegrationTest.java.tmpl",
+			g.testJavaPath("API", filepath.Join("config", "GlobalExceptionHandlerIntegrationTest.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate GlobalExceptionHandlerIntegrationTest.java: %w", err)
+		}
+	}
+
 	// application.yml
 	if err := g.writeTemplate(
 		"java/api/resources/application.yml.tmpl",
