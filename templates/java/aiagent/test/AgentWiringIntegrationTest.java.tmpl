@@ -1,0 +1,145 @@
+package {{.GroupID}}.aiagent;
+
+import {{.GroupID}}.aiagent.agent.PrimaryAgent;
+import {{.GroupID}}.aiagent.agent.SpecialistAgent;
+import {{.GroupID}}.aiagent.knowledge.DocumentIngestionService;
+import {{.GroupID}}.aiagent.protocol.IngestionController;
+import {{.GroupID}}.aiagent.security.InputGuardrailAdvisor;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.ApplicationContext;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.TestPropertySource;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
+
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Regression guard for the AIAgent module's bean wiring.
+ *
+ * <p>The {@code @ConditionalOnBean(ChatModel.class)} and
+ * {@code @ConditionalOnBean(VectorStore.class)} pattern was applied to
+ * user-scanned components ({@code PrimaryAgent}, {@code SpecialistAgent},
+ * {@code InputGuardrailAdvisor}, {@code ChatClientConfig},
+ * {@code IngestionController}) in earlier releases. Spring evaluates
+ * those conditionals during component scanning — before the auto-config
+ * phase registers {@code ChatModel} / {@code VectorStore} — so the
+ * conditions silently fail and the components never register. The
+ * Spring context loads "successfully" but the agent feature is dead at
+ * runtime: the chat controller's autowire fails on first request, and
+ * {@code POST /ingest} returns 404.
+ *
+ * <p>This test boots the full Spring context and asserts that:
+ * <ul>
+ *   <li>The four agent-side beans (Primary, Specialist, InputGuardrail,
+ *       DocumentIngestionService) are present in the application context.</li>
+ *   <li>{@code POST /ingest} actually serves HTTP traffic (returns
+ *       a 2xx, not the 404 the previous regressions produced).</li>
+ * </ul>
+ *
+ * <p>Skipped when Docker is unavailable
+ * ({@code @Testcontainers(disabledWithoutDocker = true)}).
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Testcontainers(disabledWithoutDocker = true)
+@TestPropertySource(properties = {
+    // Match VectorRagIntegrationTest's environment so the vector path
+    // wires identically: the embedding model is local ONNX (384-dim),
+    // Flyway owns the vector schema DDL, the Anthropic key only needs
+    // to be non-blank for bean creation (we never call the LLM here).
+    "spring.ai.vectorstore.pgvector.dimensions=384",
+    "spring.ai.vectorstore.pgvector.initialize-schema=false",
+    "spring.ai.anthropic.api-key=test-key-not-used"
+    // Leave the legacy API-key filter on (default). The /ingest
+    // endpoint is annotated @RequireScope("partner"); the test sends
+    // the seeded {@code partner-secret-key} bearer to clear the scope
+    // gate. The bug class we're guarding against is "controller never
+    // registers" (404); proving the request reaches the handler and
+    // returns 202 is a stronger signal than just bean presence.
+})
+class AgentWiringIntegrationTest {
+
+    @Container
+    @ServiceConnection
+    static final PostgreSQLContainer pgvector =
+        new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg16")
+            .asCompatibleSubstituteFor("postgres"));
+
+    @Autowired
+    private ApplicationContext context;
+
+    @Autowired
+    private TestRestTemplate restTemplate;
+
+    @Test
+    void primaryAgentIsRegistered() {
+        assertThat(context.getBean(PrimaryAgent.class))
+            .as("PrimaryAgent must register; previously was @Component @ConditionalOnBean(ChatModel.class) which silently failed")
+            .isNotNull();
+    }
+
+    @Test
+    void specialistAgentIsRegistered() {
+        assertThat(context.getBean(SpecialistAgent.class))
+            .as("SpecialistAgent must register; same anti-pattern as PrimaryAgent")
+            .isNotNull();
+    }
+
+    @Test
+    void inputGuardrailAdvisorIsRegistered() {
+        assertThat(context.getBean(InputGuardrailAdvisor.class))
+            .as("InputGuardrailAdvisor must register; same anti-pattern")
+            .isNotNull();
+    }
+
+    @Test
+    void documentIngestionServiceIsRegistered() {
+        assertThat(context.getBean(DocumentIngestionService.class))
+            .as("DocumentIngestionService is wired by KnowledgeBeansConfiguration; it should always be present when a vector store is selected")
+            .isNotNull();
+    }
+
+    @Test
+    void ingestionControllerIsRegisteredAndRespondsTo2xx() {
+        // Bean must be in the context.
+        assertThat(context.getBean(IngestionController.class))
+            .as("IngestionController must register; previously was @RestController @ConditionalOnBean(VectorStore.class) which silently failed and produced 404 for /ingest")
+            .isNotNull();
+
+        // And the endpoint must actually serve traffic.
+        Map<String, Object> body = Map.of(
+            "text", "Trabuco generates production-ready Java multi-module Maven projects.",
+            "metadata", Map.of("source", "wiring-test"));
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        // partner-secret-key is the seeded partner-tier key in
+        // ApiKeyAuthFilter — needed to satisfy the @RequireScope("partner")
+        // gate on POST /ingest.
+        headers.setBearerAuth("partner-secret-key");
+
+        ResponseEntity<Map> resp = restTemplate.exchange(
+            "/ingest",
+            HttpMethod.POST,
+            new HttpEntity<>(body, headers),
+            Map.class);
+
+        assertThat(resp.getStatusCode())
+            .as("POST /ingest must return 2xx — 404 means IngestionController is not registered, the bug this test guards against")
+            .isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(resp.getBody()).isNotNull();
+        assertThat(resp.getBody().get("status")).isEqualTo("ingested");
+    }
+}

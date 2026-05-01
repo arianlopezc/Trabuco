@@ -5,11 +5,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
+/**
+ * Input guardrail — classifies user input as ALLOWED / BLOCKED before the
+ * primary agent processes it.
+ *
+ * <p>See {@code PrimaryAgent} for why this class deliberately does NOT
+ * carry {@code @ConditionalOnBean(ChatModel.class)}.
+ */
 @Component
-@ConditionalOnBean(ChatModel.class)
 public class InputGuardrailAdvisor {
 
     private static final Logger log = LoggerFactory.getLogger(InputGuardrailAdvisor.class);
