@@ -1,0 +1,134 @@
+package {{.GroupID}}.aiagent.config;
+
+import jakarta.servlet.http.HttpServletRequest;
+import java.net.URI;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ProblemDetail;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+{{- if .AuthEnabled}}
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+{{- end}}
+
+/**
+ * RFC 7807 Problem Details handler for the AIAgent Spring Boot application.
+ *
+ * <p>The AIAgent module runs as its own process, so the
+ * {@code GlobalExceptionHandler} in the API module never reaches it.
+ * Without this advice, ingestion / chat / well-known endpoints fall
+ * through to Spring Boot's whitelabel error JSON
+ * ({@code {timestamp, status, error, path}}) — inconsistent with the
+ * {@code application/problem+json} contract the API module advertises.
+ *
+ * <p>Inherits Spring's {@link ResponseEntityExceptionHandler} for
+ * framework exceptions (validation, malformed JSON, unsupported media
+ * types). Adds project-specific handlers for:
+ * <ul>
+ *   <li>{@link ResponseStatusException} thrown by the legacy scope
+ *       enforcer ({@code ScopeEnforcer.requireScope}) when the caller's
+ *       tier is insufficient — surfaces as the carried status code (403
+ *       in practice) with the original reason as {@code detail}.</li>
+ *   <li>{@link IllegalArgumentException} from ingestion / tool input
+ *       validation — surfaces as 400.</li>
+{{- if .AuthEnabled}}
+ *   <li>{@link AccessDeniedException} thrown from {@code @PreAuthorize}
+ *       on agent tools and controllers — surfaces as 403. Without this
+ *       handler the exception falls through {@code DispatcherServlet}'s
+ *       default resolver and becomes 500, bypassing the filter chain's
+ *       {@code AuthProblemDetailHandler}.</li>
+ *   <li>{@link AuthenticationException} from explicit auth checks
+ *       inside controller code — surfaces as 401.</li>
+{{- end}}
+ *   <li>Catch-all {@link Exception} → 500 with sanitized response.</li>
+ * </ul>
+ *
+ * <p>SECURITY: stack traces and root-cause messages are logged
+ * server-side, never echoed in the response body.
+ */
+@RestControllerAdvice
+public class AgentExceptionHandler extends ResponseEntityExceptionHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(AgentExceptionHandler.class);
+
+    /**
+     * Map {@link ResponseStatusException} to a ProblemDetail carrying
+     * the original status. The legacy {@code ScopeEnforcer} throws this
+     * with {@code HttpStatus.FORBIDDEN} when a caller lacks the required
+     * tier; without this handler it surfaces as a plain JSON envelope
+     * via Spring's default error path.
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ProblemDetail handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
+        HttpStatusCode status = ex.getStatusCode();
+        logger.warn("ResponseStatusException {}: {}", status.value(), ex.getReason());
+
+        ProblemDetail problem = ProblemDetail.forStatus(status);
+        problem.setTitle(HttpStatus.valueOf(status.value()).getReasonPhrase());
+        problem.setDetail(ex.getReason() != null ? ex.getReason() : "Request rejected");
+        problem.setType(URI.create("urn:problem-type:request-rejected"));
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
+        logger.warn("Invalid argument: {}", ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            ex.getMessage() != null ? ex.getMessage() : "Invalid argument");
+        problem.setTitle("Bad Request");
+        problem.setType(URI.create("urn:problem-type:invalid-argument"));
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+{{- if .AuthEnabled}}
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
+        logger.warn("Access denied at {}: {}", request.getRequestURI(), ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        problem.setTitle("Forbidden");
+        problem.setDetail("Access denied: insufficient privileges for this operation.");
+        problem.setType(URI.create("urn:problem-type:access-denied"));
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ProblemDetail handleAuthentication(AuthenticationException ex, HttpServletRequest request) {
+        logger.warn("Authentication failed at {}: {}", request.getRequestURI(), ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problem.setTitle("Unauthorized");
+        problem.setDetail("Authentication is required to access this resource.");
+        problem.setType(URI.create("urn:problem-type:authentication-required"));
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+{{- end}}
+
+    /**
+     * Catch-all for unexpected exceptions.
+     * SECURITY: full stack trace is logged server-side; the response is sanitized.
+     */
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleAllExceptions(Exception ex, HttpServletRequest request) {
+        logger.error("Unexpected error in AIAgent at {}", request.getRequestURI(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "An unexpected error occurred. Please try again later.");
+        problem.setTitle("Internal Server Error");
+        problem.setType(URI.create("urn:problem-type:internal-error"));
+        problem.setInstance(URI.create(request.getRequestURI()));
+        return problem;
+    }
+}

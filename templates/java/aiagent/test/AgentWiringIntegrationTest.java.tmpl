@@ -2,6 +2,7 @@ package {{.GroupID}}.aiagent;
 
 import {{.GroupID}}.aiagent.agent.PrimaryAgent;
 import {{.GroupID}}.aiagent.agent.SpecialistAgent;
+import {{.GroupID}}.aiagent.config.AgentExceptionHandler;
 import {{.GroupID}}.aiagent.knowledge.DocumentIngestionService;
 import {{.GroupID}}.aiagent.protocol.IngestionController;
 import {{.GroupID}}.aiagent.security.InputGuardrailAdvisor;
@@ -141,5 +142,47 @@ class AgentWiringIntegrationTest {
             .isEqualTo(HttpStatus.ACCEPTED);
         assertThat(resp.getBody()).isNotNull();
         assertThat(resp.getBody().get("status")).isEqualTo("ingested");
+    }
+
+    @Test
+    void agentExceptionHandlerIsRegistered() {
+        assertThat(context.getBean(AgentExceptionHandler.class))
+            .as("AgentExceptionHandler @RestControllerAdvice must register so AIAgent endpoints emit RFC 7807 problem+json instead of Spring Boot's whitelabel JSON")
+            .isNotNull();
+    }
+
+    @Test
+    void scopeDenialFromAnonymousCallerReturnsRfc7807() {
+        // No bearer token → ApiKeyAuthFilter sets CallerIdentity.anonymous()
+        // → ScopeEnforcer.requireScope("partner") throws ResponseStatusException(403)
+        // → AgentExceptionHandler must format it as application/problem+json.
+        // Without the advice, Spring's default error path emits a plain JSON
+        // envelope ({timestamp,status,error,path}) and breaks the
+        // problem+json contract the API module advertises.
+        Map<String, Object> body = Map.of(
+            "text", "anonymous request",
+            "metadata", Map.of("source", "advice-test"));
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<Map> resp = restTemplate.exchange(
+            "/ingest",
+            HttpMethod.POST,
+            new HttpEntity<>(body, headers),
+            Map.class);
+
+        assertThat(resp.getStatusCode())
+            .as("Anonymous POST /ingest hits @RequireScope(partner) → 403")
+            .isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(resp.getHeaders().getContentType())
+            .as("AgentExceptionHandler must emit application/problem+json")
+            .isNotNull();
+        assertThat(resp.getHeaders().getContentType().toString())
+            .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        assertThat(resp.getBody())
+            .as("Body must follow RFC 7807 shape — type/title/status/detail")
+            .isNotNull()
+            .containsKeys("type", "title", "status", "detail");
+        assertThat(resp.getBody().get("status")).isEqualTo(403);
     }
 }

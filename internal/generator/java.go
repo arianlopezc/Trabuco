@@ -850,6 +850,7 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/config/ChatClientConfig.java.tmpl", filepath.Join("config", "ChatClientConfig.java")},
 		{"java/aiagent/config/McpServerConfig.java.tmpl", filepath.Join("config", "McpServerConfig.java")},
 		{"java/aiagent/config/WebConfig.java.tmpl", filepath.Join("config", "WebConfig.java")},
+		{"java/aiagent/config/AgentExceptionHandler.java.tmpl", filepath.Join("config", "AgentExceptionHandler.java")},
 	}
 	if g.config.VectorStoreIsPgVector() {
 		// Second Flyway bean for the vector schema. Only emitted when
