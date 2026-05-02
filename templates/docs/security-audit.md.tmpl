@@ -1,0 +1,128 @@
+# Security Audit — {{.ProjectNamePascal}}
+
+This project ships with the Trabuco security-audit toolchain — a
+canonical 173-check checklist across five domains (auth, AI surface,
+AIAgent runtime + Java platform, data + events, web + infra), plus
+per-format guidance for whichever AI coding agent you wired into the
+project.
+
+This document is a **per-project quick reference**. The deeper guide
+(plugin extension, source-of-truth, contribution workflow) lives at
+`docs/security-audit.md` in the Trabuco CLI repo.
+
+## How to invoke
+
+The audit runs against this project's source tree, not against the
+template tree. It produces `.ai/security-audit/findings.md` in this
+directory (gitignored — paste findings into PR descriptions or
+evidence trackers, not git history).
+
+| Coding agent | Entry point | Mechanics |
+| ------------ | ----------- | --------- |
+{{- if .HasAIAgent "claude" }}
+| Claude Code | `/audit` slash command (skill at `.claude/skills/audit/SKILL.md`) | Orchestrator subagent dispatches 5 domain specialists in parallel; runtime under 2 min |
+{{- end }}
+{{- if .HasAIAgent "cursor" }}
+| Cursor | Ask Cursor to "run the security audit"; the rule at `.cursor/rules/security-audit.mdc` activates | Sequential walk through the same 5 domains; runtime 3–8 min |
+{{- end }}
+{{- if .HasAIAgent "copilot" }}
+| GitHub Copilot | Ask Copilot to "audit this project for security issues" — the instructions file at `.github/instructions/security-audit.instructions.md` activates via `applyTo` | Sequential walk; runtime 3–8 min |
+{{- end }}
+{{- if .HasAIAgent "codex" }}
+| Codex CLI | Run Codex in the repo with the `.codex/security-audit.md` guidance loaded; ask "run the security audit" | Sequential walk; runtime 3–8 min |
+{{- end }}
+
+The deterministic OWASP basics also run on every PR via
+`.github/scripts/review-checks.sh` (the CI `review-checks` job).
+That's a fast pre-merge gate; the LLM-driven `/audit` is the deeper
+sweep operators trigger deliberately.
+
+## Output
+
+`.ai/security-audit/findings.md` — severity-sorted, diff-stable.
+**Verdict** is `PASS` if zero Critical and zero High findings,
+otherwise `FAIL`. Each finding includes the check ID, file path +
+line range, evidence snippet, and the suggested fix.
+
+The findings file is gitignored. To preserve a snapshot, copy it
+into the PR description or an evidence tracker.
+
+## Suppressing false positives
+
+```java
+// trabuco-allow: owasp.a02-weak-hash
+md5();  // legacy ETag computation, not a security check
+
+// trabuco-allow: all
+legacy();  // disables every rule on this line
+```
+
+The same syntax works for both LLM-driven findings and the CI
+deterministic checks.
+
+## Project-specific rules
+
+Add rules that apply only to this project at
+`.ai/security-audit/checklist-local.md`. Schema is identical to the
+canonical files in the same directory:
+
+```markdown
+## LOCAL-001 — <one-line title>
+
+**Severity floor:** Critical | High | Medium | Low | Informational
+**Domain:** auth | ai-surface | aiagent-java | data-events | web-infra
+
+### Where to look
+<path glob>
+
+### Evidence pattern
+```java
+<antipattern>
+```
+
+### Why it matters
+<1-3 sentences>
+
+### Suggested fix
+<1-2 sentences>
+```
+
+`trabuco sync` updates the canonical checklists when the Trabuco CLI
+is upgraded but **never** overwrites `checklist-local.md` — it's
+yours.
+
+## Severity rubric
+
+| Severity | Definition |
+| -------- | ---------- |
+| Critical | Default-on exploitable vulnerability or data-loss path. Block release. |
+| High | Exploitable under common conditions; fix before next deploy. |
+| Medium | Latent issue that becomes critical under composition. |
+| Low | Hardening opportunity; fix during routine maintenance. |
+| Informational | Defensible default with a documented trade-off. |
+
+The audit will not downgrade findings below their severity floor
+without an explicit `[suppress: <reason>]` justification, which the
+orchestrator surfaces in the report.
+
+## Updating the checklist
+
+When Trabuco CLI ships a checklist update:
+
+```bash
+trabuco sync
+```
+
+This refreshes the canonical files in `.ai/security-audit/`
+without touching `checklist-local.md` or `findings.md`.
+
+## References
+
+- Master index: `.ai/security-audit/checklist.md`
+- Domain detail: `.ai/security-audit/checklist-auth.md`,
+  `checklist-ai-surface.md`, `checklist-aiagent-java.md`,
+  `checklist-data-events.md`, `checklist-web-infra.md`
+- Findings: `.ai/security-audit/findings.md` (gitignored)
+- Operator extensions: `.ai/security-audit/checklist-local.md` (optional, persistent)
+- CI deterministic basics: `.github/scripts/review-checks.sh`
+  (search for `owasp.`)

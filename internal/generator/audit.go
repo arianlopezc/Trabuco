@@ -96,5 +96,13 @@ func (g *Generator) generateAuditArtifacts() error {
 		}
 	}
 
+	// Per-project security-audit reference doc. Always emitted — the
+	// audit is available regardless of which AI agents the operator
+	// selected (the checklist files alone are enough for a manual
+	// walk).
+	if err := g.writeTemplate("docs/security-audit.md.tmpl", "docs/security-audit.md"); err != nil {
+		return fmt.Errorf("failed to write security-audit doc: %w", err)
+	}
+
 	return nil
 }
