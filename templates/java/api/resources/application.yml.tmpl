@@ -145,19 +145,18 @@ spring:
 
   # Flyway migrations
   #
-  # Flyway runs by default with the same DB credentials
-  # as the runtime app, so the runtime user inherits DDL privileges
-  # — broad blast radius if the app is compromised. The
-  # {@code spring.flyway.user} / {@code spring.flyway.password}
-  # properties below let operators run migrations as a separate,
-  # higher-privileged role at boot, while {@code spring.datasource}
-  # stays bound to a low-privilege runtime role. Default is to
-  # inherit from the runtime credentials (existing behavior); set
-  # FLYWAY_USERNAME / FLYWAY_PASSWORD to opt in to separation.
+  # Flyway by default reuses the runtime app's DB credentials, so the
+  # runtime user inherits DDL privileges — broad blast radius if the
+  # app is compromised. Operators can run migrations as a separate
+  # higher-privileged DBA role by setting FLYWAY_USERNAME /
+  # FLYWAY_PASSWORD env vars (Spring binds these to
+  # spring.flyway.user / spring.flyway.password automatically).
+  # We deliberately do NOT pin user/password to a per-driver literal
+  # default here: doing so leaks the postgres `postgres/postgres`
+  # defaults into MySQL/H2 builds and overrides Testcontainer-injected
+  # credentials in CI.
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
-    user: ${FLYWAY_USERNAME:${DB_USERNAME:postgres}}
-    password: ${FLYWAY_PASSWORD:${DB_PASSWORD:postgres}}
     locations: classpath:db/migration
     baseline-on-migrate: true
     # clean-disabled defaults to true since 1.12 — prevents
