@@ -32,9 +32,21 @@ CREATE TABLE IF NOT EXISTS placeholders (
 {{- end}}
 );
 
--- Index for name lookups (IF NOT EXISTS supported in PostgreSQL 9.5+
--- and MySQL 8.0.29+).
+-- Index for name lookups.
+{{- if eq .Database "postgresql"}}
+-- IF NOT EXISTS is PostgreSQL 9.5+ syntax. Symmetric with CREATE TABLE
+-- IF NOT EXISTS above so manual bootstrap paths (DBA running this file
+-- directly, partial-failure recovery, flyway:repair) do not fail with
+-- "relation already exists".
 CREATE INDEX IF NOT EXISTS idx_placeholders_name ON placeholders(name);
+{{- else}}
+-- MySQL only added CREATE INDEX IF NOT EXISTS in 8.0.29; the
+-- Testcontainers `mysql:8.0` tag and many production deployments still
+-- run earlier 8.0.x patches. Bare CREATE INDEX is portable. Manual
+-- bootstrap re-runs will need flyway:repair or schema reset, but
+-- Flyway's normal migration history protects the migration path itself.
+CREATE INDEX idx_placeholders_name ON placeholders(name);
+{{- end}}
 {{- if eq .Database "postgresql"}}
 
 -- updated_at auto-advance trigger.
