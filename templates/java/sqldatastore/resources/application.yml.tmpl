@@ -35,14 +35,17 @@ spring:
       leak-detection-threshold: ${DB_LEAK_DETECTION:30000}
 
   # Flyway Migration Settings
-  # FLYWAY_USERNAME / FLYWAY_PASSWORD opt operators into
-  # separate-user migrations (Flyway runs as a privileged DBA role,
-  # runtime app uses a low-privilege role). Default inherits runtime
-  # credentials.
+  #
+  # Operators can run migrations as a privileged DBA role distinct from
+  # the runtime app role by setting FLYWAY_USERNAME / FLYWAY_PASSWORD.
+  # When unset, Spring Boot wires Flyway with the same datasource
+  # credentials configured above — and tooling such as Testcontainers
+  # `@ServiceConnection` can override both at once. We deliberately do
+  # NOT pin user/password to per-driver literal defaults here: doing so
+  # leaks the postgres `postgres/postgres` defaults into MySQL/H2 builds
+  # and overrides Testcontainer-injected credentials in CI.
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
-    user: ${FLYWAY_USERNAME:${DB_USERNAME:postgres}}
-    password: ${FLYWAY_PASSWORD:${DB_PASSWORD:postgres}}
     locations: classpath:db/migration
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
     validate-on-migrate: ${FLYWAY_VALIDATE:true}
