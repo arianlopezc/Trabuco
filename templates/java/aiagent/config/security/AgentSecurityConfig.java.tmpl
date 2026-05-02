@@ -201,6 +201,15 @@ public class AgentSecurityConfig {
         }
         return http
             .csrf(AbstractHttpConfigurer::disable)
+            // CORS handling on the OAuth2 chain — symmetric with the
+            // permit-all chain below. Without this, preflight (OPTIONS)
+            // requests from browser clients with valid JWTs bypass MVC's
+            // WebConfig CORS configuration and are blocked by Spring
+            // Security's default-deny stance for OPTIONS, breaking
+            // browser-side AIAgent integrations. Configuration values
+            // come from {@code spring.web.cors.*} which WebConfig
+            // surfaces.
+            .cors(cors -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter))

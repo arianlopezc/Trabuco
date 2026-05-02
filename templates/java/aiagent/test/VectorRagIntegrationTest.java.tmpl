@@ -78,12 +78,18 @@ class VectorRagIntegrationTest {
 
     @Test
     void vectorRetrieverReplacesKeywordRetrieverWhenVectorStorePresent() {
-        // @ConditionalOnBean(VectorStore.class) on VectorKnowledgeRetriever
-        // and @ConditionalOnMissingBean(VectorStore.class) on the keyword
-        // Fallback ensure exactly one is wired. Verify the vector path is
-        // the one Spring chose.
+        // Selection mechanism: KnowledgeBeansConfiguration is emitted by
+        // the generator only when a vector store is selected, registering
+        // VectorKnowledgeRetriever as @Bean @Primary.
+        // KeywordKnowledgeRetriever is always emitted as a baseline;
+        // @Primary on the vector bean wins autowiring. See
+        // KnowledgeBeansConfiguration for the full rationale (the
+        // previous @ConditionalOnBean approach was unreliable on
+        // user-scanned beans — Spring evaluated it BEFORE Spring AI's
+        // auto-config registered the VectorStore, so the conditional
+        // silently failed).
         assertThat(knowledgeRetriever)
-            .as("with PGVector wired, the vector retriever should win the conditional")
+            .as("with PGVector wired, the @Primary vector retriever wins autowiring")
             .isInstanceOf(VectorKnowledgeRetriever.class);
     }
 

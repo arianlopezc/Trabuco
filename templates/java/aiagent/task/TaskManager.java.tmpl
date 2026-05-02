@@ -3,6 +3,8 @@ package {{.GroupID}}.aiagent.task;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
 import {{.GroupID}}.aiagent.task.ImmutableTaskEvent;
 import java.util.List;
 import java.util.Map;
@@ -53,18 +55,30 @@ public class TaskManager {
         var record = new TaskRecord(taskId, ownerKeyHash);
         tasks.put(taskId, record);
 
+        // Capture the submitter's CallerContext on the HTTP thread so
+        // downstream code on the worker thread (VectorKnowledgeRetriever
+        // tenant filter, KnowledgeTools, audit logging) sees the real
+        // caller instead of the anonymous fallback. ThreadLocal does not
+        // propagate to virtual threads.
+        final CallerIdentity capturedCaller = CallerContext.get();
+
         executor.submit(() -> {
-            record.setStatus("working");
-            notify(taskId, "working", null, null);
+            CallerContext.set(capturedCaller);
             try {
-                Map<String, Object> result = work.call();
-                record.setStatus("completed");
-                record.setResult(result);
-                notify(taskId, "completed", result, null);
-            } catch (Exception e) {
-                record.setStatus("failed");
-                record.setError(e.getMessage());
-                notify(taskId, "failed", null, e.getMessage());
+                record.setStatus("working");
+                notify(taskId, "working", null, null);
+                try {
+                    Map<String, Object> result = work.call();
+                    record.setStatus("completed");
+                    record.setResult(result);
+                    notify(taskId, "completed", result, null);
+                } catch (Exception e) {
+                    record.setStatus("failed");
+                    record.setError(e.getMessage());
+                    notify(taskId, "failed", null, e.getMessage());
+                }
+            } finally {
+                CallerContext.clear();
             }
         });
 

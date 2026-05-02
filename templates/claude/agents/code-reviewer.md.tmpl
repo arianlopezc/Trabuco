@@ -121,7 +121,7 @@ After the deterministic pass, review each changed file for:
 - No single-letter names except in tiny lambda scopes.
 
 ### D. Spring patterns
-- Constructor injection with `@RequiredArgsConstructor` or explicit constructor; all fields `private final`.
+- Constructor injection with an explicit constructor; all fields `private final`. Trabuco does not use Lombok — never `@RequiredArgsConstructor`.
 - `@Transactional` on public service methods only.
 - `@CircuitBreaker(name = "default")` on external calls when Shared is present.
 - Bean Validation (`@NotNull`, `@Valid`) on DTOs — not manual null checks in controllers.

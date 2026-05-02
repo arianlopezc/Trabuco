@@ -101,7 +101,7 @@ public record {EntityName}Record(
 **File**: `SQLDatastore/src/main/resources/db/migration/V{next_version}__{description}.sql`
 
 ```sql
-CREATE TABLE {entity_name_snake} (
+CREATE TABLE IF NOT EXISTS {entity_name_snake} (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -112,13 +112,14 @@ CREATE TABLE {entity_name_snake} (
 - Find the next version number by checking existing migrations
 - Never modify existing migration files
 - Use snake_case for table and column names
+- Use `CREATE TABLE IF NOT EXISTS` so manual bootstrap paths don't fatally fail on re-run. Operators should still prefer `mvn flyway:baseline` for existing-DB bootstrap.
 
 #### Child Tables (Relationships)
 
 When an entity belongs to another entity (e.g., `OrderItem` belongs to `Order`), **never use foreign keys**. Store the parent ID as a regular indexed column:
 
 ```sql
-CREATE TABLE order_item (
+CREATE TABLE IF NOT EXISTS order_item (
     id BIGSERIAL PRIMARY KEY,
     order_id BIGINT NOT NULL,
     product_name VARCHAR(255) NOT NULL,
@@ -126,7 +127,7 @@ CREATE TABLE order_item (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_order_item_order_id ON order_item (order_id);
+CREATE INDEX IF NOT EXISTS idx_order_item_order_id ON order_item (order_id);
 ```
 
 **Rules:**
@@ -291,6 +292,10 @@ public class {EntityName}Service {
         this.repository = repository;
     }
 
+    // trabuco-allow: perf.unbounded-scan — placeholder demo only.
+    // FIXME: replace before shipping. Unbounded findAll() OOMs at scale.
+    // Replace with the keyset Drain Loop or paged repository methods —
+    // see PlaceholderService#processAllBatched and JAVA_CODE_QUALITY.md §5.5.
     public List<Immutable{EntityName}> findAll() {
         return StreamSupport.stream(repository.findAll().spliterator(), false)
             .map({EntityName}Record::toEntity)
@@ -312,6 +317,10 @@ public class {EntityName}Service {
         this.repository = repository;
     }
 
+    // trabuco-allow: perf.unbounded-scan — placeholder demo only.
+    // FIXME: replace before shipping. Unbounded findAll() OOMs at scale.
+    // Replace with the keyset Drain Loop or paged repository methods —
+    // see PlaceholderService#processAllBatched and JAVA_CODE_QUALITY.md §5.5.
     public List<Immutable{EntityName}> findAll() {
         return repository.findAll().stream()
             .map({EntityName}Document::toEntity)

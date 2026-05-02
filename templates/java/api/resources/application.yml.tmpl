@@ -382,16 +382,20 @@ management:
 
 # OpenAPI/Swagger configuration
 #
-# / api-docs and swagger-ui leak the full API
-# surface. They're useful in dev / for partner onboarding, but
-# shouldn't ship to production. Defaults to enabled here so
-# `mvn spring-boot:run` works out of the box; production
-# environments must set SPRINGDOC_ENABLED=false (or activate a prod
-# profile that overrides). When the JWT chain is on,
-# {@code SecurityConfig} permits {@code /swagger-ui/**} and
-# {@code /api-docs/**} in the URL matcher — gate via
-# {@code SCOPE_docs:read} (uncomment the {@code requestMatchers}
-# clause in SecurityConfig.java) for partner-only access.
+# /api-docs and /swagger-ui leak the full API surface. They're useful
+# in dev / for partner onboarding, but shouldn't ship unprotected.
+# Defaults to enabled here so `mvn spring-boot:run` works out of the
+# box; production environments must set SPRINGDOC_ENABLED=false (or
+# activate a prod profile that overrides).
+#
+# Defense-in-depth at the security layer: when the JWT chain is on
+# (trabuco.auth.enabled=true), SecurityConfig does NOT permit-all the
+# /swagger-ui or /api-docs paths — they require a JWT. So even if
+# SPRINGDOC_ENABLED is left at true in prod, an unauthenticated
+# request gets 401 instead of leaking the schema. To expose the
+# schema to authenticated callers (or scope-gate it via
+# SCOPE_docs:read), add the appropriate requestMatchers to
+# SecurityConfig.java.tmpl as described in its comment.
 springdoc:
   api-docs:
     enabled: ${SPRINGDOC_ENABLED:true}

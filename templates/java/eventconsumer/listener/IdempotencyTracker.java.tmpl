@@ -2,7 +2,6 @@ package {{.GroupID}}.eventconsumer.listener;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -48,10 +47,11 @@ import java.util.Map;
  *       application code at the cost of additional broker config.</li>
  * </ul>
  *
- * <p>Swap by providing your own bean of this type with the same
- * {@link #checkAndMark} contract.
+ * <p>Swap by providing your own {@code @Bean} of this type in any
+ * {@code @Configuration}; {@code IdempotencyConfig} declares the
+ * default with {@code @ConditionalOnMissingBean}, so a user-provided
+ * bean wins automatically.
  */
-@Component
 public class IdempotencyTracker {
 
     private static final Logger log = LoggerFactory.getLogger(IdempotencyTracker.class);
@@ -82,9 +82,19 @@ public class IdempotencyTracker {
     public boolean checkAndMark(String eventId) {
         if (eventId == null || eventId.isBlank()) {
             // No id → no dedup possible. Process every time.
-            // This is an integration smell (well-formed events have ids)
-            // — surface it but don't drop the event.
-            log.warn("Event has null/blank eventId; cannot dedup");
+            // This is a producer-side integration bug (well-formed events
+            // carry stable ids that uniquely identify the event for
+            // exactly-once-effect semantics on redelivery). Returning
+            // true is the safe default: process the event, surface the
+            // producer bug as a WARN log so ops can find the upstream
+            // service emitting events without ids. To make this a hard
+            // failure instead — routing offending events to DLQ — replace
+            // the return below with a thrown exception.
+            log.warn(
+                "Idempotency dedup skipped: event has null/blank eventId. "
+                + "This is a producer-side bug (events must carry stable ids). "
+                + "Investigate the upstream service. Without an id, this "
+                + "event will re-execute on every broker redelivery.");
             return true;
         }
         synchronized (seen) {

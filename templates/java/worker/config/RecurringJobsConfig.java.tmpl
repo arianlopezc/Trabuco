@@ -58,21 +58,45 @@ public class RecurringJobsConfig {
   public void registerRecurringJobs() {
     log.info("Registering recurring jobs...");
 
-    // Example: Run a job every hour using JobRequest pattern
-    // Uncomment to enable:
-    // jobScheduler.scheduleRecurrently(
-    //     "hourly-placeholder-job",
-    //     Cron.hourly(),
-    //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Hourly job executed"))
-    // );
+    // Why try/catch: this listener fires AFTER ApplicationReadyEvent —
+    // the app's actuator already reports UP. A failure inside
+    // scheduleRecurrently (DB lock during JobRunr's
+    // recurring-job table write, malformed cron, JobScheduler bean
+    // misconfigured) would otherwise be logged by Spring's
+    // ApplicationEventMulticaster and quietly swallowed; operators
+    // would see a healthy /actuator/health while no recurring jobs ran.
+    // Catching here makes the failure prominent in logs. For stronger
+    // behavior (fail liveness probe / flip /actuator/health to DOWN
+    // on registration failure), add a custom HealthIndicator that
+    // tracks a member flag set in this catch block.
+    try {
+      // Example: Run a job every hour using JobRequest pattern
+      // Uncomment to enable:
+      // jobScheduler.scheduleRecurrently(
+      //     "hourly-placeholder-job",
+      //     Cron.hourly(),
+      //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Hourly job executed"))
+      // );
 
-    // Example: Run a job daily at 6 AM
-    // jobScheduler.scheduleRecurrently(
-    //     "daily-morning-job",
-    //     Cron.daily(6, 0),
-    //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Daily morning job executed"))
-    // );
+      // Example: Run a job daily at 6 AM
+      // jobScheduler.scheduleRecurrently(
+      //     "daily-morning-job",
+      //     Cron.daily(6, 0),
+      //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Daily morning job executed"))
+      // );
 
-    log.info("Recurring jobs registered successfully");
+      log.info("Recurring jobs registered successfully");
+    } catch (RuntimeException e) {
+      log.error(
+          "Failed to register recurring jobs — application is RUNNING but no "
+          + "recurring schedules are active. Investigate immediately: any "
+          + "job-driven business process will not fire until this is resolved "
+          + "and the application is restarted.",
+          e);
+      // Re-throw so Spring's ApplicationEventMulticaster surfaces it
+      // in the multicaster log too — defense in depth against the
+      // log.error above being filtered.
+      throw e;
+    }
   }
 }

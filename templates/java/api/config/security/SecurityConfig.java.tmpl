@@ -149,11 +149,20 @@ public class SecurityConfig {
                     "/health",
                     "/actuator/health/**",
                     "/actuator/info",
-                    "/swagger-ui/**",
-                    "/v3/api-docs/**",
-                    "/api-docs/**",
                     "/error"
                 ).permitAll()
+                // Swagger UI and OpenAPI schema endpoints (/swagger-ui/**,
+                // /v3/api-docs/**, /api-docs/**) are intentionally NOT
+                // permitAll on the JWT chain — schema exposure is opt-in
+                // for auth-enabled deployments. To expose them on this
+                // chain, either: (a) add a permitAll matcher above (open
+                // to anyone), (b) add a hasAuthority("SCOPE_docs:read")
+                // matcher (partner/internal access only), or (c) keep
+                // SPRINGDOC_ENABLED=false in production and use a
+                // separate dev-only profile that activates them. In
+                // auth-disabled mode (trabuco.auth.enabled=false) the
+                // permit-all chain handles every path including swagger,
+                // so dev experience is unchanged.
                 // / /actuator/prometheus exposes
                 // per-route URI templates (enumerates {id} paths over
                 // time), JVM internals, and queue depth. Since 1.12 it

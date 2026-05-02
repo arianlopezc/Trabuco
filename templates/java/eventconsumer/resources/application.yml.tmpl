@@ -31,7 +31,13 @@ spring:
       auto-offset-reset: earliest
       enable-auto-commit: false
     producer:
-      # Producer config for DLT (Dead Letter Topic) publishing.
+      # NOTE: Do not remove this block. The @RetryableTopic on
+      # PlaceholderEventListener publishes to retry/DLT topics through
+      # KafkaTemplate, which Spring Boot auto-configures from these
+      # properties. Removing producer config silently breaks retry/DLT
+      # routing — see KafkaConfig#retryDltKafkaTemplate for the explicit
+      # bean wiring.
+      #
       # Idempotent producer + acks=all + retries — these
       # together prevent message loss on broker failover and prevent
       # duplicate messages on producer retries (the broker dedups by

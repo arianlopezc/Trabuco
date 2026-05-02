@@ -48,6 +48,21 @@ public record PlaceholderDocument(
   }
 }
 {{- else if eq .NoSQLDatabase "redis"}}
+// Redis-specific notes for production hardening:
+//
+// 1. TTL: this annotation has no timeToLive — data persists until
+//    explicitly deleted. For cache-style usage add timeToLive (seconds),
+//    e.g., @RedisHash(value = "placeholder", timeToLive = 3600). For
+//    durable storage prefer SQL or MongoDB; Redis without TTL is rarely
+//    the right call.
+//
+// 2. Keyspace prefix: this entity stores keys under "placeholder:<id>"
+//    globally. A Redis instance shared across environments (staging +
+//    prod) or services (service-A + service-B) gets silent key
+//    collisions. To partition, register a KeyspaceConfiguration bean in
+//    NoSQLConfig that prefixes by ${spring.application.name} and
+//    ${spring.profiles.active}, or use one Redis instance per
+//    environment / service (cleaner).
 @RedisHash("placeholder")
 public record PlaceholderDocument(
   @Id

@@ -81,6 +81,22 @@ public class PubSubConfig {
    *   <li>Payload type set to PlaceholderEvent for automatic conversion</li>
    * </ul>
    * </p>
+   *
+   * <p><b>Ack deadline — operator-managed.</b> Pub/Sub's default
+   * subscription ack deadline is 10 seconds. If the handler takes
+   * longer than that to process a message, Pub/Sub redelivers the
+   * message to another subscriber while the original is still working
+   * — silent duplicate side-effects (the {@code IdempotencyTracker}
+   * dedup window in {@code PlaceholderEventListener} catches in-process
+   * dupes only; cross-instance dupes need a shared-store tracker).
+   *
+   * <p>Configure the subscription's {@code ackDeadlineSeconds} on
+   * the GCP side to comfortably exceed your handler's worst-case
+   * processing time (max 600s). For dynamic handler latency, use
+   * {@code spring.cloud.gcp.pubsub.subscriber.max-ack-extension-period}
+   * which lets the subscriber library auto-extend the deadline up to
+   * the configured cap (recommended: set to the longest expected
+   * handler runtime + a margin).
    */
   @Bean
   public PubSubInboundChannelAdapter placeholderInboundAdapter(

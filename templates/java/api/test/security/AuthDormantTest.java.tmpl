@@ -17,6 +17,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 {{- end}}
 
+import org.springframework.http.HttpHeaders;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -87,6 +89,29 @@ class AuthDormantTest {
                         "Expected dormant auth (no 401/403), got " + status +
                         ". The permit-all chain may have been replaced by a JWT chain — " +
                         "check @ConditionalOnProperty wiring on SecurityConfig beans.");
+                }
+            });
+    }
+
+    @Test
+    void apiEndpointIgnoresMalformedBearerTokenInDormantMode() throws Exception {
+        // Stronger dormancy proof than the no-token tests above: send a
+        // syntactically-valid Bearer header carrying garbage. The JWT
+        // chain (if wired) would invoke its JwtDecoder, fail signature
+        // verification, and return 401 with WWW-Authenticate. The
+        // permit-all chain ignores the header entirely and lets the
+        // request through. This regression-tests against the case where
+        // someone replaces @ConditionalOnProperty with @Conditional or
+        // adds a stray BearerTokenAuthenticationFilter to the permit-all
+        // chain — both would silently start validating tokens.
+        mvc.perform(get("/api/placeholders")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-real-jwt"))
+            .andExpect(result -> {
+                int status = result.getResponse().getStatus();
+                if (status == 401 || status == 403) {
+                    throw new AssertionError(
+                        "Expected dormant auth to IGNORE the Bearer header (no 401/403), got " + status +
+                        ". A JWT filter is processing tokens despite trabuco.auth.enabled=false.");
                 }
             });
     }

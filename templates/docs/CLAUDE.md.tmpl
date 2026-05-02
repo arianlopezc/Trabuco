@@ -352,6 +352,10 @@ Each task below has a slash-command skill (invoke as `/add-X`) AND a full step-b
 ## Boundaries
 
 This project DOES include OAuth2 Resource Server auth scaffolding (Spring Security 6, JWT validation, scope → `SCOPE_*` authority mapping, RFC 7807 problem+json error envelopes). It is dormant by default; set `trabuco.auth.enabled=false` for local dev or `=true` (with `OIDC_ISSUER_URI` + `OIDC_AUDIENCE`) for deployments. The app refuses to boot when that property is unset. See `docs/auth.md`.{{- if .HasModule "AIAgent" }} The AIAgent module additionally ships a legacy API-key path (`app.aiagent.api-key.enabled`, default true) — operators populate `agent.auth.keys.*` or use the `local-dev` profile.{{- end }}
+{{- if .HasModule "AIAgent" }}
+
+This project DOES include vector-RAG knowledge retrieval (Spring AI 1.0.5 — pgvector, Qdrant, or MongoDB Atlas, configurable at `agent.knowledge.vector-store`). `KnowledgeRetriever` is the primary abstraction; `VectorKnowledgeRetriever` wins autowiring when a vector store is selected, `KeywordKnowledgeRetriever` is the fallback. `DocumentIngestionService` + `IngestionController` (POST `/ingest`, gated by `@RequireScope("partner")`, `@ConditionalOnProperty("agent.ingest.enabled")`, default off) handle document ingestion. Tenant isolation via `CallerIdentity.tenantId()` is enforced at the retriever boundary — caller-supplied `tenant_id` in document metadata is server-side stripped. Do NOT reinvent RAG; extend the existing surface. See `docs/vector-rag.md` for store-specific recipes and `{{.PromptsDir}}/add-knowledge-entry.md` for the per-task prompt.
+{{- end }}
 
 This project does NOT include: identity-provider features (login forms, password handling, MFA enrollment, user management UI, token issuance), frontend/UI, GraphQL, gRPC, WebSockets, Kubernetes manifests, or production database schemas. Placeholder entities should be replaced with real domain objects. For guidance on adding missing capabilities, see `{{.PromptsDir}}/extending-the-project.md`.
 

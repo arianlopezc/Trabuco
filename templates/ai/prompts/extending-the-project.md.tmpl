@@ -127,6 +127,19 @@ If you don't have the Worker module but need simple scheduling:
 1. Add `@EnableScheduling` to a config class
 2. Use `@Scheduled(cron = "0 0 * * * *")` on methods
 3. Note: This runs in-process — use Worker module with JobRunr for durable, distributed jobs
+{{- if .HasModule "AIAgent"}}
+
+## Knowledge / Vector RAG (shipped — extend, don't reinvent)
+
+The AIAgent module ships vector-RAG retrieval out of the box. Do **not** add a parallel implementation; extend the existing surface:
+
+- `KnowledgeRetriever` is the abstraction. `VectorKnowledgeRetriever` (Spring AI 1.0.5 — pgvector / Qdrant / MongoDB Atlas, selected by `agent.knowledge.vector-store`) wins autowiring as `@Bean @Primary`; `KeywordKnowledgeRetriever` is the always-emitted baseline.
+- Document ingestion: `DocumentIngestionService` + `IngestionController` (POST `/ingest`, `@RequireScope("partner")`, `@ConditionalOnProperty("agent.ingest.enabled")` defaulting OFF). Activate by setting `agent.ingest.enabled=true` and issuing partner-scope tokens.
+- Tenant isolation: `CallerIdentity.tenantId()` is enforced at the retriever query boundary. Any `tenant_id` field a caller submits in document metadata is server-side stripped before storage; never trust caller-supplied tenancy. New code touching the vector store must respect this contract.
+- Embeddings: defaults to local ONNX (384-dim). Switch providers via `spring.ai.vectorstore.<store>.dimensions` and a matching embedding-model bean.
+- New retriever ideas (hybrid search, reranking, etc.) should compose with the existing `KnowledgeRetriever` — wrap or chain, don't replace.
+- See `docs/vector-rag.md` for per-store schema/migration details and `add-knowledge-entry.md` for the per-task prompt.
+{{- end}}
 
 ## OpenTelemetry Tracing
 

@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 {{- end}}
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 {{- if or (.HasModule "SQLDatastore") (and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb"))}}
 import java.util.function.Consumer;
@@ -154,6 +155,36 @@ public class PlaceholderService {
    * Keyset Drain Loop — process every placeholder in bounded-memory batches.
    * Terminates when the fetched page is shorter than the batch size.
    * See JAVA_CODE_QUALITY.md §5.5.
+   *
+   * <p><b>Transaction semantics — caller-owned.</b> This method is a
+   * streaming iterator: it does NOT establish a transaction. The caller's
+   * {@code action} is responsible for atomicity. Without explicit
+   * action-side transaction handling, each write inside {@code action}
+   * auto-commits independently — a failure mid-batch leaves earlier items
+   * committed and later items unprocessed.
+   *
+   * <p>Recommended patterns for the {@code action}:
+   * <ul>
+   *   <li><b>Read-only / idempotent action</b> (audit logging, cache warm,
+   *       export): no transaction needed. If the action throws, restart
+   *       from the beginning — re-processing is safe.</li>
+   *   <li><b>Action does writes, must be atomic per item</b>: annotate the
+   *       service method that contains the action body with
+   *       {@code @Transactional(propagation = REQUIRES_NEW)} so each item
+   *       is its own transaction. Failure mid-batch loses only the failing
+   *       item; earlier items are durably committed.</li>
+   *   <li><b>Action does writes, must be idempotent</b>: design the write
+   *       so re-running is a no-op (e.g., {@code UPDATE ... WHERE
+   *       processed_at IS NULL}, {@code INSERT ... ON CONFLICT DO
+   *       NOTHING}). Restart-from-zero is then safe.</li>
+   * </ul>
+   *
+   * <p>This method does NOT track or persist a resume cursor. If the
+   * caller needs failure-resume semantics (e.g., continue a long-running
+   * batch after a crash), persist the last successfully processed
+   * {@link PlaceholderRecord#id()} themselves and pass it as the starting
+   * point on resume — or replicate this pattern with an explicit cursor
+   * argument in your service method.
    */
   public int processAllBatched(Consumer<ImmutablePlaceholder> action) {
     long afterId = 0L;
@@ -162,7 +193,14 @@ public class PlaceholderService {
       List<PlaceholderRecord> page = repository.findPage(afterId, DEFAULT_DRAIN_BATCH);
       if (page.isEmpty()) break;
       page.forEach(r -> action.accept(toImmutable(r)));
-      afterId = page.get(page.size() - 1).id();
+      // PlaceholderRecord.id() is @Nullable for the pre-insert case (a
+      // record being saved for the first time has no assigned id yet).
+      // After a repository fetch, the id is guaranteed non-null —
+      // assert that contract loudly so an unexpected null fails fast
+      // instead of NPE'ing on the unbox below.
+      afterId = Objects.requireNonNull(
+          page.get(page.size() - 1).id(),
+          "PlaceholderRecord.id must not be null after a repository fetch");
       processed += page.size();
       if (page.size() < DEFAULT_DRAIN_BATCH) break;
     }
@@ -291,6 +329,39 @@ public class PlaceholderService {
    * Keyset Drain Loop — process every document in bounded-memory batches.
    * Terminates when the fetched page is shorter than the batch size.
    * See JAVA_CODE_QUALITY.md §5.5.
+   *
+   * <p><b>ID monotonicity requirement (MongoDB):</b> safe on a static
+   * collection regardless of {@code _id} format. On a concurrently-
+   * modified collection, new inserts whose IDs sort below the cursor are
+   * skipped — {@code _id} must be monotonic with insertion time
+   * (BSON ObjectId, UUID v7, Snowflake). Random UUID v4 and user slugs
+   * are NOT safe; for those, switch to a compound cursor on
+   * {@code (createdAt, _id)} with a matching compound index. See
+   * {@code PlaceholderDocumentRepository#findByIdGreaterThanOrderByIdAsc}.
+   *
+   * <p><b>Transaction semantics — caller-owned.</b> This method is a
+   * streaming iterator: it does NOT establish a transaction. The caller's
+   * {@code action} is responsible for atomicity. MongoDB writes are
+   * single-document atomic by default; for multi-document atomicity the
+   * action must use a session and {@code @Transactional} (requires a
+   * replica set). Failure mid-batch leaves prior items committed and
+   * later items unprocessed.
+   *
+   * <p>Recommended patterns for the {@code action}:
+   * <ul>
+   *   <li>Read-only / idempotent: no transaction needed; restart from
+   *       beginning is safe.</li>
+   *   <li>Single-document writes: MongoDB's per-document atomicity is
+   *       sufficient; design the write to be idempotent (use
+   *       {@code findAndModify} with a guard field) so restart is safe.</li>
+   *   <li>Multi-document writes: requires replica set + session +
+   *       {@code @Transactional(propagation = REQUIRES_NEW)} on the
+   *       action's enclosing service method.</li>
+   * </ul>
+   *
+   * <p>This method does NOT track or persist a resume cursor. Callers
+   * needing failure-resume semantics should persist the last successfully
+   * processed document id themselves.
    */
   public int processAllBatched(Consumer<ImmutablePlaceholder> action) {
     String afterId = "";

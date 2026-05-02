@@ -43,6 +43,13 @@
 {{- end}}
 {{- if .HasAIAgentModule}}
         <spring-ai.version>1.0.5</spring-ai.version>
+{{- end}}
+{{- if .HasModule "Shared"}}
+        <!-- Resilience4j: declared here as the canonical version source
+             so Shared and any downstream module that pulls Resilience4j
+             stay in lockstep. Previously duplicated in shared.xml — a
+             bump in one place would silently leave the other on the old
+             version. -->
         <resilience4j.version>2.2.0</resilience4j.version>
 {{- end}}
         <!-- Jacoco 0.8.12 cannot instrument class-file major version 69 (Java 25)
@@ -305,6 +312,25 @@
                         <removeUnusedImports/>
                     </java>
                 </configuration>
+                <!--
+                    Spotless is configured but NOT bound to a build phase
+                    by default. Run manually:
+                      mvn spotless:apply   # rewrite all files in place
+                      mvn spotless:check   # report violations (CI gate)
+                    To enforce on every build, add:
+                      <executions>
+                        <execution>
+                          <phase>verify</phase>
+                          <goals><goal>check</goal></goals>
+                        </execution>
+                      </executions>
+                    The reason it's not bound here: enabling check on
+                    verify means any formatting violation breaks
+                    `mvn verify` mid-development, which surprises users
+                    who expect verify to test correctness, not style.
+                    Operators who want strict enforcement add the binding
+                    in their downstream POM.
+                -->
             </plugin>
         </plugins>
     </build>

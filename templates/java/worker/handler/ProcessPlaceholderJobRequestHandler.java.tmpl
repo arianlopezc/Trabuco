@@ -80,14 +80,9 @@ public class ProcessPlaceholderJobRequestHandler
   public void run(ProcessPlaceholderJobRequest request) {
     log.info("Processing placeholder job with message: {}", request.message());
 
-    // TODO: Remove this sleep and replace with actual business logic.
-    // This is just a placeholder to demonstrate job execution.
-    try {
-      Thread.sleep(100); // Brief delay for demo - DELETE THIS
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new RuntimeException("Job interrupted", e);
-    }
+    // TODO: Replace this log line with your actual business logic.
+    // The handler is invoked by JobRunr's worker thread for each
+    // ProcessPlaceholderJobRequest enqueued via JobScheduler.enqueue().
 
     // identity-propagation wire-up template. When you
     // Replace this placeholder, add an IdentityClaims field to your

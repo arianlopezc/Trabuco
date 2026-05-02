@@ -53,6 +53,21 @@ public interface PlaceholderDocumentRepository extends MongoRepository<Placehold
    * Pass {@code afterId = ""} (empty string sorts first) for the first page,
    * then the last document's id for each subsequent call.
    * Terminate the drain loop when the returned list is shorter than the limit.
+   *
+   * <p><b>ID monotonicity requirement:</b> this drain is safe on a STATIC
+   * collection regardless of ID format, because it visits every document
+   * exactly once in lexicographic id-order. On a CONCURRENTLY-MODIFIED
+   * collection, new inserts whose IDs sort below the advancing cursor are
+   * skipped — so the {@code _id} field must be monotonic with insertion
+   * time. Safe choices:
+   * <ul>
+   *   <li>BSON {@code ObjectId} (hex string is timestamp-prefixed)</li>
+   *   <li>UUID v7 (timestamp-prefixed; Java 21+ via {@code com.fasterxml.uuid} or similar)</li>
+   *   <li>Snowflake-style monotonic IDs</li>
+   * </ul>
+   * UNSAFE choices: UUID v4 (random), user slugs, ULID-without-monotonic-bit.
+   * For dynamic collections with non-monotonic IDs, use a compound cursor
+   * on {@code (createdAt, _id)} with a matching compound index.
    */
   List<PlaceholderDocument> findByIdGreaterThanOrderByIdAsc(String afterId, Limit limit);
 }

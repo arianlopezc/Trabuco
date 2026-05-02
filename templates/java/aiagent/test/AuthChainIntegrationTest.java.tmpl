@@ -1,0 +1,155 @@
+package {{.GroupID}}.aiagent.config.security;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
+
+import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * Boots the AIAgent with {@code trabuco.auth.enabled=true} and exercises
+ * the OAuth2 resource-server filter chain via MockMvc plus Spring
+ * Security's {@code mockJwt()} request post-processor.
+ *
+ * <p>Why this test exists: {@code AgentWiringIntegrationTest} and
+ * {@code VectorRagIntegrationTest} both set {@code trabuco.auth.enabled=false},
+ * so the JWT chain at {@code AgentSecurityConfig#agentOauth2FilterChain}
+ * is never instantiated by them. A regression that broke
+ * {@code @ConditionalOnProperty}, removed scope rules, or short-circuited
+ * the {@code ScopeInterceptor} would ship undetected. This test pins
+ * the contract:
+ *
+ * <ol>
+ *   <li>Chain loads — a request without a Bearer token returns 401, not
+ *       200. (If the chain failed to load, Spring's default would let
+ *       the request through to the controller.)</li>
+ *   <li>Sufficient scope passes through — a token with {@code SCOPE_public}
+ *       reaches {@code A2AController.handle}, exercising the
+ *       {@code JwtAuthenticationConverter} → {@code ScopeEnforcer.effectiveCaller}
+ *       → controller method dispatch path.</li>
+ *   <li>Insufficient scope is rejected — a token without
+ *       {@code SCOPE_partner} on a partner-tier endpoint is blocked at
+ *       {@code ScopeInterceptor} before the controller runs, returning
+ *       403 with {@code application/problem+json}.</li>
+ * </ol>
+ *
+ * <p>Coverage scope: chain wiring, scope enforcement, problem+json
+ * emission. NOT covered (would require real signed tokens):
+ * signature validation, expiration handling, audience/issuer claim
+ * validation. Those live in {@code AuthEndToEndTest} on the API module
+ * and exercise the same Spring-level shared plumbing.
+ *
+ * <p>Gated to pgvector-Postgres-SQLDatastore so it shares the
+ * Testcontainer image with the other AIAgent integration tests; the
+ * full Spring context boot is what makes the test high-fidelity.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@Testcontainers(disabledWithoutDocker = true)
+@TestPropertySource(properties = {
+    // Match other AIAgent integration tests' vector-store environment
+    // so the bean graph wires identically — the vector path is not
+    // exercised here, but it must boot.
+    "spring.ai.vectorstore.pgvector.dimensions=384",
+    "spring.ai.vectorstore.pgvector.initialize-schema=false",
+    "spring.ai.anthropic.api-key=test-key-not-used",
+    // The point of this test: enable the JWT chain.
+    "trabuco.auth.enabled=true",
+    "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://test.example.com",
+    "spring.security.oauth2.resourceserver.jwt.audiences=https://test-aiagent.example.com",
+    // Disable the legacy API-key path so only the JWT chain is active.
+    "app.aiagent.api-key.enabled=false",
+    // Enable IngestionController so the partner-scope path is in the
+    // application context for the insufficient-scope assertion below.
+    "agent.ingest.enabled=true"
+})
+@Import(AuthChainIntegrationTest.MockJwtDecoderConfig.class)
+class AuthChainIntegrationTest {
+
+    @Container
+    @ServiceConnection
+    static final PostgreSQLContainer<?> pgvector =
+        new PostgreSQLContainer<>(DockerImageName.parse("pgvector/pgvector:pg16")
+            .asCompatibleSubstituteFor("postgres"));
+
+    @Autowired
+    private MockMvc mvc;
+
+    private static final String JSON_RPC_ENVELOPE =
+        "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"tasks/get\",\"params\":{\"task_id\":\"TASK-x\"}}";
+
+    @Test
+    void should_return401_when_noJwtPresented() throws Exception {
+        // Given: chain is enabled, no Authorization header on the request.
+        // When: POST /a2a (a public-scope endpoint).
+        // Then: the OAuth2 entry point rejects with 401 before the
+        //       controller is reached.
+        mvc.perform(post("/a2a")
+                .contentType(APPLICATION_JSON)
+                .content(JSON_RPC_ENVELOPE))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void should_returnSuccess_when_jwtCarriesPublicScope() throws Exception {
+        // Given: a JWT with SCOPE_public.
+        // When: POST /a2a — public-tier endpoint, unknown method.
+        // Then: 200; the controller ran (JSON-RPC error -32601 lives
+        //       inside the response body for unknown methods).
+        mvc.perform(post("/a2a")
+                .with(jwt().jwt(j -> j.claim("scope", "public").subject("test-caller")))
+                .contentType(APPLICATION_JSON)
+                .content("{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"unknown\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.error.code").value(-32601));
+    }
+
+    @Test
+    void should_return403_when_jwtMissesPartnerScopeForIngestion() throws Exception {
+        // Given: a JWT without SCOPE_partner / SCOPE_agent:write.
+        // When: POST /ingest — partner-tier endpoint.
+        // Then: ScopeInterceptor throws InsufficientScopeException, the
+        //       AgentExceptionHandler maps it to 403 problem+json.
+        mvc.perform(post("/ingest")
+                .with(jwt().jwt(j -> j.claim("scope", "public").subject("test-caller")))
+                .contentType(APPLICATION_JSON)
+                .content("{\"document\":\"x\",\"metadata\":{}}"))
+            .andExpect(status().isForbidden())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+    }
+
+    /**
+     * Stub {@link JwtDecoder} so the OAuth2 chain can boot without
+     * fetching real OIDC discovery. The {@code mockJwt()} post-processor
+     * bypasses this decoder by setting the authentication directly on
+     * the {@code SecurityContext} — this bean exists only to satisfy
+     * Spring Boot's auto-configuration that the chain has a decoder.
+     */
+    @TestConfiguration
+    static class MockJwtDecoderConfig {
+        @Bean
+        JwtDecoder jwtDecoder() {
+            return token -> {
+                throw new UnsupportedOperationException(
+                    "Real JwtDecoder not invoked in this test. mockJwt() bypasses validation.");
+            };
+        }
+    }
+}

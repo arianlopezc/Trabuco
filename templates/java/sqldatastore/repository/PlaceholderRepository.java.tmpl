@@ -28,6 +28,25 @@ import org.springframework.stereotype.Repository;
  * - updateStatusBatchWithLimit: bounded bulk UPDATE — use inside a drain loop
  *
  * <p>Replace this with your actual repositories.
+ *
+ * <p><b>Note on {@code SELECT *}:</b> the example queries below use
+ * {@code SELECT *} for the placeholder demo. JAVA_CODE_QUALITY.md §5.5
+ * flags {@code SELECT *} on wide rows as an anti-pattern: when a column
+ * is added (e.g., a {@code payload TEXT} or {@code embedding BYTEA}),
+ * every query that returned this entity now also pulls the heavy column
+ * even when callers don't need it. For real entities with more than a
+ * handful of columns, project to a DTO record:
+ *
+ * <pre>{@code
+ * record PlaceholderSummary(Long id, String name) {}
+ *
+ * @Query("SELECT id, name FROM placeholders WHERE name ILIKE '%' || :search || '%'")
+ * List<PlaceholderSummary> searchSummariesByName(@Param("search") String search);
+ * }</pre>
+ *
+ * Spring Data JDBC maps the projected columns into the record
+ * constructor by name. Keep the full-row method when callers need
+ * everything; add the projected method alongside it.
  */
 @Repository
 public interface PlaceholderRepository extends CrudRepository<PlaceholderRecord, Long> {
@@ -63,6 +82,28 @@ public interface PlaceholderRepository extends CrudRepository<PlaceholderRecord,
    * Uses FOR UPDATE SKIP LOCKED so multiple workers can drain concurrently without deadlocking.
 {{- end}}
    * Returns the number of rows updated per batch; stop the loop when it returns 0.
+   *
+   * <p><b>Transaction contract:</b> {@code @Modifying} alone causes
+   * Spring Data JDBC to auto-commit each invocation — fine for a single
+   * bounded UPDATE. Any caller composing MULTIPLE invocations into one
+   * logical unit (drain loop with extra updates per batch, update + DELETE
+   * paired in one operation, etc.) MUST wrap the composite in a
+   * {@code @Transactional} service method so partial failure rolls back
+   * cleanly. Without that, an exception mid-loop leaves earlier batches
+   * committed and the cursor lost.
+   *
+   * <p>Canonical usage pattern (in a {@code @Service}):
+   * <pre>{@code
+   * @Transactional
+   * public int reassignAllByDescription(String oldDesc, String newDesc) {
+   *   int total = 0;
+   *   int updated;
+   *   while ((updated = repository.updateDescriptionBatchWithLimit(oldDesc, newDesc, 500)) > 0) {
+   *     total += updated;
+   *   }
+   *   return total;
+   * }
+   * }</pre>
    */
   @Modifying
 {{- if eq .Database "postgresql"}}

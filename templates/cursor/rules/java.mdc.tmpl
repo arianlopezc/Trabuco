@@ -111,12 +111,18 @@ List<String> items = Arrays.asList("a", "b", "c");
 ## Dependency Injection
 
 ```java
-// Use constructor injection
+// Use constructor injection. Trabuco does not use Lombok — write the
+// constructor explicitly. Immutables covers DTO/entity ergonomics; for
+// services, an explicit constructor is the convention.
 @Service
-@RequiredArgsConstructor
 public class UserService {
     private final UserRepository userRepository;
     private final EmailService emailService;
+
+    public UserService(UserRepository userRepository, EmailService emailService) {
+        this.userRepository = userRepository;
+        this.emailService = emailService;
+    }
 }
 
 // Never use field injection
@@ -177,6 +183,17 @@ A `try/catch` in a controller or HTTP-facing service that only rethrows or retur
 {{- end}}
 - Cover: happy path, not-found/empty, validation failures, error conditions
 - Full spec: `.ai/prompts/JAVA_CODE_QUALITY.md` (Section 7) | Guide: `.ai/prompts/testing-guide.md`
+{{- if or (.HasModule "API") (.HasModule "AIAgent")}}
+
+## Authentication (shipped, dormant by default)
+
+Auth scaffolding is generated, not absent. Do not suggest "Add Spring Security" — it is already wired:
+
+- OAuth2 Resource Server, JWT validation, RFC 7807 problem+json on 401/403
+- Activated by `trabuco.auth.enabled=true` plus `OIDC_ISSUER_URI` and `OIDC_AUDIENCE`. App refuses to boot if `trabuco.auth.enabled` is unset.
+- Use `@PreAuthorize("hasAuthority('SCOPE_<name>')")` on controllers / service methods{{- if .HasModule "AIAgent" }}; in the AIAgent module also `@RequireScope("public" | "partner")`{{- end }}.
+- Per-provider config recipes: `docs/auth.md`.
+{{- end}}
 
 ## Security baseline
 
