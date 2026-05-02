@@ -38,6 +38,14 @@ import (
 // time to catch bugs and tampering.
 var ErrOutOfJurisdiction = errors.New("path is outside sync jurisdiction")
 
+// ErrNotManagedBlockTarget is returned when Apply is asked to splice a
+// managed block into a path that is not in the managed-block allow-list.
+// This is the same defense-in-depth pattern as ErrOutOfJurisdiction but
+// scoped to the second sync code path; .gitignore is intentionally OUT
+// of standard jurisdiction yet IN the managed-block list, so the two
+// sentinels must stay distinct.
+var ErrNotManagedBlockTarget = errors.New("path is not a managed-block target")
+
 // Run executes the full sync flow: plan + optionally apply. It holds the
 // generator-output directory alive between planning and writing so Apply
 // can copy files from it directly (no double-generation).
@@ -117,6 +125,23 @@ func Run(projectPath, cliVersion string, apply bool) (*Plan, error) {
 		}
 		rel = filepath.ToSlash(rel)
 
+		// Managed-block targets have their own classification: rather than
+		// add-or-skip, sync compares the spliced result against the existing
+		// project file and reports WouldUpdate only if they differ.
+		if IsManagedBlockTarget(rel) {
+			projectFile := filepath.Join(absProject, filepath.FromSlash(rel))
+			differs, classifyErr := managedBlockNeedsUpdate(absPath, projectFile)
+			if classifyErr != nil {
+				return classifyErr
+			}
+			if differs {
+				plan.WouldUpdate = append(plan.WouldUpdate, rel)
+			} else {
+				plan.AlreadyPresent = append(plan.AlreadyPresent, rel)
+			}
+			return nil
+		}
+
 		if !InJurisdiction(rel) {
 			plan.OutOfJurisdiction = append(plan.OutOfJurisdiction, rel)
 			return nil
@@ -153,7 +178,113 @@ func Run(projectPath, cliVersion string, apply bool) (*Plan, error) {
 		}
 	}
 
+	// Apply managed-block updates. These splice the expected block into
+	// any existing project file (or create the file with just the block
+	// if it didn't exist). Re-validate jurisdiction at write time.
+	for _, rel := range plan.WouldUpdate {
+		if !IsManagedBlockTarget(rel) {
+			return plan, fmt.Errorf("%w: %s", ErrNotManagedBlockTarget, rel)
+		}
+		src := filepath.Join(expectedDir, filepath.FromSlash(rel))
+		dst := filepath.Join(absProject, filepath.FromSlash(rel))
+		if err := writeManagedBlock(src, dst); err != nil {
+			return plan, fmt.Errorf("update %s: %w", rel, err)
+		}
+	}
+
 	return plan, nil
+}
+
+// managedBlockNeedsUpdate reports whether splicing the managed block
+// from expectedPath into projectPath would produce content different
+// from what's currently in projectPath. A missing project file counts
+// as needing an update only if the expected file actually has a managed
+// block to install.
+//
+// Returns false (no update) for any of: expected file unreadable,
+// expected file has no managed block, or splicing would produce
+// content byte-identical to the existing file.
+func managedBlockNeedsUpdate(expectedPath, projectPath string) (bool, error) {
+	expectedRaw, err := os.ReadFile(expectedPath)
+	if err != nil {
+		return false, fmt.Errorf("read expected: %w", err)
+	}
+	expectedBody := extractManagedBlock(string(expectedRaw))
+	if expectedBody == "" {
+		// Generator didn't emit a managed block for this target — nothing
+		// to install or refresh. Treat as already-present so the file is
+		// not reported as drift.
+		return false, nil
+	}
+
+	var existing string
+	if data, err := os.ReadFile(projectPath); err == nil {
+		existing = string(data)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return false, fmt.Errorf("read project: %w", err)
+	}
+
+	return applyManagedBlock(existing, expectedBody) != existing, nil
+}
+
+// writeManagedBlock splices the managed block from expectedPath into
+// projectPath. The project file is created if missing. The write is
+// atomic: a temp file is written and then renamed into place, so a
+// failure mid-write never leaves a partial file. File permissions are
+// preserved when the file existed; new files default to 0644.
+func writeManagedBlock(expectedPath, projectPath string) error {
+	expectedRaw, err := os.ReadFile(expectedPath)
+	if err != nil {
+		return fmt.Errorf("read expected: %w", err)
+	}
+	expectedBody := extractManagedBlock(string(expectedRaw))
+	if expectedBody == "" {
+		return nil
+	}
+
+	var existing string
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(projectPath); err == nil {
+		mode = info.Mode().Perm()
+		if data, err := os.ReadFile(projectPath); err == nil {
+			existing = string(data)
+		} else {
+			return fmt.Errorf("read project: %w", err)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("stat project: %w", err)
+	}
+
+	spliced := applyManagedBlock(existing, expectedBody)
+
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0o755); err != nil {
+		return fmt.Errorf("create parent dir: %w", err)
+	}
+	tmpFile, err := os.CreateTemp(filepath.Dir(projectPath), ".trabuco-sync-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	cleanup := func() { _ = os.Remove(tmpPath) }
+
+	if _, err := tmpFile.WriteString(spliced); err != nil {
+		tmpFile.Close()
+		cleanup()
+		return fmt.Errorf("write contents: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		cleanup()
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Chmod(tmpPath, mode); err != nil {
+		cleanup()
+		return fmt.Errorf("chmod: %w", err)
+	}
+	if err := os.Rename(tmpPath, projectPath); err != nil {
+		cleanup()
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
 }
 
 // copyFile copies src to dst, creating parent directories and preserving

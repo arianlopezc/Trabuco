@@ -36,9 +36,7 @@ domain specialists in parallel and merges their findings.
 1. **Hand off to the orchestrator subagent.** Invoke
    `security-audit-orchestrator` with the user's scope/domain
    arguments. The orchestrator:
-   - Loads the canonical checklist from `.ai/security-audit/checklist*.md` (when
-     run from the plugin) or from `.ai/security-audit/checklist*.md` (when
-     run inside a generated project).
+   - Loads the canonical checklist from `.ai/security-audit/checklist*.md`.
    - Loads `.ai/security-audit/checklist-local.md` if present (operator's
      local rule extensions; never overwritten by `trabuco sync`).
    - Dispatches the five domain specialists in parallel via the `Task` tool:

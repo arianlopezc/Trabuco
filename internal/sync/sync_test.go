@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -259,6 +260,156 @@ func TestPlan_JSONRoundTrip(t *testing.T) {
 	}
 	if decoded.ProjectPath != plan.ProjectPath || len(decoded.WouldAdd) != 1 {
 		t.Errorf("round-trip mismatch: %+v", decoded)
+	}
+}
+
+// TestRun_ManagedBlock_AppendsToLegacyGitignore covers the v1.12.0 → v1.12.1
+// upgrade path: a project predates the audit-findings ignore lines, has a
+// hand-written .gitignore, and runs sync. The managed block must be
+// appended without disturbing existing user content.
+func TestRun_ManagedBlock_AppendsToLegacyGitignore(t *testing.T) {
+	tmp := t.TempDir()
+	projectDir := filepath.Join(tmp, "managed-append")
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "managed",
+		GroupID:     "com.example.managed",
+		ArtifactID:  "managed",
+		JavaVersion: "21",
+		Modules:     []string{config.ModuleModel, config.ModuleSQLDatastore, config.ModuleShared, config.ModuleAPI},
+		Database:    config.DatabasePostgreSQL,
+		AIAgents:    []string{"claude"},
+		Review:      config.ReviewConfig{Mode: config.ReviewModeFull},
+	}
+	gen, _ := generator.NewWithVersionAt(cfg, "test-cli", projectDir)
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	gitignore := filepath.Join(projectDir, ".gitignore")
+	legacy := "# user-owned rules\nmy-secret-folder/\n*.swp\n"
+	if err := os.WriteFile(gitignore, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy gitignore: %v", err)
+	}
+
+	plan, err := Run(projectDir, "test-cli", true)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !slices.Contains(plan.WouldUpdate, ".gitignore") {
+		t.Fatalf("expected .gitignore in WouldUpdate, got %v", plan.WouldUpdate)
+	}
+
+	got, err := os.ReadFile(gitignore)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	gotStr := string(got)
+	if !strings.HasPrefix(gotStr, legacy) {
+		t.Errorf("legacy user content must be preserved verbatim at start\ngot:\n%s", gotStr)
+	}
+	if !strings.Contains(gotStr, ".ai/security-audit/findings.md") {
+		t.Errorf("expected audit-findings ignore line to be installed\ngot:\n%s", gotStr)
+	}
+	if !strings.Contains(gotStr, managedBlockBegin) || !strings.Contains(gotStr, managedBlockEnd) {
+		t.Errorf("expected both managed-block markers\ngot:\n%s", gotStr)
+	}
+
+	// Idempotence: a second run finds nothing to update.
+	plan2, err := Run(projectDir, "test-cli", false)
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if slices.Contains(plan2.WouldUpdate, ".gitignore") {
+		t.Errorf("second run must be idempotent, got WouldUpdate: %v", plan2.WouldUpdate)
+	}
+}
+
+// TestRun_ManagedBlock_ReplacesStaleBlock covers the case where a future
+// Trabuco release adds new ignores to the managed block: a project with
+// the markers in place but stale content gets refreshed inside the block,
+// with everything outside left intact.
+func TestRun_ManagedBlock_ReplacesStaleBlock(t *testing.T) {
+	tmp := t.TempDir()
+	projectDir := filepath.Join(tmp, "managed-replace")
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "managed",
+		GroupID:     "com.example.managed",
+		ArtifactID:  "managed",
+		JavaVersion: "21",
+		Modules:     []string{config.ModuleModel, config.ModuleSQLDatastore, config.ModuleShared, config.ModuleAPI},
+		Database:    config.DatabasePostgreSQL,
+		AIAgents:    []string{"claude"},
+		Review:      config.ReviewConfig{Mode: config.ReviewModeFull},
+	}
+	gen, _ := generator.NewWithVersionAt(cfg, "test-cli", projectDir)
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	gitignore := filepath.Join(projectDir, ".gitignore")
+	prefix := "# top user content\nmy-folder/\n"
+	suffix := "\n# bottom user content\n*.tmp\n"
+	stale := prefix +
+		managedBlockBegin + "\n" +
+		"obsolete-managed-line\n" +
+		managedBlockEnd + "\n" +
+		suffix
+	if err := os.WriteFile(gitignore, []byte(stale), 0o644); err != nil {
+		t.Fatalf("write stale gitignore: %v", err)
+	}
+
+	if _, err := Run(projectDir, "test-cli", true); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	got, err := os.ReadFile(gitignore)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	gotStr := string(got)
+
+	if strings.Contains(gotStr, "obsolete-managed-line") {
+		t.Errorf("stale managed content must be replaced\ngot:\n%s", gotStr)
+	}
+	if !strings.Contains(gotStr, "my-folder/") || !strings.Contains(gotStr, "*.tmp") {
+		t.Errorf("user content above and below the block must survive\ngot:\n%s", gotStr)
+	}
+	if !strings.Contains(gotStr, ".ai/security-audit/findings.md") {
+		t.Errorf("fresh managed content must be present\ngot:\n%s", gotStr)
+	}
+}
+
+// TestRun_ManagedBlock_FreshInitIsNoOp pins the round-trip guarantee for
+// the managed-block path: a freshly generated project already has the
+// expected block in its .gitignore, so sync must not flag .gitignore as
+// drift on the first follow-up run.
+func TestRun_ManagedBlock_FreshInitIsNoOp(t *testing.T) {
+	tmp := t.TempDir()
+	projectDir := filepath.Join(tmp, "fresh-init")
+
+	cfg := &config.ProjectConfig{
+		ProjectName: "fresh",
+		GroupID:     "com.example.fresh",
+		ArtifactID:  "fresh",
+		JavaVersion: "21",
+		Modules:     []string{config.ModuleModel, config.ModuleSQLDatastore, config.ModuleShared, config.ModuleAPI},
+		Database:    config.DatabasePostgreSQL,
+		AIAgents:    []string{"claude"},
+		Review:      config.ReviewConfig{Mode: config.ReviewModeFull},
+	}
+	gen, _ := generator.NewWithVersionAt(cfg, "test-cli", projectDir)
+	if err := gen.Generate(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	plan, err := Run(projectDir, "test-cli", false)
+	if err != nil {
+		t.Fatalf("sync run: %v", err)
+	}
+	if slices.Contains(plan.WouldUpdate, ".gitignore") {
+		t.Errorf("fresh-init project must not show .gitignore as drift, got WouldUpdate: %v", plan.WouldUpdate)
 	}
 }
 
