@@ -20,14 +20,19 @@ var syncCmd = &cobra.Command{
 	Long: `Bring a project's AI-tooling files up to date with what the installed
 Trabuco CLI would generate for the same module and agent selection.
 
-Sync is additive only. It adds files the current CLI would generate that
-the project is missing. Existing files are never modified or deleted,
-regardless of how stale their content is. To refresh a file like CLAUDE.md
-with newer content, delete the file and re-run sync.
+Sync is additive for almost every file: it creates files the current CLI
+would generate that the project is missing, and never modifies existing
+files. To refresh a file like CLAUDE.md with newer content, delete the
+file and re-run sync.
+
+The single exception is .gitignore, which is updated in place between
+two Trabuco-managed marker comments. Lines outside those markers are
+user-owned and untouched.
 
 Scope: .ai/**, .claude/**, .cursor/**, .codex/**, .agents/**, .github/instructions/**,
 .github/scripts/review-checks.sh, .github/skills/**, .github/workflows/copilot-setup-steps.yml,
-.trabuco/review.config.json, CLAUDE.md, AGENTS.md, .github/copilot-instructions.md.
+.trabuco/review.config.json, CLAUDE.md, AGENTS.md, .github/copilot-instructions.md,
+and the Trabuco-managed block in .gitignore.
 
 Out of scope: Java source, POMs, Flyway migrations, application.yml,
 docker-compose.yml, CI workflows (other than copilot-setup-steps.yml),
@@ -70,10 +75,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if syncApply && !plan.Blocked() && plan.HasWork() {
 		green := color.New(color.FgGreen)
 		fmt.Println()
-		green.Printf("Added %d files.\n", len(plan.WouldAdd))
+		if len(plan.WouldAdd) > 0 {
+			green.Printf("Added %d files.\n", len(plan.WouldAdd))
+		}
+		if len(plan.WouldUpdate) > 0 {
+			green.Printf("Updated %d files (Trabuco-managed block).\n", len(plan.WouldUpdate))
+		}
 	} else if !syncApply && !plan.Blocked() && plan.HasWork() {
 		fmt.Println()
-		fmt.Println("Run `trabuco sync --apply` to create these files.")
+		fmt.Println("Run `trabuco sync --apply` to create or update these files.")
 	}
 
 	if plan.Blocked() {

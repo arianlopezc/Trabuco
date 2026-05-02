@@ -41,6 +41,27 @@ var allowedExact = map[string]bool{
 	"AGENTS.md": true,
 }
 
+// managedBlockTargets lists files that sync may modify in-place via the
+// managed-block mechanism (see managed_block.go). Only the contents
+// between the Trabuco-managed markers are touched; everything outside
+// them is user content and left exactly as-is.
+//
+// This is a deliberately tiny list: only files where Trabuco needs to
+// inject lines that the user can't easily re-derive (e.g., audit-output
+// gitignores). Adding a target here is a sync jurisdiction change and
+// requires coordinated updates to sync.go's apply path, the relevant
+// generator template, and the tests.
+var managedBlockTargets = map[string]bool{
+	".gitignore": true,
+}
+
+// IsManagedBlockTarget reports whether sync should treat the path with
+// managed-block semantics (in-place merge) instead of the default
+// additive-only semantics.
+func IsManagedBlockTarget(relPath string) bool {
+	return managedBlockTargets[filepath.ToSlash(filepath.Clean(relPath))]
+}
+
 // excludedPaths lists paths within otherwise-allowed prefixes that sync
 // must still ignore. These are session state or live data, not templates.
 var excludedPaths = map[string]bool{

@@ -75,11 +75,32 @@ func TestInJurisdiction_Forbidden(t *testing.T) {
 		".ai/checkpoint.json",
 		// Git internals
 		".git/HEAD",
+		// .gitignore is intentionally OUT of standard jurisdiction: the
+		// standard sync path would clobber user content. It is handled
+		// separately as a managed-block target (see TestIsManagedBlockTarget).
 		".gitignore",
 	}
 	for _, p := range cases {
 		if InJurisdiction(p) {
 			t.Errorf("expected %q to be OUT of jurisdiction", p)
+		}
+	}
+}
+
+// TestIsManagedBlockTarget pins the membership of the managed-block
+// allow-list. Adding a path here means sync may modify the file in
+// place (between Trabuco-managed markers); changes must come with
+// matching apply-path logic in sync.go.
+func TestIsManagedBlockTarget(t *testing.T) {
+	if !IsManagedBlockTarget(".gitignore") {
+		t.Error(".gitignore must be a managed-block target")
+	}
+	for _, notManaged := range []string{
+		"CLAUDE.md", "AGENTS.md", "README.md", "pom.xml",
+		".trabuco.json", ".env", ".claude/settings.json",
+	} {
+		if IsManagedBlockTarget(notManaged) {
+			t.Errorf("%q must NOT be a managed-block target", notManaged)
 		}
 	}
 }
