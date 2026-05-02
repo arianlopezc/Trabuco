@@ -8,6 +8,22 @@ import org.immutables.value.Value;
 /**
  * Identity of an API caller resolved from the Authorization header.
  * Tiers: anonymous (no key) < public < partner
+ *
+ * <h2>Tenant identity</h2>
+ *
+ * <p>{@link #tenantId()} is the unit of data isolation for the
+ * vector knowledge base. The default — derived from {@link #keyHash()}
+ * — partitions one tenant per credential, which is the safe default
+ * for single-tenant deployments and for partner-tier B2B integrations
+ * where each partner key represents a separate logical tenant. JWT
+ * authentication overrides this default with the {@code tenant_id}
+ * claim (see {@code ScopeEnforcer.jwtDerivedCaller}) so multi-tenant
+ * SaaS deployments can carry tenancy through the standard token.
+ *
+ * <p>RAG code paths ({@code DocumentIngestionService.ingest},
+ * {@code VectorKnowledgeRetriever.retrieve}) MUST stamp / filter
+ * by this value. Caller-supplied {@code tenant_id} in document
+ * metadata is server-side stripped before storage.
  */
 @Value.Immutable
 @ImmutableStyle
@@ -19,15 +35,65 @@ public interface CallerIdentity {
     String keyHash();
     String keyLabel();
 
-    default boolean isAtLeast(String requiredTier) {
-        return tierLevel(tier()) >= tierLevel(requiredTier);
+    /**
+     * Tenant identifier for data-isolation boundaries.
+     *
+     * <p>Defaults to {@link #keyHash()} when not explicitly set —
+     * single-tenant and per-partner deployments get safe isolation
+     * without operator action. JWT-mode callers can override this
+     * with the {@code tenant_id} claim.
+     */
+    @Value.Default
+    default String tenantId() {
+        return keyHash();
     }
 
+    default boolean isAtLeast(String requiredTier) {
+        int requiredLevel = tierLevel(requiredTier);
+        if (requiredLevel < 0) {
+            // Defense against typos at the call site —
+            // requireScope("Public") used to silently bypass.
+            throw new IllegalArgumentException(
+                "Unknown required tier: '" + requiredTier
+                + "'. Allowed: anonymous, public, partner.");
+        }
+        return tierLevel(tier()) >= requiredLevel;
+    }
+
+    /**
+     * Validate the tier string at construction time. Catches typos and
+     * unrecognised tier names that would otherwise silently fall through
+     * to {@code anonymous} via the previous default branch.
+     * Any unknown tier now fails fast, surfacing the misconfiguration
+     * to the operator at the moment the {@link CallerIdentity} is built
+     * — which is during {@link ApiKeyAuthFilter} dispatch or
+     * {@code ScopeEnforcer.jwtDerivedCaller}.
+     */
+    @Value.Check
+    default void validateTier() {
+        if (tierLevel(tier()) < 0) {
+            throw new IllegalArgumentException(
+                "Unknown CallerIdentity tier: '" + tier()
+                + "'. Allowed: anonymous, public, partner. "
+                + "Misspellings or new tiers must be registered in CallerIdentity#tierLevel.");
+        }
+    }
+
+    /**
+     * Returns the numeric ladder level for a given tier name, or
+     * {@code -1} for an unrecognised value. Callers must NOT treat a
+     * negative result as "below anonymous"; the {@link #validateTier}
+     * @Value.Check above guarantees a built {@link CallerIdentity}
+     * carries a known tier, and {@link #isAtLeast} compares to the
+     * caller-supplied {@code requiredTier} which the developer types
+     * literally — typos there are caught the same way.
+     */
     private static int tierLevel(String tier) {
         return switch (tier) {
             case "partner" -> 2;
             case "public" -> 1;
-            default -> 0;
+            case "anonymous" -> 0;
+            default -> -1;
         };
     }
 

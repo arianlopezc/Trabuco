@@ -23,6 +23,7 @@ import org.testcontainers.mysql.MySQLContainer;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -50,7 +51,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
     "trabuco.auth.enabled=true",
-    "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://test.example.com/jwks"
+    "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://test.example.com/jwks",
+    // SecurityConfig#validateAuthDecisionMade requires audiences to be
+    // set when auth is on (closes the silent empty-default that
+    // disabled audience validation). The value here only has to pass
+    // the boot-time check; the JwtDecoder is mocked, so claim
+    // validation never runs.
+    "spring.security.oauth2.resourceserver.jwt.audiences=https://test-api.example.com"
 })
 {{- if and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))}}
 {{- /* (this conditional matches when SQLDatastore is selected with a real RDBMS) */}}
@@ -87,7 +94,7 @@ class SecurityIntegrationTest {
         // asserts only "auth didn't block the request". /actuator/health
         // aggregates every HealthIndicator on the classpath (DB, Kafka,
         // RabbitMQ, etc.); in CI without those services running it
-        // returns 503 — which would mask whether the auth chain
+        // Returns 503 — which would mask whether the auth chain
         // permitted the request. /actuator/health/liveness is a
         // dependency-free probe that confirms the JVM is alive.
         mvc.perform(get("/actuator/health/liveness"))
@@ -96,10 +103,16 @@ class SecurityIntegrationTest {
 
     @Test
     void protectedEndpointReturns401ProblemDetailWithoutToken() throws Exception {
+        // AuthProblemDetailHandler now distinguishes "missing
+        // credentials" from "rejected credentials". A request with no
+        // Authorization header surfaces the "Authentication Required"
+        // title and the bare {@code Bearer realm="api"} challenge so
+        // clients can decide between starting an auth flow or refreshing.
         mvc.perform(get("/api/placeholders"))
             .andExpect(status().isUnauthorized())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.type").value("urn:problem-type:unauthorized"))
-            .andExpect(jsonPath("$.title").value("Unauthorized"));
+            .andExpect(jsonPath("$.title").value("Authentication Required"))
+            .andExpect(header().string("WWW-Authenticate", "Bearer realm=\"api\""));
     }
 }

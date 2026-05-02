@@ -1,0 +1,78 @@
+package {{.GroupID}}.aiagent;
+
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Module-local architecture guards for the AIAgent module's
+ * controller / protocol surface (REST controllers + A2A handler).
+ *
+ * <p>Mirrors {@code ApiArchitectureTest} so the guard fires
+ * on AIAgent's protocol layer too.
+ */
+class AgentArchitectureTest {
+
+    private static final String REQUIRE_SCOPE = "{{.GroupID}}.aiagent.security.RequireScope";
+
+    private static JavaClasses classes;
+
+    @BeforeAll
+    static void importClasses() {
+        classes = new ClassFileImporter()
+            .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+            .importPackages("{{.GroupID}}.aiagent");
+    }
+
+    /**
+     * Authorization guard for the AIAgent module. Recognises both
+     * Spring Security's standard authorization annotations AND
+     * Trabuco's legacy {@code @RequireScope} marker (the API-key path
+     * on the AIAgent module routes through {@code ScopeInterceptor} →
+     * {@code ScopeEnforcer}). Either form satisfies the rule.
+     */
+    @Test
+    void controllerHandlersMustDeclareAuthorization() {
+        List<String> mappingAnnotations = List.of(
+            "org.springframework.web.bind.annotation.GetMapping",
+            "org.springframework.web.bind.annotation.PostMapping",
+            "org.springframework.web.bind.annotation.PutMapping",
+            "org.springframework.web.bind.annotation.PatchMapping",
+            "org.springframework.web.bind.annotation.DeleteMapping",
+            "org.springframework.web.bind.annotation.RequestMapping");
+        List<String> authorizationAnnotations = List.of(
+            "org.springframework.security.access.prepost.PreAuthorize",
+            "org.springframework.security.access.prepost.PostAuthorize",
+            "org.springframework.security.access.annotation.Secured",
+            "jakarta.annotation.security.DenyAll",
+            "jakarta.annotation.security.PermitAll",
+            "jakarta.annotation.security.RolesAllowed",
+            REQUIRE_SCOPE);
+        List<String> violations = new ArrayList<>();
+        classes.stream()
+            .filter(c -> c.isAnnotatedWith("org.springframework.web.bind.annotation.RestController")
+                || c.isAnnotatedWith("org.springframework.stereotype.Controller"))
+            .forEach(controller -> {
+                boolean classCovers = authorizationAnnotations.stream().anyMatch(controller::isAnnotatedWith);
+                controller.getMethods().stream()
+                    .filter(m -> mappingAnnotations.stream().anyMatch(m::isAnnotatedWith))
+                    .filter(m -> !classCovers
+                        && authorizationAnnotations.stream().noneMatch(m::isAnnotatedWith))
+                    .forEach(m -> violations.add(
+                        controller.getSimpleName() + "#" + m.getName()
+                            + " — request-mapping annotation present but no @PreAuthorize / "
+                            + "@PostAuthorize / @PermitAll / @Secured / @RolesAllowed / @RequireScope. "
+                            + "For intentionally public endpoints, add @PermitAll."));
+            });
+        if (!violations.isEmpty()) {
+            org.junit.jupiter.api.Assertions.fail(
+                "Controller endpoints missing an authorization decision:\n  - "
+                    + String.join("\n  - ", violations));
+        }
+    }
+}

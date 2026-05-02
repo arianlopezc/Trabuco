@@ -11,6 +11,9 @@ import static org.assertj.core.api.Assertions.*;
 
 class TaskManagerTest {
 
+    private static final String OWNER_A = "owner-hash-a";
+    private static final String OWNER_B = "owner-hash-b";
+
     private TaskManager manager;
 
     @BeforeEach
@@ -20,7 +23,7 @@ class TaskManagerTest {
 
     @Test
     void submitTask_returnsId() {
-        String id = manager.submitTask(() -> Map.of("result", "done"));
+        String id = manager.submitTask(() -> Map.of("result", "done"), OWNER_A);
         assertThat(id).startsWith("TASK-");
     }
 
@@ -30,7 +33,7 @@ class TaskManagerTest {
         String id = manager.submitTask(() -> {
             Thread.sleep(50);
             return Map.of("result", "ok");
-        });
+        }, OWNER_A);
         manager.subscribe(id, event -> {
             if ("completed".equals(event.status())) latch.countDown();
         });
@@ -44,7 +47,7 @@ class TaskManagerTest {
         String id = manager.submitTask(() -> {
             Thread.sleep(50);
             throw new RuntimeException("boom");
-        });
+        }, OWNER_A);
         manager.subscribe(id, event -> {
             if ("failed".equals(event.status())) latch.countDown();
         });
@@ -55,5 +58,44 @@ class TaskManagerTest {
     @Test
     void getUnknownTask_returnsNull() {
         assertThat(manager.getTask("TASK-nonexistent")).isNull();
+    }
+
+    // ─── BOLA regression tests ────────────────────────────
+    //
+    // tasks/get and /tasks/{id}/stream used to call manager.getTask(id)
+    // with no ownership check, letting any caller poll any task UUID.
+    // getTaskForOwner is the ownership-aware accessor used by the HTTP
+    // layer; it must return Optional.empty() for both "missing" and
+    // "wrong owner" so attackers can't probe for existence.
+
+    @Test
+    void getTaskForOwner_returnsTaskWhenOwnerMatches() {
+        String id = manager.submitTask(() -> Map.of("k", "v"), OWNER_A);
+        assertThat(manager.getTaskForOwner(id, OWNER_A))
+            .as("legitimate owner can fetch their own task")
+            .isPresent()
+            .map(TaskRecord::getTaskId).hasValue(id);
+    }
+
+    @Test
+    void getTaskForOwner_returnsEmptyWhenOwnerDiffers() {
+        String id = manager.submitTask(() -> Map.of("k", "v"), OWNER_A);
+        assertThat(manager.getTaskForOwner(id, OWNER_B))
+            .as("cross-caller probe must yield empty (BOLA close-out)")
+            .isEmpty();
+    }
+
+    @Test
+    void getTaskForOwner_returnsEmptyForMissingTask() {
+        // Same shape as wrong-owner so an attacker enumerating UUIDs
+        // can't distinguish "exists but not yours" from "doesn't exist".
+        assertThat(manager.getTaskForOwner("TASK-nonexistent", OWNER_A))
+            .isEmpty();
+    }
+
+    @Test
+    void taskRecordCarriesOwnerKeyHash() {
+        String id = manager.submitTask(() -> Map.of("k", "v"), OWNER_A);
+        assertThat(manager.getTask(id).getOwnerKeyHash()).isEqualTo(OWNER_A);
     }
 }

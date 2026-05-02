@@ -1,9 +1,66 @@
 package {{.GroupID}}.aiagent.security;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * Tier-based authorization gate, bridging the legacy API-key path and
+ * the OIDC/JWT path so a single {@code @RequireScope} annotation works
+ * under either auth mode.
+ *
+ * <p>Two sources of identity feed this enforcer:
+ *
+ * <ol>
+ *   <li><b>{@link CallerContext}</b> — populated by
+ *       {@link ApiKeyAuthFilter} when an API-key bearer token matches.
+ *       Returns an anonymous identity when no key matched (or when the
+ *       filter is disabled).</li>
+ *   <li><b>{@link SecurityContextHolder}</b> — populated by Spring
+ *       Security's OAuth2 resource-server filter chain when a JWT
+ *       passes signature / issuer / audience validation. Authorities
+ *       on the {@code Authentication} are JWT scope claims mapped
+ *       through {@code JwtAuthenticationConverter} to {@code SCOPE_*}
+ *       prefixed strings.</li>
+ * </ol>
+ *
+ * <p>The effective tier is the <b>higher</b> of the two so an operator
+ * running in hybrid mode (both auth paths on) gets the strongest
+ * privilege from either credential. A partial migration (some
+ * controllers still {@code @RequireScope}, JWT path turned on) keeps
+ * working — the bridge resolves the JWT scope claim into the same
+ * tier ladder the API-key path uses.
+ *
+ * <p>JWT scope → tier mapping convention:
+ * <ul>
+ *   <li>{@code SCOPE_partner} / {@code SCOPE_agent:write} / {@code SCOPE_agent:admin} → {@code partner}</li>
+ *   <li>{@code SCOPE_public} / {@code SCOPE_agent:read} → {@code public}</li>
+ *   <li>Authenticated JWT with no recognized scope → {@code public}
+ *       (any valid token earns baseline tier; without this, services
+ *       that issue JWTs with custom scope schemes would 401 every
+ *       Request through {@code @RequireScope("public")}).</li>
+ *   <li>Anonymous / no JWT → {@code anonymous}</li>
+ * </ul>
+ *
+ * <p>The {@code @RequireScope} annotation and the JWT-path
+ * {@code @PreAuthorize("hasAuthority('SCOPE_*')")} can coexist on the
+ * same controller — they enforce the same gate from different angles.
+ */
 public final class ScopeEnforcer {
+
+    private static final Set<String> PARTNER_AUTHORITIES = Set.of(
+        "SCOPE_partner", "SCOPE_agent:write", "SCOPE_agent:admin");
+
+    private static final Set<String> PUBLIC_AUTHORITIES = Set.of(
+        "SCOPE_public", "SCOPE_agent:read");
 
     private ScopeEnforcer() {}
 
@@ -17,6 +74,79 @@ public final class ScopeEnforcer {
     }
 
     public static void requireScope(String requiredTier) {
-        requireScope(requiredTier, CallerContext.get());
+        requireScope(requiredTier, effectiveCaller());
+    }
+
+    /**
+     * Combines the API-key-derived identity (from {@link CallerContext})
+     * with the JWT-derived identity (from {@link SecurityContextHolder})
+     * by taking the higher tier. Exposed package-private so tests can
+     * assert the bridge directly.
+     */
+    static CallerIdentity effectiveCaller() {
+        CallerIdentity apiKeyCaller = CallerContext.get();
+        CallerIdentity jwtCaller = jwtDerivedCaller();
+        return apiKeyCaller.isAtLeast(jwtCaller.tier()) ? apiKeyCaller : jwtCaller;
+    }
+
+    /**
+     * Maps the current Spring Security {@link Authentication} to a
+     * {@link CallerIdentity}. Returns anonymous when no JWT chain is
+     * active or the request hasn't been authenticated.
+     */
+    static CallerIdentity jwtDerivedCaller() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null
+            || !auth.isAuthenticated()
+            || auth instanceof AnonymousAuthenticationToken) {
+            return CallerIdentity.anonymous();
+        }
+        Set<String> authorities = auth.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .collect(Collectors.toSet());
+        String tier;
+        if (!java.util.Collections.disjoint(authorities, PARTNER_AUTHORITIES)) {
+            tier = "partner";
+        } else if (!java.util.Collections.disjoint(authorities, PUBLIC_AUTHORITIES)) {
+            tier = "public";
+        } else {
+            // Authenticated JWT but no recognized scope. Treat as
+            // public — a valid token is at least baseline trust.
+            tier = "public";
+        }
+        String name = auth.getName();
+        String tenantId = resolveTenantId(auth, name);
+        return ImmutableCallerIdentity.builder()
+            .tier(tier)
+            .keyHash("jwt:" + name)
+            .keyLabel("jwt:" + name)
+            .tenantId(tenantId)
+            .build();
+    }
+
+    /**
+     * Resolves the tenant identifier for a JWT-authenticated caller.
+     *
+     * <p>Reads the {@code tenant_id} claim if present (multi-tenant
+     * SaaS deployments where one IdP issues tokens for many tenants).
+     * Falls back to the JWT subject — partitions data per-user, which
+     * is the safe default for any token whose IdP doesn't yet emit a
+     * tenant claim.
+     *
+     * <p>The claim name is intentionally fixed at {@code tenant_id}
+     * rather than configurable — multi-tenant deployments that need
+     * a different claim should map it through their IdP or override
+     * this method via a custom {@code ScopeEnforcer} subclass. A
+     * configuration knob would invite typo-driven cross-tenant leaks.
+     */
+    private static String resolveTenantId(Authentication auth, String fallback) {
+        if (auth instanceof JwtAuthenticationToken jwtAuth) {
+            Jwt jwt = jwtAuth.getToken();
+            Object claim = jwt.getClaim("tenant_id");
+            if (claim instanceof String s && !s.isBlank()) {
+                return s;
+            }
+        }
+        return "jwt:" + fallback;
     }
 }

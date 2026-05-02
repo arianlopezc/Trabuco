@@ -35,12 +35,19 @@ RUN chown -R app:app /app
 
 USER app
 
-# JVM flags for container environments
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+# JVM flags for container environments.
+# Routed through JAVA_TOOL_OPTIONS instead of being
+# string-interpolated into the ENTRYPOINT command. JAVA_TOOL_OPTIONS
+# is honoured natively by every JDK-launched JVM, so the exec-form
+# ENTRYPOINT below stays argv-safe even if JAVA_OPTS is ever set to
+# attacker-controlled content (no shell re-parsing of quotes /
+# backticks). Using exec form also propagates SIGTERM directly to
+# the JVM — necessary for graceful shutdown to actually fire.
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD wget -qO- http://localhost:8080/actuator/health || exit 1
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]

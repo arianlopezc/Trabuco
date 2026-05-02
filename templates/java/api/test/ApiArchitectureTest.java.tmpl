@@ -1,0 +1,88 @@
+package {{.GroupID}}.api;
+
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Module-local architecture guards for the API module's controller
+ * surface.
+ *
+ * <p>The Shared module's {@code ArchitectureTest} can't reach into
+ * API at compile time — Shared is a downstream dependency, so its
+ * test classpath excludes API classes. Authorization rules that
+ * inspect {@code @RestController} classes have to live in the
+ * module that owns those classes.
+ */
+class ApiArchitectureTest {
+
+    private static JavaClasses classes;
+
+    @BeforeAll
+    static void importClasses() {
+        classes = new ClassFileImporter()
+            .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+            .importPackages("{{.GroupID}}.api");
+    }
+
+    /**
+     * Every public method on a {@code @RestController} must carry an
+     * explicit authorization decision — {@code @PreAuthorize},
+     * {@code @PostAuthorize}, {@code @Secured}, {@code @DenyAll},
+     * {@code @PermitAll}, or {@code @RolesAllowed}.
+     *
+     * <p>Without this guard, a developer can add a new endpoint to an
+     * existing controller and silently leave it open: the SecurityConfig
+     * chain's {@code anyRequest().authenticated()} only proves <i>some</i>
+     * token is present, not that the caller is allowed the action (BFLA,
+     * OWASP API5). The check fires at build time so the omission is
+     * impossible to merge.
+     *
+     * <p>Public endpoints — load-balancer probes, public discovery —
+     * must be marked {@code @PermitAll} so the public exposure is
+     * deliberate in source rather than implicit from a URL matcher.
+     */
+    @Test
+    void controllerHandlersMustDeclareAuthorization() {
+        List<String> mappingAnnotations = List.of(
+            "org.springframework.web.bind.annotation.GetMapping",
+            "org.springframework.web.bind.annotation.PostMapping",
+            "org.springframework.web.bind.annotation.PutMapping",
+            "org.springframework.web.bind.annotation.PatchMapping",
+            "org.springframework.web.bind.annotation.DeleteMapping",
+            "org.springframework.web.bind.annotation.RequestMapping");
+        List<String> authorizationAnnotations = List.of(
+            "org.springframework.security.access.prepost.PreAuthorize",
+            "org.springframework.security.access.prepost.PostAuthorize",
+            "org.springframework.security.access.annotation.Secured",
+            "jakarta.annotation.security.DenyAll",
+            "jakarta.annotation.security.PermitAll",
+            "jakarta.annotation.security.RolesAllowed");
+        List<String> violations = new ArrayList<>();
+        classes.stream()
+            .filter(c -> c.isAnnotatedWith("org.springframework.web.bind.annotation.RestController")
+                || c.isAnnotatedWith("org.springframework.stereotype.Controller"))
+            .forEach(controller -> {
+                boolean classCovers = authorizationAnnotations.stream().anyMatch(controller::isAnnotatedWith);
+                controller.getMethods().stream()
+                    .filter(m -> mappingAnnotations.stream().anyMatch(m::isAnnotatedWith))
+                    .filter(m -> !classCovers
+                        && authorizationAnnotations.stream().noneMatch(m::isAnnotatedWith))
+                    .forEach(m -> violations.add(
+                        controller.getSimpleName() + "#" + m.getName()
+                            + " — request-mapping annotation present but no @PreAuthorize / "
+                            + "@PostAuthorize / @PermitAll / @Secured / @RolesAllowed. "
+                            + "Make the decision explicit; for intentionally public endpoints, add @PermitAll."));
+            });
+        if (!violations.isEmpty()) {
+            org.junit.jupiter.api.Assertions.fail(
+                "Controller endpoints missing an authorization decision:\n  - "
+                    + String.join("\n  - ", violations));
+        }
+    }
+}

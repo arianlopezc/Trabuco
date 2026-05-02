@@ -21,24 +21,26 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Regression backstop for the "auth scaffolding is generated dormant"
- * design. Verifies that when {@code trabuco.auth.enabled} is unset
- * (the default), the {@code permitAllFilterChain} bean is the active
+ * Regression backstop for the auth-off opt-in path. Verifies that when
+ * {@code trabuco.auth.enabled=false} is set explicitly, the
+ * {@code permitAllFilterChain} bean is the active
  * {@code SecurityFilterChain} and every request flows through without
- * authentication enforcement.
+ * JWT enforcement.
  *
  * <p>This complements {@link SecurityIntegrationTest} (auth on, MockMvc)
  * and {@link AuthEndToEndTest} (auth on, real HTTP with signed JWTs)
  * by covering the third quadrant — auth off — that those tests don't
  * touch.
  *
- * <p>If a future change accidentally wires the JWT chain by default
- * (e.g., flipping {@code matchIfMissing} on the wrong bean, removing
- * the permit-all chain, or letting Spring Security's default HTTP
- * Basic auto-config win), every test here would start returning 401
- * instead of the expected 200/404 — failing loudly.
+ * <p>The {@code trabuco.auth.enabled=false} property is set explicitly
+ * on the {@code @SpringBootTest} annotation because
+ * {@code SecurityConfig#validateAuthDecisionMade} refuses to boot when
+ * the property is unset. Any future change that accidentally wires the
+ * JWT chain when {@code enabled=false} (or removes the permit-all
+ * chain) makes these tests fail with 401 instead of the expected
+ * 200/404.
  */
-@SpringBootTest
+@SpringBootTest(properties = "trabuco.auth.enabled=false")
 @AutoConfigureMockMvc
 {{- if and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))}}
 @Testcontainers(disabledWithoutDocker = true)

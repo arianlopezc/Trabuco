@@ -55,3 +55,17 @@ CREATE INDEX IF NOT EXISTS documents_embedding_hnsw
 -- and they work much better with an index when collections grow.
 CREATE INDEX IF NOT EXISTS documents_metadata_gin
     ON documents USING gin (metadata);
+
+-- Tenant-isolation index — every retrieval filters by
+-- (metadata->>'tenant_id') (see VectorKnowledgeRetriever) and every
+-- ingest stamps the field server-side (see DocumentIngestionService).
+-- A dedicated b-tree expression index lets the query planner prune
+-- by tenant before HNSW similarity search runs, instead of scanning
+-- every chunk. Critical at scale where one shared table holds many
+-- tenants' chunks; harmless on single-tenant deployments (one bucket).
+--
+-- The GIN index above also covers this query, but on JSONB
+-- equality the b-tree expression form is significantly faster
+-- because it indexes the extracted text directly.
+CREATE INDEX IF NOT EXISTS documents_tenant_id
+    ON documents ((metadata->>'tenant_id'));

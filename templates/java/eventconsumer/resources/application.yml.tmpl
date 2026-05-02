@@ -2,7 +2,8 @@ spring:
   application:
     name: {{.ProjectName}}-event-consumer
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
+    # Empty default — see API/application.yml.
+    active: ${SPRING_PROFILES_ACTIVE:}
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
   # Virtual threads (Project Loom) — Java 21+ / Spring Boot 3.2+
@@ -16,12 +17,31 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    # Kafka security defaults to PLAINTEXT for local
+    # docker-compose. Production must set KAFKA_SECURITY_PROTOCOL to
+    # SASL_SSL (or SSL) and configure SASL credentials via standard
+    # Spring Kafka properties (KAFKA_SASL_MECHANISM,
+    # KAFKA_SASL_JAAS_CONFIG, etc.). The values below propagate
+    # whatever the operator sets in env without changing local-dev
+    # behavior.
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP:{{.ProjectName}}-consumers}
       auto-offset-reset: earliest
       enable-auto-commit: false
     producer:
-      # Producer config for DLT (Dead Letter Topic) publishing
+      # Producer config for DLT (Dead Letter Topic) publishing.
+      # Idempotent producer + acks=all + retries — these
+      # together prevent message loss on broker failover and prevent
+      # duplicate messages on producer retries (the broker dedups by
+      # producer ID + sequence). Default Kafka producer has acks=1
+      # (only leader ack), which loses messages on a leader crash
+      # before replication.
+      acks: all
+      properties:
+        enable.idempotence: true
+      retries: 5
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
@@ -31,12 +51,30 @@ app:
       placeholder-events: ${KAFKA_TOPIC_PLACEHOLDER:placeholder-events}
 {{- else if .UsesRabbitMQ}}
 
+  # guest:guest is RabbitMQ's default and only valid for
+  # localhost connections (the broker rejects guest from non-loopback
+  # since 3.3). Production must set RABBITMQ_USERNAME / RABBITMQ_PASSWORD
+  # to a dedicated service account, and enable TLS via ssl: enabled=true.
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
+    ssl:
+      enabled: ${RABBITMQ_USE_SSL:false}
+    # Publisher confirms + returns. Without these, a
+    # publish that fails to reach a queue (no binding, broker
+    # rejection, or network drop after PUBLISH but before broker
+    # ack) is silently lost — Spring AMQP doesn't surface the error
+    # back to the caller. CORRELATED publisher-confirms emit a
+    # callback per message; mandatory=true makes the broker NACK
+    # unroutable messages instead of dropping them. Wire callbacks
+    # in your RabbitTemplate config.
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 app:
   rabbitmq:
@@ -89,7 +127,12 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # See API/application.yml. EventConsumer's actuator
+        # binds to MANAGEMENT_PORT (default 8084), separate from the
+        # main app port — but exposure is still narrowed to the
+        # Health/info baseline. Operators add prometheus/metrics
+        # explicitly via MANAGEMENT_ENDPOINTS.
+        include: ${MANAGEMENT_ENDPOINTS:health,info}
   endpoint:
     health:
       show-details: when_authorized
@@ -97,6 +140,10 @@ management:
         enabled: true
     prometheus:
       enabled: true
+  # See API/application.yml — disable env contributor.
+  info:
+    env:
+      enabled: false
   prometheus:
     metrics:
       export:

@@ -5,7 +5,8 @@
 spring:
   datasource:
 {{- if eq .Database "postgresql"}}
-    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:prefer}}
+    # sslmode defaults to `require` since 1.12 — refuses plaintext fallback.
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:require}}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -29,11 +30,21 @@ spring:
       connection-timeout: ${DB_CONNECTION_TIMEOUT:20000}
       idle-timeout: ${DB_IDLE_TIMEOUT:300000}
       max-lifetime: ${DB_MAX_LIFETIME:1200000}
-      leak-detection-threshold: ${DB_LEAK_DETECTION:0}
+      # 30s default surfaces connection leaks instead of
+      # silently exhausting the pool. Override per workload.
+      leak-detection-threshold: ${DB_LEAK_DETECTION:30000}
 
   # Flyway Migration Settings
+  # FLYWAY_USERNAME / FLYWAY_PASSWORD opt operators into
+  # separate-user migrations (Flyway runs as a privileged DBA role,
+  # runtime app uses a low-privilege role). Default inherits runtime
+  # credentials.
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
+    user: ${FLYWAY_USERNAME:${DB_USERNAME:postgres}}
+    password: ${FLYWAY_PASSWORD:${DB_PASSWORD:postgres}}
     locations: classpath:db/migration
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
     validate-on-migrate: ${FLYWAY_VALIDATE:true}
+    # clean-disabled defaults to true.
+    clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}

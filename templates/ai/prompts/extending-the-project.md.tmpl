@@ -2,34 +2,22 @@
 
 This guide covers common features that Trabuco does not generate but that you can add to the generated project structure.
 
-## Authentication with Spring Security
-{{- if .HasModule "API"}}
+## Authentication
 
-1. Add dependency to `API/pom.xml`:
-   ```xml
-   <dependency>
-       <groupId>org.springframework.boot</groupId>
-       <artifactId>spring-boot-starter-security</artifactId>
-   </dependency>
-   <dependency>
-       <groupId>org.springframework.security</groupId>
-       <artifactId>spring-security-test</artifactId>
-       <scope>test</scope>
-   </dependency>
-   ```
-2. Create `API/src/main/java/{{.PackagePath}}/api/config/SecurityConfig.java`:
-   - Define a `SecurityFilterChain` bean
-   - Configure `HttpSecurity` with your auth rules
-3. For JWT: Add `spring-boot-starter-oauth2-resource-server`
-4. For OAuth2: Add `spring-boot-starter-oauth2-client`
-5. Update integration tests to include `@WithMockUser` or configure test security
-{{- else}}
+**This project already ships OAuth2 Resource Server scaffolding.** Do NOT add `spring-boot-starter-security` from scratch — it's already in `API/pom.xml`{{- if .HasModule "AIAgent" }} and `AIAgent/pom.xml`{{- end }}, and a complete `SecurityConfig` (dual filter chains, JWT decoder, RFC 7807 error envelopes, scope → `SCOPE_*` authority mapping, validators that fail-fast on misconfiguration) is already generated.
 
-1. Add `spring-boot-starter-security` to the module that handles HTTP requests
-2. Create a `SecurityConfig.java` with `SecurityFilterChain` bean
-3. For JWT: Add `spring-boot-starter-oauth2-resource-server`
-4. For OAuth2: Add `spring-boot-starter-oauth2-client`
-{{- end}}
+To enable auth at runtime:
+
+1. Set `trabuco.auth.enabled=true` (the app refuses to boot when this is unset).
+2. Set `OIDC_ISSUER_URI` to your IdP's issuer URL (Keycloak / Auth0 / Okta / Cognito / generic OIDC).
+3. Set `OIDC_AUDIENCE` to the audience your IdP signs into the `aud` claim (validator refuses tokens without an aud match).
+4. Annotate your controllers with `@PreAuthorize("hasAuthority('SCOPE_<your-scope>')")` — `MethodSecurityConfig` activates `@EnableMethodSecurity` only when auth is on.
+
+For local dev set `trabuco.auth.enabled=false`. The dormant chain permits all requests so `mvn spring-boot:run` works against an empty IdP.
+
+**Per-provider recipes** (Keycloak realms, Auth0 audience setup, Okta authorization servers, Cognito user-pool configs) live in `docs/auth.md`. The integration tests under `API/src/test/.../security/` show how to mint test tokens via `SignedJwtTestSupport`.
+
+If you want to ADD a custom authentication mechanism on top (custom HMAC headers, mTLS, etc.), do it as an additional `OncePerRequestFilter` registered before the JWT filter — don't replace the existing chain.
 
 ## Pagination (Keyset)
 

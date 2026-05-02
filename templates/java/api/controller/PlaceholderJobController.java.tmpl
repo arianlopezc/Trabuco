@@ -1,27 +1,58 @@
 package {{.GroupID}}.api.controller;
 
 import {{.GroupID}}.jobs.PlaceholderJobService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 /**
  * Sample REST controller demonstrating how to enqueue background jobs from the API.
  *
  * <p>This controller shows the two most common patterns:
- * - Fire-and-forget: immediate background execution
- * - Scheduled: delayed execution at a specific time
+ * <ul>
+ *   <li>Fire-and-forget: immediate background execution</li>
+ *   <li>Scheduled: delayed execution at a specific time</li>
+ * </ul>
  *
  * <p>Job request contracts are defined in the Model module ({@code ProcessPlaceholderJobRequest}).
  * Job services for enqueueing live in the Jobs module ({@code PlaceholderJobService}).
  * Job handlers live in the Worker module ({@code ProcessPlaceholderJobRequestHandler}).
  *
  * <p>Replace this with your actual job-enqueueing endpoints.
+ *
+ * <h2>Authorization model</h2>
+ *
+ * <p>Every method carries {@code @PreAuthorize("hasAuthority('SCOPE_jobs:write')")}.
+ * Job-enqueue endpoints expose the worker pipeline directly — without
+ * scope-level enforcement, any authenticated caller could flood the
+ * queue and exhaust capacity. Rename {@code jobs} to your domain
+ * (e.g., {@code SCOPE_billing:write}) when you replace this scaffold.
+ *
+ * <p>{@code delaySeconds} on {@code /schedule} is bounded by
+ * {@code @Max(86400)} (24 hours) and {@code @Min(0)} (no
+ * already-past scheduling) to prevent unbounded scheduling. Lift the
+ * cap by overriding the annotation if a domain genuinely needs longer
+ * windows; the default is conservative on purpose.
+ *
+ * <p>Method security is profile-gated by {@code MethodSecurityConfig}
+ * (active only when {@code trabuco.auth.enabled=true}). Local-dev
+ * (auth off) reaches the controller without a token; any deployed
+ * environment enforces the gate. {@code @Validated} on the class is
+ * required for {@code @RequestParam} constraints (like {@code @Max})
+ * to fire.
  */
 @RestController
 @RequestMapping("/api/jobs/placeholder")
+@Validated
 public class PlaceholderJobController {
 
   private final PlaceholderJobService placeholderJobService;
@@ -42,11 +73,11 @@ public class PlaceholderJobController {
    * @return 202 Accepted
    */
   @PostMapping("/process")
-  public ResponseEntity<Map<String, String>> enqueue(@RequestBody Map<String, String> body) {
-    String message = body.getOrDefault("message", "default");
-    placeholderJobService.processAsync(message);
+  @PreAuthorize("hasAuthority('SCOPE_jobs:write')")
+  public ResponseEntity<Map<String, String>> enqueue(@Valid @RequestBody JobRequest body) {
+    placeholderJobService.processAsync(body.message());
     return ResponseEntity.status(HttpStatus.ACCEPTED)
-      .body(Map.of("status", "enqueued", "message", message));
+      .body(Map.of("status", "enqueued", "message", body.message()));
   }
 
   /**
@@ -62,13 +93,31 @@ public class PlaceholderJobController {
    * @return 202 Accepted
    */
   @PostMapping("/schedule")
+  @PreAuthorize("hasAuthority('SCOPE_jobs:write')")
   public ResponseEntity<Map<String, String>> schedule(
-      @RequestBody Map<String, String> body,
-      @RequestParam(defaultValue = "60") long delaySeconds) {
-    String message = body.getOrDefault("message", "default");
+      @Valid @RequestBody JobRequest body,
+      @RequestParam(defaultValue = "60") @Min(0) @Max(86400) long delaySeconds) {
     Instant runAt = Instant.now().plusSeconds(delaySeconds);
-    placeholderJobService.processAt(message, runAt);
+    placeholderJobService.processAt(body.message(), runAt);
     return ResponseEntity.status(HttpStatus.ACCEPTED)
-      .body(Map.of("status", "scheduled", "message", message, "runAt", runAt.toString()));
+      .body(Map.of("status", "scheduled", "message", body.message(), "runAt", runAt.toString()));
   }
+
+  /**
+   * typed request DTO with validation. Replaces the
+   * untyped {@code Map<String, String>} body so the {@code message}
+   * field carries a contract instead of relying on
+   * {@code getOrDefault("message", "default")} string-fishing.
+   *
+   * <p>Bounds:
+   * <ul>
+   *   <li>{@code message}: 1–4 KB. Job payloads thread through
+   *       JobRunr's serialized invocation — large payloads inflate
+   *       the jobs table on every enqueue. Replace with your real
+   *       per-job DTO when you remove the placeholder.</li>
+   * </ul>
+   */
+  public record JobRequest(
+      @NotBlank @Size(max = 4096, message = "message must be 1–4 KB") String message
+  ) {}
 }

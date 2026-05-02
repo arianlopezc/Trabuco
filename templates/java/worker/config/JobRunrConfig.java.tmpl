@@ -1,27 +1,88 @@
 package {{.GroupID}}.worker.config;
 
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * JobRunr configuration.
  *
- * <p>JobRunr is configured via application.yml properties:
- * - jobrunr.background-job-server.enabled: true
- * - jobrunr.dashboard.enabled: true
+ * <p>JobRunr is auto-configured by the Spring Boot starter from
+ * {@code jobrunr.*} properties in {@code application.yml}.
  *
- * <p>JobRunr automatically detects and uses the configured datasource
- * (PostgreSQL, MySQL, or MongoDB) for job persistence.
+ * <h2>Dashboard authentication boundary (since 1.12)</h2>
  *
- * <p>For advanced configuration, you can customize JobRunr by providing
- * beans of type:
- * - JobRunrConfigurationCustomizer
- * - BackgroundJobServerConfigurationCustomizer
- * - DashboardConfigurationCustomizer
+ * <p>The JobRunr OSS dashboard is a full job-queue admin UI: retry,
+ * delete, schedule, and trigger jobs. Earlier releases shipped it with
+ * {@code JOBRUNR_DASHBOARD_ENABLED=true} and no authentication, which
+ * meant any caller on the dashboard port (default 8000) had full
+ * control over the queue. Trabuco now ships the dashboard <b>off by
+ * Default</b>; when an operator enables it, the
+ * {@link DashboardCredentialsValidator} below refuses to boot unless
+ * {@code JOBRUNR_DASHBOARD_USERNAME} and {@code JOBRUNR_DASHBOARD_PASSWORD}
+ * are configured. JobRunr's auto-config wires those values into the
+ * dashboard's embedded HTTP server as basic-auth credentials.
+ *
+ * <p><b>Host binding caveat.</b> JobRunr OSS 8.x's
+ * {@code JobRunrDashboardWebServerConfiguration} does not expose a
+ * bind-address knob — the dashboard binds to all interfaces. Basic
+ * Auth is the only protection JobRunr OSS provides. For deployed
+ * environments, the recommended pattern is:
+ *
+ * <ol>
+ *   <li>Keep the dashboard disabled.</li>
+ *   <li>If operators need it, run JobRunr behind a reverse proxy that
+ *       restricts source IPs (or terminates SSO) and only listens on
+ *       the loopback interface where JobRunr is bound.</li>
+ *   <li>Or: switch to JobRunr Pro and use its IAM integration.</li>
+ * </ol>
+ *
+ * <p>For advanced configuration beyond this, provide beans of type
+ * {@code JobRunrConfigurationCustomizer} or
+ * {@code BackgroundJobServerConfigurationCustomizer}.
  */
 @Configuration
 public class JobRunrConfig {
 
-  // JobRunr is auto-configured via Spring Boot starter
-  // Add any custom configuration here if needed
+    /**
+     * Boot-time guard: refuses to start when the dashboard is enabled
+     * but no basic-auth credentials are configured.
+     *
+     * <p>The bean is conditional on {@code jobrunr.dashboard.enabled=true}
+     * so the default-off path doesn't carry the validation cost.
+     * When the property is true, this {@code @PostConstruct} runs
+     * before JobRunr's {@code dashboardWebServer} bean starts the
+     * embedded HTTP server, so an unauthenticated dashboard never
+     * comes online.
+     */
+    @Configuration
+    @ConditionalOnProperty(name = "jobrunr.dashboard.enabled", havingValue = "true")
+    public static class DashboardCredentialsValidator {
 
+        private static final Logger log = LoggerFactory.getLogger(DashboardCredentialsValidator.class);
+
+        @Value("${jobrunr.dashboard.username:}")
+        private String username;
+
+        @Value("${jobrunr.dashboard.password:}")
+        private String password;
+
+        @PostConstruct
+        void validate() {
+            if (username == null || username.isBlank() || password == null || password.isBlank()) {
+                throw new IllegalStateException(
+                    "JobRunr dashboard is enabled (jobrunr.dashboard.enabled=true) but " +
+                    "JOBRUNR_DASHBOARD_USERNAME and/or JOBRUNR_DASHBOARD_PASSWORD are not set. " +
+                    "The OSS dashboard exposes a full job-queue admin UI (retry / delete / trigger jobs); " +
+                    "shipping it unauthenticated is a known critical exposure (audit finding ). " +
+                    "Set both env vars, or set JOBRUNR_DASHBOARD_ENABLED=false to disable the dashboard. " +
+                    "For production, prefer JobRunr Pro IAM or a reverse-proxy SSO front-end.");
+            }
+            log.info("JobRunr dashboard secured with basic auth (user={}); " +
+                "binds to all interfaces — front with a reverse proxy / firewall rule for prod.", username);
+        }
+    }
 }

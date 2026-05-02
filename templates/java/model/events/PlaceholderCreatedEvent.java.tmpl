@@ -1,6 +1,9 @@
 package {{.GroupID}}.model.events;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -10,17 +13,46 @@ import java.util.UUID;
  * <p>This event is published after a successful placeholder creation and can be
  * consumed by any service that needs to react to new placeholders.</p>
  *
+ * <p>(since 1.12): the constructor enforces field
+ * constraints via {@code jakarta.validation} annotations and a
+ * compact-canonical-constructor null/blank check. A consumer that
+ * receives a malformed payload (forged publisher, schema drift,
+ * truncated message) fails the dispatch immediately at the
+ * deserialization boundary, rather than silently corrupting downstream
+ * state. The Spring AMQP / Spring Kafka deserializers don't honour
+ * Bean Validation on records by default — the explicit constructor
+ * check is the belt; the {@code @Valid} on listener parameters
+ * (where present) is the suspenders.
+ *
  * @param eventId Unique identifier for this event instance (for idempotency)
  * @param occurredAt Timestamp when the placeholder was created
  * @param placeholderId The ID of the created placeholder
  * @param name The name of the created placeholder
  */
 public record PlaceholderCreatedEvent(
-  @JsonProperty("eventId") String eventId,
-  @JsonProperty("occurredAt") Instant occurredAt,
-  @JsonProperty("placeholderId") String placeholderId,
-  @JsonProperty("name") String name
+  @JsonProperty("eventId") @NotBlank @Size(max = 64) String eventId,
+  @JsonProperty("occurredAt") @NotNull Instant occurredAt,
+  @JsonProperty("placeholderId") @NotBlank @Size(max = 256) String placeholderId,
+  @JsonProperty("name") @NotBlank @Size(max = 256) String name
 ) implements PlaceholderEvent {
+
+  public PlaceholderCreatedEvent {
+    if (eventId == null || eventId.isBlank()) {
+      throw new IllegalArgumentException("PlaceholderCreatedEvent.eventId must not be blank");
+    }
+    if (occurredAt == null) {
+      throw new IllegalArgumentException("PlaceholderCreatedEvent.occurredAt must not be null");
+    }
+    if (placeholderId == null || placeholderId.isBlank()) {
+      throw new IllegalArgumentException("PlaceholderCreatedEvent.placeholderId must not be blank");
+    }
+    if (name == null || name.isBlank()) {
+      throw new IllegalArgumentException("PlaceholderCreatedEvent.name must not be blank");
+    }
+    if (eventId.length() > 64 || placeholderId.length() > 256 || name.length() > 256) {
+      throw new IllegalArgumentException("PlaceholderCreatedEvent field length cap exceeded");
+    }
+  }
 
   /**
    * Factory method for creating a new event with auto-generated ID and timestamp.

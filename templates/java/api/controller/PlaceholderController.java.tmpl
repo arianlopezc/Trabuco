@@ -21,13 +21,56 @@ import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
  * REST controller for Placeholder CRUD operations.
  *
- * <p>Always uses ImmutableX types with builder pattern.
- * Replace this with your actual controllers.
+ * <p>Always uses ImmutableX types with builder pattern. Replace this
+ * with your actual controllers.
+ *
+ * <h2>Authorization model (replace alongside the rest of the controller)</h2>
+ *
+ * <p>Every endpoint carries a {@link PreAuthorize} annotation matching
+ * its HTTP verb against a domain-specific scope:
+ * <ul>
+ *   <li>{@code SCOPE_placeholder:read} — list / getById</li>
+ *   <li>{@code SCOPE_placeholder:write} — create / update</li>
+ *   <li>{@code SCOPE_placeholder:delete} — delete</li>
+ * </ul>
+ * Rename {@code placeholder} to your domain noun (e.g.,
+ * {@code SCOPE_order:read}) when you replace this scaffold. The scopes
+ * are issued by your IdP and arrive on the JWT's {@code scope} claim.
+ *
+ * <p><b>Method security is profile-gated.</b> {@code MethodSecurityConfig}
+ * registers {@code @EnableMethodSecurity} only when
+ * {@code trabuco.auth.enabled=true}. In local-dev mode
+ * ({@code trabuco.auth.enabled=false}) these annotations are inert,
+ * so {@code mvn spring-boot:run} works without an IdP. In any deployed
+ * environment the gate is live.
+ *
+ * <h3>Adding per-record ownership (BOLA close)</h3>
+ *
+ * <p>Scope-only checks let any holder of {@code SCOPE_placeholder:write}
+ * mutate <i>any</i> placeholder. For multi-tenant or per-user data,
+ * also enforce ownership at the controller boundary using
+ * {@code @PostAuthorize}. Sketch (uncomment + adapt once your
+ * Placeholder model carries a {@code tenantId} or {@code ownerId}):
+ *
+ * <pre>{@code
+ * @GetMapping("/{id}")
+ * @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
+ * @PostAuthorize(
+ *     "returnObject.body == null || " +
+ *     "returnObject.body.tenantId == authentication.principal.claims['tenant_id']")
+ * public ResponseEntity<...> getById(@PathVariable ... id) { ... }
+ * }</pre>
+ *
+ * <p>For mutations, prefer enforcing ownership inside the service
+ * (load → check → update) rather than via {@code @PreAuthorize} on a
+ * method that takes only an ID — the controller hasn't loaded the
+ * record yet.
  */
 @RestController
 @RequestMapping("/api/placeholders")
@@ -42,6 +85,7 @@ public class PlaceholderController {
     this.service = service;
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PostMapping
   public ResponseEntity<ImmutablePlaceholderResponse> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
     var created = service.create(request);
@@ -55,6 +99,7 @@ public class PlaceholderController {
         .build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping("/{id}")
   public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable Long id) {
     return service.findById(id)
@@ -68,6 +113,7 @@ public class PlaceholderController {
       .orElse(ResponseEntity.notFound().build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping
   public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
     // Placeholder demo: returns the entire collection. For production, paginate
@@ -85,6 +131,7 @@ public class PlaceholderController {
     return ResponseEntity.ok(placeholders);
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PutMapping("/{id}")
   public ResponseEntity<ImmutablePlaceholderResponse> update(
       @PathVariable Long id,
@@ -100,6 +147,7 @@ public class PlaceholderController {
       .orElse(ResponseEntity.notFound().build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:delete')")
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(@PathVariable Long id) {
     if (service.delete(id)) {
@@ -115,6 +163,7 @@ public class PlaceholderController {
     this.service = service;
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PostMapping
   public ResponseEntity<ImmutablePlaceholderResponse> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
     var created = service.createDocument(request);
@@ -128,6 +177,7 @@ public class PlaceholderController {
         .build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping("/{id}")
   public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable String id) {
     return service.findByDocumentId(id)
@@ -141,6 +191,7 @@ public class PlaceholderController {
       .orElse(ResponseEntity.notFound().build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping
   public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
     // Placeholder demo: returns the entire collection. For production, paginate
@@ -158,6 +209,7 @@ public class PlaceholderController {
     return ResponseEntity.ok(placeholders);
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PutMapping("/{id}")
   public ResponseEntity<ImmutablePlaceholderResponse> update(
       @PathVariable String id,
@@ -173,6 +225,7 @@ public class PlaceholderController {
       .orElse(ResponseEntity.notFound().build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:delete')")
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(@PathVariable String id) {
     if (service.deleteDocument(id)) {
@@ -182,30 +235,35 @@ public class PlaceholderController {
   }
 {{- else}}
   // Shared module included but no datastore
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PostMapping
   public ResponseEntity<String> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
       .body("Datastore module required");
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping("/{id}")
   public ResponseEntity<String> getById(@PathVariable String id) {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
       .body("Datastore module required");
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping
   public ResponseEntity<String> getAll() {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
       .body("Datastore module required");
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PutMapping("/{id}")
   public ResponseEntity<String> update(@PathVariable String id, @Valid @RequestBody ImmutablePlaceholderRequest request) {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
       .body("Datastore module required");
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:delete')")
   @DeleteMapping("/{id}")
   public ResponseEntity<String> delete(@PathVariable String id) {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
@@ -220,6 +278,7 @@ public class PlaceholderController {
     this.repository = repository;
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PostMapping
   public ResponseEntity<ImmutablePlaceholderResponse> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
     var saved = repository.save(new PlaceholderRecord(
@@ -235,6 +294,7 @@ public class PlaceholderController {
         .build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping("/{id}")
   public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable Long id) {
     return repository.findById(id)
@@ -248,6 +308,7 @@ public class PlaceholderController {
       .orElse(ResponseEntity.notFound().build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping
   public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
     // Placeholder demo: returns the entire collection. For production, paginate
@@ -265,6 +326,7 @@ public class PlaceholderController {
     return ResponseEntity.ok(placeholders);
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PutMapping("/{id}")
   public ResponseEntity<ImmutablePlaceholderResponse> update(
       @PathVariable Long id,
@@ -285,6 +347,7 @@ public class PlaceholderController {
       .orElse(ResponseEntity.notFound().build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:delete')")
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(@PathVariable Long id) {
     if (repository.existsById(id)) {
@@ -301,6 +364,7 @@ public class PlaceholderController {
     this.repository = repository;
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PostMapping
   public ResponseEntity<ImmutablePlaceholderResponse> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
     var saved = repository.save(new PlaceholderDocument(
@@ -316,6 +380,7 @@ public class PlaceholderController {
         .build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping("/{id}")
   public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable String id) {
     return repository.findById(id)
@@ -329,6 +394,7 @@ public class PlaceholderController {
       .orElse(ResponseEntity.notFound().build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping
   public ResponseEntity<List<ImmutablePlaceholderResponse>> getAll() {
     // Placeholder demo: returns the entire collection. For production, paginate
@@ -346,6 +412,7 @@ public class PlaceholderController {
     return ResponseEntity.ok(placeholders);
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PutMapping("/{id}")
   public ResponseEntity<ImmutablePlaceholderResponse> update(
       @PathVariable String id,
@@ -366,6 +433,7 @@ public class PlaceholderController {
       .orElse(ResponseEntity.notFound().build());
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:delete')")
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(@PathVariable String id) {
     if (repository.existsById(id)) {
@@ -378,30 +446,35 @@ public class PlaceholderController {
   // TODO: No datastore modules included.
   // Add SQLDatastore or NoSQLDatastore module for database access.
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PostMapping
   public ResponseEntity<String> create(@Valid @RequestBody ImmutablePlaceholderRequest request) {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
       .body("Datastore module required");
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping("/{id}")
   public ResponseEntity<String> getById(@PathVariable String id) {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
       .body("Datastore module required");
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:read')")
   @GetMapping
   public ResponseEntity<String> getAll() {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
       .body("Datastore module required");
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:write')")
   @PutMapping("/{id}")
   public ResponseEntity<String> update(@PathVariable String id, @Valid @RequestBody ImmutablePlaceholderRequest request) {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
       .body("Datastore module required");
   }
 
+  @PreAuthorize("hasAuthority('SCOPE_placeholder:delete')")
   @DeleteMapping("/{id}")
   public ResponseEntity<String> delete(@PathVariable String id) {
     return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)

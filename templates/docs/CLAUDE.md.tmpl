@@ -335,7 +335,9 @@ Each task below has a slash-command skill (invoke as `/add-X`) AND a full step-b
 
 ## Boundaries
 
-This project does NOT include: authentication/authorization, frontend/UI, GraphQL, gRPC, WebSockets, Kubernetes manifests, or production database schemas. Placeholder entities should be replaced with real domain objects. For guidance on adding missing capabilities, see `{{.PromptsDir}}/extending-the-project.md`.
+This project DOES include OAuth2 Resource Server auth scaffolding (Spring Security 6, JWT validation, scope → `SCOPE_*` authority mapping, RFC 7807 problem+json error envelopes). It is dormant by default; set `trabuco.auth.enabled=false` for local dev or `=true` (with `OIDC_ISSUER_URI` + `OIDC_AUDIENCE`) for deployments. The app refuses to boot when that property is unset. See `docs/auth.md`.{{- if .HasModule "AIAgent" }} The AIAgent module additionally ships a legacy API-key path (`app.aiagent.api-key.enabled`, default true) — operators populate `agent.auth.keys.*` or use the `local-dev` profile.{{- end }}
+
+This project does NOT include: identity-provider features (login forms, password handling, MFA enrollment, user management UI, token issuance), frontend/UI, GraphQL, gRPC, WebSockets, Kubernetes manifests, or production database schemas. Placeholder entities should be replaced with real domain objects. For guidance on adding missing capabilities, see `{{.PromptsDir}}/extending-the-project.md`.
 
 ## Git
 

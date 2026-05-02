@@ -1,0 +1,122 @@
+package {{.GroupID}}.aiagent.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+
+/**
+ * Authorization gate for the Spring AI MCP server endpoint
+ * ({@code /mcp/**}).
+ *
+ * <h2>Why a dedicated filter</h2>
+ *
+ * <p>{@code AgentSecurityConfig.agentOauth2FilterChain} already
+ * gates {@code /mcp/**} behind {@code hasAuthority("SCOPE_mcp:invoke")}
+ * for the JWT path. That filter chain only runs when
+ * {@code trabuco.auth.enabled=true}; in the legacy API-key-only
+ * mode ({@code trabuco.auth.enabled=false}) the
+ * {@code agentPermitAllFilterChain} permits every HTTP request, and
+ * the only auth signal is {@link CallerIdentity} populated by
+ * {@link ApiKeyAuthFilter}. Without this filter, an anonymous
+ * caller could still hit {@code /mcp} and invoke every auto-registered
+ * {@code @Tool} (the / default-on exposure).
+ *
+ * <p>This filter closes that gap. It runs on every request, but
+ * fires only when the path is {@code /mcp/**}. It accepts callers
+ * who satisfy <i>either</i> auth source:
+ *
+ * <ol>
+ *   <li><b>JWT path</b> — the {@link Authentication} on the security
+ *       context carries {@code SCOPE_mcp:invoke}. (Belt-and-suspenders;
+ *       the security filter chain already gates this.)</li>
+ *   <li><b>API-key path</b> — {@link CallerContext#get()} returns a
+ *       {@link CallerIdentity} of tier {@code partner} or higher.
+ *       Anonymous callers and {@code public}-tier keys are rejected.</li>
+ * </ol>
+ *
+ * <p>Either condition alone is sufficient — operators running in
+ * hybrid mode (both auth modes on) get the strongest privilege from
+ * either credential.
+ *
+ * <h2>Conditional registration</h2>
+ *
+ * <p>{@code @ConditionalOnProperty} ties this filter's existence to
+ * {@code spring.ai.mcp.server.enabled=true}. When MCP is off (the
+ * Default since 1.12), the filter never registers — no per-request
+ * cost on the API-key chain.
+ *
+ * <p>{@code @Order(Ordered.HIGHEST_PRECEDENCE + 100)} places this
+ * after Spring Security's auth filter (which populates
+ * {@code SecurityContextHolder}) and after {@link ApiKeyAuthFilter}
+ * (which populates {@code CallerContext}). Both signals must be
+ * available when this filter inspects them.
+ */
+@Component
+@ConditionalOnProperty(name = "spring.ai.mcp.server.enabled", havingValue = "true")
+@Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE + 100)
+public class AgentMcpAuthorizationFilter extends OncePerRequestFilter {
+
+    static final String MCP_SCOPE = "SCOPE_mcp:invoke";
+
+    private static final Logger log = LoggerFactory.getLogger(AgentMcpAuthorizationFilter.class);
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        if (!isMcpRequest(request)) {
+            chain.doFilter(request, response);
+            return;
+        }
+        if (jwtHasMcpScope() || apiKeyIsPartner()) {
+            chain.doFilter(request, response);
+            return;
+        }
+        log.warn("MCP request denied: caller={}, path={}",
+            CallerContext.get().keyLabel(),
+            request.getRequestURI());
+        response.setStatus(HttpStatus.FORBIDDEN.value());
+        response.setContentType("application/json");
+        response.getWriter().write(
+            "{\"error\":\"MCP endpoint requires SCOPE_mcp:invoke (JWT path) "
+            + "or a partner-tier API key.\"}");
+    }
+
+    private static boolean isMcpRequest(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return uri != null && (uri.equals("/mcp") || uri.startsWith("/mcp/"));
+    }
+
+    private static boolean jwtHasMcpScope() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null
+                || !auth.isAuthenticated()
+                || auth instanceof AnonymousAuthenticationToken) {
+            return false;
+        }
+        for (GrantedAuthority a : auth.getAuthorities()) {
+            if (MCP_SCOPE.equals(a.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean apiKeyIsPartner() {
+        CallerIdentity caller = CallerContext.get();
+        return caller.isAtLeast("partner");
+    }
+}

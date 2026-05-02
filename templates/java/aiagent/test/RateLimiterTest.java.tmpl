@@ -1,8 +1,11 @@
 package {{.GroupID}}.aiagent.security;
 
-import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.*;
@@ -16,23 +19,18 @@ class RateLimiterTest {
         limiter = new RateLimiter();
     }
 
-    @Test
-    void underLimit_passes() {
-        var caller = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("test1").keyLabel("test").build();
-        for (int i = 0; i < 9; i++) {
-            limiter.checkRateLimit(caller);
-        }
-        // 9 requests for anonymous (limit 10) should pass
+    @AfterEach
+    void clearRequestContext() {
+        RequestContextHolder.resetRequestAttributes();
     }
 
-    @Test
-    void atLimit_throws() {
-        var caller = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("test2").keyLabel("test").build();
-        for (int i = 0; i < 10; i++) {
-            limiter.checkRateLimit(caller);
+    private static void bindRequest(String remoteAddr, String forwardedFor) {
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        req.setRemoteAddr(remoteAddr);
+        if (forwardedFor != null) {
+            req.addHeader("X-Forwarded-For", forwardedFor);
         }
-        assertThatThrownBy(() -> limiter.checkRateLimit(caller))
-            .isInstanceOf(ResponseStatusException.class);
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(req));
     }
 
     @Test
@@ -46,13 +44,76 @@ class RateLimiterTest {
     }
 
     @Test
-    void differentCallers_independent() {
-        var c1 = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("testA").keyLabel("test").build();
-        var c2 = ImmutableCallerIdentity.builder().tier("anonymous").keyHash("testB").keyLabel("test").build();
-        for (int i = 0; i < 10; i++) {
+    void authenticatedCallersAreIndependentByKeyHash() {
+        var c1 = ImmutableCallerIdentity.builder().tier("public").keyHash("testA").keyLabel("test").build();
+        var c2 = ImmutableCallerIdentity.builder().tier("public").keyHash("testB").keyLabel("test").build();
+        for (int i = 0; i < 60; i++) {
             limiter.checkRateLimit(c1);
         }
-        // c2 should still be fine
+        assertThatThrownBy(() -> limiter.checkRateLimit(c1)).isInstanceOf(ResponseStatusException.class);
         assertThatCode(() -> limiter.checkRateLimit(c2)).doesNotThrowAnyException();
+    }
+
+    /**
+     * regression: anonymous callers from different IPs must
+     * have independent buckets. Before the fix, all anonymous callers
+     * shared one global bucket keyed by the literal {@code "anonymous"}
+     * — one noisy actor starved every other unauthenticated request.
+     */
+    @Test
+    void anonymousCallersFromDifferentIPsAreIndependent() {
+        var caller = CallerIdentity.anonymous();
+
+        bindRequest("10.0.0.1", null);
+        for (int i = 0; i < 10; i++) {
+            limiter.checkRateLimit(caller);
+        }
+        assertThatThrownBy(() -> limiter.checkRateLimit(caller))
+            .as("10.0.0.1 should be at its anonymous quota")
+            .isInstanceOf(ResponseStatusException.class);
+
+        // Different IP — fresh bucket.
+        bindRequest("10.0.0.2", null);
+        assertThatCode(() -> limiter.checkRateLimit(caller))
+            .as("10.0.0.2 must NOT inherit 10.0.0.1's bucket")
+            .doesNotThrowAnyException();
+    }
+
+    /**
+     * X-Forwarded-For (when present) takes precedence over the raw
+     * remote address. Behind a trusted reverse proxy, the proxy IP
+     * is the same for every request — without honouring
+     * X-Forwarded-For, every anonymous caller would collapse into one
+     * bucket again.
+     */
+    @Test
+    void anonymousCallersUseXForwardedForWhenPresent() {
+        var caller = CallerIdentity.anonymous();
+
+        bindRequest("127.0.0.1", "203.0.113.10");
+        for (int i = 0; i < 10; i++) {
+            limiter.checkRateLimit(caller);
+        }
+        assertThatThrownBy(() -> limiter.checkRateLimit(caller))
+            .isInstanceOf(ResponseStatusException.class);
+
+        bindRequest("127.0.0.1", "203.0.113.20");
+        assertThatCode(() -> limiter.checkRateLimit(caller))
+            .as("XFF=203.0.113.20 must NOT collide with XFF=203.0.113.10")
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void anonymousWithoutRequestBoundCollapsesToSingleBucket() {
+        // Non-HTTP entry path — no request attributes bound. Falls
+        // back to the literal "unknown" bucket. Stricter than the
+        // previous global anonymous bucket, but acceptable: this
+        // path is rare in normal operation.
+        var caller = CallerIdentity.anonymous();
+        for (int i = 0; i < 10; i++) {
+            limiter.checkRateLimit(caller);
+        }
+        assertThatThrownBy(() -> limiter.checkRateLimit(caller))
+            .isInstanceOf(ResponseStatusException.class);
     }
 }

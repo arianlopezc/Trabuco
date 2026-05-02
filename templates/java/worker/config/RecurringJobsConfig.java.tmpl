@@ -23,6 +23,25 @@ import org.springframework.context.event.EventListener;
  * - Cron.daily(6, 0)          - Every day at 6:00 AM
  * - Cron.weekly(DayOfWeek.MONDAY, 9, 0) - Every Monday at 9:00 AM
  * - "0 0 * * *"               - Custom cron expression (midnight daily)
+ *
+ * <h2>Security note</h2>
+ *
+ * <p>JobRunr validates CRON expressions at registration time and
+ * rejects malformed strings — but it does NOT bound the schedule's
+ * frequency. A {@code "* * * * * *"} expression (every second) will
+ * happily register and pin a worker thread per tick. Never register
+ * recurring jobs from caller-controlled input — the schedule should
+ * come from operator-controlled config or static code only.
+ *
+ * <p>Defending against accidentally too-aggressive operator-set
+ * schedules: if you accept CRON strings from a config file that
+ * non-engineers can edit, cap the minimum interval before passing
+ * the expression to {@code scheduleRecurrently} (e.g., reject
+ * anything that fires more than once per minute). For dynamic /
+ * tenant-driven schedules, materialise to a single recurring job
+ * that itself iterates over a database table — that puts the
+ * "once per minute" cap on the orchestrator and not on the
+ * individual schedule.
  */
 @Configuration
 public class RecurringJobsConfig {

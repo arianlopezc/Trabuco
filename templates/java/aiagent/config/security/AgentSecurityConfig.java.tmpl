@@ -1,13 +1,19 @@
 package {{.GroupID}}.aiagent.config.security;
 
+import {{.GroupID}}.aiagent.security.ApiKeyAuthFilter;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * Resource-server configuration for the AIAgent Spring Boot application.
@@ -16,17 +22,23 @@ import org.springframework.security.web.SecurityFilterChain;
  * chain — Spring Security beans don't cross application contexts. This
  * config mirrors the API module's pattern: two mutually-exclusive
  * {@link SecurityFilterChain} beans gated by {@code trabuco.auth.enabled}.
+ * <b>The property MUST be set explicitly</b>; the
+ * {@link #validateAuthDecisionMade()} hook fails boot if it is unset,
+ * which prevents the AIAgent from silently shipping with no JWT
+ * validation because someone forgot to set the property.
  *
  * <ul>
- *   <li><b>{@link #agentOauth2FilterChain} — active when
+ *   <li><b>{@link #agentOauth2FilterChain} — when
  *       {@code trabuco.auth.enabled=true}</b>. Wires JWT validation,
  *       scope-based authority mapping, and the ProblemDetail handler —
  *       single source of truth for token semantics across modules.</li>
- *   <li><b>{@link #agentPermitAllFilterChain} — the default</b>.
- *       Active when {@code trabuco.auth.enabled} is missing or
- *       {@code false}. Open chain so the legacy
- *       {@code ApiKeyAuthFilter} and the existing scope/tier pipeline
- *       continue to work unchanged.</li>
+ *   <li><b>{@link #agentPermitAllFilterChain} — when
+ *       {@code trabuco.auth.enabled=false}</b>. Open chain so the
+ *       legacy {@code ApiKeyAuthFilter} and the existing scope/tier
+ *       pipeline are the only enforced authorization layer. Setting
+ *       this is a deliberate decision to operate on the API-key path
+ *       only (typical during migration or in self-contained AIAgent
+ *       deployments where issuing JWTs would be over-engineering).</li>
  * </ul>
  *
  * <p>Coexists with the legacy {@link {{.GroupID}}.aiagent.security.ApiKeyAuthFilter}.
@@ -34,50 +46,159 @@ import org.springframework.security.web.SecurityFilterChain;
  * property (default {@code true}), independent of
  * {@code trabuco.auth.enabled}. The matrix:
  * <ul>
- *   <li>{@code trabuco.auth.enabled=false}, {@code app.aiagent.api-key.enabled=true}
- *       (defaults): legacy API-key path active, JWT validation dormant —
- *       behavior is identical to projects generated before auth scaffolding existed.</li>
+ *   <li>{@code trabuco.auth.enabled=false}, {@code app.aiagent.api-key.enabled=true}:
+ *       legacy API-key path active, JWT validation dormant. Tier-based
+ *       authorization via the {@code ScopeInterceptor} pipeline.</li>
  *   <li>{@code trabuco.auth.enabled=true}, {@code app.aiagent.api-key.enabled=true}:
  *       hybrid mode — both credential types accepted (useful during migration).</li>
  *   <li>{@code trabuco.auth.enabled=true}, {@code app.aiagent.api-key.enabled=false}:
- *       JWT-only — recommended target state.</li>
+ *       JWT-only — recommended target state for production.</li>
  * </ul>
  *
- * <p>Method-level authorization is enabled via {@link EnableMethodSecurity};
- * tools and controllers use
- * {@code @PreAuthorize("hasAuthority('SCOPE_agent:read')")} for the JWT
- * path. Existing endpoints annotated with {@code @RequireScope("public")}
- * continue to use the legacy tier-based check via {@code ScopeInterceptor}
- * → {@code ScopeEnforcer} → {@code CallerContext}.
+ * <p>Method-level authorization is enabled via the separate
+ * {@link MethodSecurityConfig} class — only registered when
+ * {@code trabuco.auth.enabled=true} so {@code @PreAuthorize}
+ * annotations don't break local-dev mode (where the open chain
+ * permits unauthenticated requests through). Two annotations work
+ * interchangeably:
+ * <ul>
+ *   <li>{@code @PreAuthorize("hasAuthority('SCOPE_agent:read')")} —
+ *       Spring Security's expression-based gate, evaluated against the
+ *       JWT's authorities.</li>
+ *   <li>{@code @RequireScope("public")} — Trabuco's tier-based gate,
+ *       resolved through {@code ScopeInterceptor} → {@code ScopeEnforcer}.</li>
+ * </ul>
+ * {@code ScopeEnforcer} bridges the two: under JWT-only mode it derives
+ * the tier from {@code SecurityContextHolder} authorities, mapping
+ * {@code SCOPE_partner} / {@code SCOPE_agent:write} / {@code SCOPE_agent:admin}
+ * to {@code partner} and {@code SCOPE_public} / {@code SCOPE_agent:read}
+ * (or any authenticated token) to {@code public}. Existing
+ * {@code @RequireScope}-annotated endpoints keep working without
+ * source changes during the API-key → JWT migration.
  *
- * <p>SECURITY: when enabled, this config requires the resource-server
- * starter to have a valid issuer or JWK set on startup. Set
+ * <p>SECURITY: when {@code enabled=true}, the resource-server starter
+ * needs a valid issuer or JWK set on startup. Set
  * {@code OIDC_ISSUER_URI} (or the equivalent provider-specific env var
- * documented in {@code docs/auth.md}) before flipping
- * {@code trabuco.auth.enabled=true}, otherwise the app fails fast at
- * boot rather than silently accepting unsigned tokens.
+ * documented in {@code docs/auth.md}) before flipping the property,
+ * otherwise the app fails fast at boot rather than silently accepting
+ * unsigned tokens.
  */
 @Configuration
-@EnableMethodSecurity
 public class AgentSecurityConfig {
 
     private final JwtAuthenticationConverter jwtConverter;
     private final AuthProblemDetailHandler authProblemHandler;
+    private final String trabucoAuthEnabled;
+    private final String issuerUri;
+    private final String jwkSetUri;
+    private final String audiences;
 
     public AgentSecurityConfig(JwtAuthenticationConverter jwtConverter,
-                               AuthProblemDetailHandler authProblemHandler) {
+                               AuthProblemDetailHandler authProblemHandler,
+                               @Value("${trabuco.auth.enabled:}") String trabucoAuthEnabled,
+                               @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String issuerUri,
+                               @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}") String jwkSetUri,
+                               @Value("${spring.security.oauth2.resourceserver.jwt.audiences:}") String audiences) {
         this.jwtConverter = jwtConverter;
         this.authProblemHandler = authProblemHandler;
+        this.trabucoAuthEnabled = trabucoAuthEnabled;
+        this.issuerUri = issuerUri;
+        this.jwkSetUri = jwkSetUri;
+        this.audiences = audiences;
+    }
+
+    /**
+     * Refuses to boot when {@code trabuco.auth.enabled} is unset or not
+     * a boolean. When {@code true}, also requires
+     * {@code spring.security.oauth2.resourceserver.jwt.issuer-uri} and
+     * {@code spring.security.oauth2.resourceserver.jwt.audiences} to be
+     * non-empty. Mirrors {@code SecurityConfig#validateAuthDecisionMade}
+     * on the API module — the audience guardrail is critical for the
+     * AIAgent because it routinely issues outbound HTTP (webhooks,
+     * tool calls) and must not accept tokens minted for sister
+     * services to authorize those operations.
+     */
+    @PostConstruct
+    void validateAuthDecisionMade() {
+        if (trabucoAuthEnabled == null || trabucoAuthEnabled.isBlank()) {
+            throw new IllegalStateException(
+                "trabuco.auth.enabled is required and must be set explicitly. " +
+                "Set 'true' (with OIDC_ISSUER_URI and OIDC_AUDIENCE configured) for any deployed environment, " +
+                "or 'false' explicitly to operate on the legacy API-key path only " +
+                "(see app.aiagent.api-key.enabled). " +
+                "See docs/auth.md for per-provider recipes.");
+        }
+        if (!"true".equalsIgnoreCase(trabucoAuthEnabled) && !"false".equalsIgnoreCase(trabucoAuthEnabled)) {
+            throw new IllegalStateException(
+                "trabuco.auth.enabled must be 'true' or 'false', got: '" + trabucoAuthEnabled + "'.");
+        }
+        if ("true".equalsIgnoreCase(trabucoAuthEnabled)) {
+            boolean hasIssuer = issuerUri != null && !issuerUri.isBlank();
+            boolean hasJwkSet = jwkSetUri != null && !jwkSetUri.isBlank();
+            if (!hasIssuer && !hasJwkSet) {
+                throw new IllegalStateException(
+                    "trabuco.auth.enabled=true requires either " +
+                    "spring.security.oauth2.resourceserver.jwt.issuer-uri (recommended — enables automatic issuer " +
+                    "validation, typically set via OIDC_ISSUER_URI) or " +
+                    "spring.security.oauth2.resourceserver.jwt.jwk-set-uri (signature validation only). " +
+                    "See docs/auth.md for per-provider discovery URLs.");
+            }
+            if (audiences == null || audiences.isBlank()) {
+                throw new IllegalStateException(
+                    "trabuco.auth.enabled=true requires spring.security.oauth2.resourceserver.jwt.audiences " +
+                    "(typically set via OIDC_AUDIENCE). An empty audiences list silently disables Spring Boot's " +
+                    "audience validator, leaving the service open to token-confusion attacks. " +
+                    "Set OIDC_AUDIENCE to your service's API identifier; see docs/auth.md for per-provider recipes.");
+            }
+        }
+    }
+
+    /**
+     * prevent Spring Boot from auto-registering
+     * {@link ApiKeyAuthFilter} as a global servlet filter. The bean
+     * is added inside the security chains below via
+     * {@code addFilterBefore}, so without this disabled
+     * {@link FilterRegistrationBean} the filter would run twice on
+     * Every request — once outside the chain, once inside.
+     *
+     * <p>{@link ObjectProvider} keeps this bean wirable even when
+     * {@code app.aiagent.api-key.enabled=false} drops the underlying
+     * filter from the context. {@link FilterRegistrationBean#setEnabled}
+     * with {@code false} disables Spring Boot's global registration
+     * but leaves the bean present for {@code addFilterBefore} use.
+     */
+    @Bean
+    public FilterRegistrationBean<ApiKeyAuthFilter> disableApiKeyFilterAutoRegistration(
+            ObjectProvider<ApiKeyAuthFilter> filterProvider) {
+        FilterRegistrationBean<ApiKeyAuthFilter> reg = new FilterRegistrationBean<>();
+        ApiKeyAuthFilter filter = filterProvider.getIfAvailable();
+        if (filter != null) {
+            reg.setFilter(filter);
+        }
+        reg.setEnabled(false);
+        return reg;
     }
 
     /**
      * Active when {@code trabuco.auth.enabled=true}. Validates JWTs
      * against the configured OIDC issuer and emits RFC 7807
      * {@code application/problem+json} for 401/403.
+     *
+     * <p>{@link ApiKeyAuthFilter} (when present) is wired
+     * into this chain via {@code addFilterBefore} so its credential
+     * resolution is part of Spring Security's authentication pipeline,
+     * not a separate global filter. Hybrid callers (API key + JWT)
+     * See both signals before request authorization runs.
      */
     @Bean
     @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "true")
-    public SecurityFilterChain agentOauth2FilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain agentOauth2FilterChain(
+            HttpSecurity http,
+            ObjectProvider<ApiKeyAuthFilter> apiKeyAuthFilter) throws Exception {
+        ApiKeyAuthFilter apiKey = apiKeyAuthFilter.getIfAvailable();
+        if (apiKey != null) {
+            http.addFilterBefore(apiKey, BearerTokenAuthenticationFilter.class);
+        }
         return http
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -89,24 +210,56 @@ public class AgentSecurityConfig {
                 .requestMatchers(
                     "/actuator/health/**",
                     "/actuator/info",
-                    "/.well-known/agent.json"
+                    "/.well-known/agent.json",
+                    "/capabilities"
                 ).permitAll()
+                // / prometheus / metrics scopes —
+                // See SecurityConfig in API for the rationale.
+                .requestMatchers("/actuator/prometheus", "/actuator/metrics/**")
+                    .hasAuthority("SCOPE_metrics:read")
+                // / MCP server auto-registers
+                // Every @Tool method. Authentication alone is not enough
+                // — the JWT must also carry the SCOPE_mcp:invoke claim.
+                // Operators issuing tokens should map their MCP-eligible
+                // service principals to that scope on the IdP side.
+                .requestMatchers("/mcp/**").hasAuthority("SCOPE_mcp:invoke")
                 .anyRequest().authenticated())
             .build();
     }
 
     /**
-     * Default chain — permits all requests. Active when
-     * {@code trabuco.auth.enabled} is unset or {@code false}. Required
-     * because Spring Security on the classpath would otherwise
-     * auto-configure HTTP Basic on every endpoint, breaking the legacy
-     * API-key path.
+     * API-key-only chain — permits all HTTP requests so that the
+     * {@code ApiKeyAuthFilter} + {@code ScopeInterceptor} pipeline is
+     * the sole authorization layer. Active only when
+     * {@code trabuco.auth.enabled=false} is set explicitly. There is
+     * no {@code matchIfMissing} fallback: the
+     * {@link #validateAuthDecisionMade()} @PostConstruct hook above
+     * refuses to boot if the property is unset, so the operator must
+     * opt in to the API-key-only mode deliberately.
+     *
+     * <p>{@link ApiKeyAuthFilter} is wired here too so
+     * its CallerContext resolution runs inside the security chain
+     * — same execution model as the JWT chain.
      */
     @Bean
-    @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "false", matchIfMissing = true)
-    public SecurityFilterChain agentPermitAllFilterChain(HttpSecurity http) throws Exception {
+    @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "false")
+    public SecurityFilterChain agentPermitAllFilterChain(
+            HttpSecurity http,
+            ObjectProvider<ApiKeyAuthFilter> apiKeyAuthFilter) throws Exception {
+        ApiKeyAuthFilter apiKey = apiKeyAuthFilter.getIfAvailable();
+        if (apiKey != null) {
+            http.addFilterBefore(apiKey, UsernamePasswordAuthenticationFilter.class);
+        }
         return http
             .csrf(AbstractHttpConfigurer::disable)
+            // enable Spring Security's CORS handling on the
+            // permit-all chain too — without it, preflight (OPTIONS)
+            // requests bypass MVC's WebConfig CORS configuration and
+            // are blocked by Spring Security's default-deny stance for
+            // OPTIONS, even though the underlying chain permits all.
+            // Configuration values come from {@code spring.web.cors.*}
+            // which our WebConfig already surfaces.
+            .cors(cors -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
             .build();

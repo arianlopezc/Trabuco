@@ -1,0 +1,44 @@
+package {{.GroupID}}.aiagent.security;
+
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Component;
+
+/**
+ * Startup banner that fires when the {@code local-dev} profile is
+ * active. The {@code application-local-dev.yml} resource seeds demo
+ * API keys so the AIAgent has working credentials out of the box; the
+ * banner makes that loadout loud in the logs so the operator cannot
+ * activate this profile in a non-local environment without seeing the
+ * warning.
+ *
+ * <p>The bean is gated by {@link Profile} so it never registers
+ * outside {@code local-dev}, which means CI / staging / prod never
+ * See the WARN — and never see the demo keys, since the
+ * profile-specific YAML is also gated by Spring Boot's profile
+ * activation rules.
+ */
+@Component
+@Profile("local-dev")
+public class DemoKeyStartupWarning {
+
+    private static final Logger log = LoggerFactory.getLogger(DemoKeyStartupWarning.class);
+
+    private final AgentAuthProperties props;
+
+    public DemoKeyStartupWarning(AgentAuthProperties props) {
+        this.props = props;
+    }
+
+    @PostConstruct
+    void warn() {
+        log.warn("=================================================================");
+        log.warn("local-dev profile is active — demo API keys are loaded.");
+        log.warn("Loaded keys: {}", props.keys().keySet());
+        log.warn("DO NOT activate this profile in any deployed environment.");
+        log.warn("Configure agent.auth.keys.* with real values for production.");
+        log.warn("=================================================================");
+    }
+}

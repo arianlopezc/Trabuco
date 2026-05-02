@@ -27,8 +27,23 @@ public class KafkaConfig {
   /**
    * Creates a consumer factory for PlaceholderEvent types.
    *
-   * <p>Uses Spring Boot's KafkaProperties for base configuration
-   * and adds JSON deserialization with trusted packages.</p>
+   * <p>Uses Spring Boot's KafkaProperties for base configuration and
+   * adds JSON deserialization. Hardening (since 1.12):
+   *
+   * <ul>
+   *   <li>{@code TRUSTED_PACKAGES} is the narrow event package only;
+   *       cross-module DTOs cannot be instantiated through the
+   *       inbound type-id header.</li>
+   *   <li>{@code USE_TYPE_INFO_HEADERS=false} — header-driven typing
+   *       is disabled. The {@code @KafkaListener} method parameter
+   *       drives deserialization (mirrors the Spring AMQP
+   *       {@code TypePrecedence.INFERRED} pattern). A malicious
+   *       publisher can no longer pin deserialization to a chosen
+   *       FQCN even within the trusted package.</li>
+   *   <li>{@code VALUE_DEFAULT_TYPE} pins the inferred type to
+   *       {@code PlaceholderEvent} so the listener's sealed-interface
+   *       dispatch routes correctly.</li>
+   * </ul>
    */
   @Bean
   public ConsumerFactory<String, PlaceholderEvent> consumerFactory(KafkaProperties kafkaProperties) {
@@ -36,7 +51,8 @@ public class KafkaConfig {
     props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
     props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
     props.put(JsonDeserializer.TRUSTED_PACKAGES, "{{.GroupID}}.model.events");
-    props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, true);
+    props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+    props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, PlaceholderEvent.class.getName());
 
     return new DefaultKafkaConsumerFactory<>(props);
   }

@@ -99,7 +99,7 @@ public final class MockJwtFactory {
     /**
      * Returns a {@link JwtDecoder} that returns the given fixed
      * {@link Jwt} regardless of the token string passed to it. Use to
-     * replace the resource-server's auto-configured decoder when you
+     * Replace the resource-server's auto-configured decoder when you
      * want every request to look authenticated as a particular user
      * for the duration of the test.
      */
@@ -109,7 +109,7 @@ public final class MockJwtFactory {
 
     /**
      * Returns a {@link JwtDecoder} that builds a fresh {@link Jwt} on
-     * every {@code decode} call using the provided subject and scopes.
+     * Every {@code decode} call using the provided subject and scopes.
      * Convenience over {@link #fixedDecoder(Jwt)} when the test doesn't
      * need to compose the {@code Jwt} explicitly.
      */

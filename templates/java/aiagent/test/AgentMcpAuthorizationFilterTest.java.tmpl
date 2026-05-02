@@ -1,0 +1,152 @@
+package {{.GroupID}}.aiagent.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.io.IOException;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+
+/**
+ * Regression cases for / — every request to
+ * {@code /mcp/**} must be backed by either a JWT carrying
+ * {@code SCOPE_mcp:invoke} or a partner-tier API-key
+ * {@link CallerIdentity}. Anonymous and {@code public}-tier callers
+ * must receive 403.
+ */
+class AgentMcpAuthorizationFilterTest {
+
+    private final AgentMcpAuthorizationFilter filter = new AgentMcpAuthorizationFilter();
+
+    @AfterEach
+    void clear() {
+        CallerContext.clear();
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void nonMcpRequestsPassThrough() throws ServletException, IOException {
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/agent/ask");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(req, res, chain);
+
+        verify(chain, times(1)).doFilter(req, res);
+        assertThat(res.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void anonymousMcpRequestRejectedWith403() throws ServletException, IOException {
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(req, res, chain);
+
+        verify(chain, never()).doFilter(req, res);
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getContentAsString()).contains("SCOPE_mcp:invoke");
+    }
+
+    @Test
+    void publicTierApiKeyMcpRequestRejected() throws ServletException, IOException {
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("public")
+            .keyHash("public-hash")
+            .keyLabel("public-key")
+            .build());
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp/sse");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(req, res, chain);
+
+        verify(chain, never()).doFilter(req, res);
+        assertThat(res.getStatus()).isEqualTo(403);
+    }
+
+    @Test
+    void partnerTierApiKeyMcpRequestAllowed() throws ServletException, IOException {
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("partner-hash")
+            .keyLabel("partner-key")
+            .build());
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(req, res, chain);
+
+        verify(chain, times(1)).doFilter(req, res);
+        assertThat(res.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void jwtWithMcpScopeAllowed() throws ServletException, IOException {
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+            "service-account",
+            "n/a",
+            List.of(new SimpleGrantedAuthority("SCOPE_mcp:invoke")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(req, res, chain);
+
+        verify(chain, times(1)).doFilter(req, res);
+        assertThat(res.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void jwtWithoutMcpScopeRejected() throws ServletException, IOException {
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+            "service-account",
+            "n/a",
+            List.of(new SimpleGrantedAuthority("SCOPE_agent:read")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(req, res, chain);
+
+        verify(chain, never()).doFilter(req, res);
+        assertThat(res.getStatus()).isEqualTo(403);
+    }
+
+    @Test
+    void anonymousAuthenticationTokenIsRejected() throws ServletException, IOException {
+        // Spring Security wraps unauthenticated requests in
+        // AnonymousAuthenticationToken — the filter must treat that
+        // as "no authenticated principal" rather than peeking at its
+        // dummy ROLE_ANONYMOUS authority.
+        AnonymousAuthenticationToken anon = new AnonymousAuthenticationToken(
+            "key", "anonymousUser",
+            List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS")));
+        SecurityContextHolder.getContext().setAuthentication(anon);
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(req, res, chain);
+
+        verify(chain, never()).doFilter(req, res);
+        assertThat(res.getStatus()).isEqualTo(403);
+    }
+}

@@ -1,9 +1,14 @@
 package {{.GroupID}}.aiagent.knowledge;
 
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,8 +31,27 @@ import java.util.Map;
  *
  * <p>This class deliberately does NOT carry {@code @Service} — see the
  * timing comment in {@code VectorKnowledgeRetriever}.
+ *
+ * <h2>Tenant isolation</h2>
+ *
+ * <p>Every chunk written through this service is stamped with
+ * {@code metadata.tenant_id = CallerContext.get().tenantId()} at
+ * ingest time. The retriever ({@code VectorKnowledgeRetriever})
+ * then filters every read by the same field, so cross-tenant reads
+ * are impossible by construction. This is enforced server-side —
+ * caller-supplied {@code tenant_id} in the request body is stripped
+ * before storage to prevent partner-A from claiming partner-B's
+ * tenant. See {@link #stampTenantId(Map)}.
+ *
+ * <p>The default tenant comes from the API-key hash (one tenant per
+ * credential), or from a JWT {@code tenant_id} claim in JWT-mode
+ * deployments — see {@code CallerIdentity.tenantId()}.
  */
 public class DocumentIngestionService {
+
+    private static final Logger log = LoggerFactory.getLogger(DocumentIngestionService.class);
+
+    private static final String TENANT_ID_KEY = "tenant_id";
 
     private final VectorStore vectorStore;
     private final TokenTextSplitter splitter;
@@ -46,11 +70,15 @@ public class DocumentIngestionService {
      * Ingest a single text document with metadata. The text is split,
      * each chunk is embedded by the wired EmbeddingModel (transparent
      * to the caller), and all chunks are persisted to the vector store.
+     *
+     * <p>The {@code tenant_id} field in {@code metadata} is stamped
+     * server-side from the current caller — any caller-supplied value
+     * is overwritten and a warning is logged.
      */
     public void ingest(String text, Map<String, Object> metadata) {
         Document doc = Document.builder()
             .text(text)
-            .metadata(metadata == null ? Map.of() : metadata)
+            .metadata(stampTenantId(metadata))
             .build();
         List<Document> chunks = splitter.apply(List.of(doc));
         vectorStore.add(chunks);
@@ -59,12 +87,39 @@ public class DocumentIngestionService {
     /**
      * Bulk ingest. Each input document is independently chunked; all
      * resulting chunks are stored in one round-trip to the vector store.
+     *
+     * <p>{@code tenant_id} on every input document's metadata is
+     * stamped server-side; any caller-supplied value is overwritten.
      */
     public void ingest(List<Document> documents) {
         if (documents == null || documents.isEmpty()) {
             return;
         }
-        List<Document> chunks = splitter.apply(documents);
+        List<Document> stamped = documents.stream()
+            .map(d -> Document.builder()
+                .text(d.getText())
+                .metadata(stampTenantId(d.getMetadata()))
+                .build())
+            .toList();
+        List<Document> chunks = splitter.apply(stamped);
         vectorStore.add(chunks);
+    }
+
+    /**
+     * Returns a metadata map with the current caller's {@code tenantId()}
+     * stamped under the {@code tenant_id} key. If the caller-supplied
+     * metadata already contained a {@code tenant_id}, it is overwritten
+     * — partner-A cannot ingest into partner-B's tenant by inflating
+     * the request body.
+     */
+    private Map<String, Object> stampTenantId(Map<String, Object> caller) {
+        CallerIdentity id = CallerContext.get();
+        Map<String, Object> out = caller == null ? new HashMap<>() : new HashMap<>(caller);
+        if (out.containsKey(TENANT_ID_KEY) && !id.tenantId().equals(out.get(TENANT_ID_KEY))) {
+            log.warn("Ingest: caller-supplied tenant_id={} overridden with server-derived tenant_id={} (caller={})",
+                out.get(TENANT_ID_KEY), id.tenantId(), id.keyLabel());
+        }
+        out.put(TENANT_ID_KEY, id.tenantId());
+        return out;
     }
 }

@@ -39,14 +39,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 @TestPropertySource(properties = {
     // The embedding model dimensionality must match the vector(N)
     // column declared in V1__create_vector_schema.sql. transformers
-    // default model emits 384-dim vectors.
+    // Default model emits 384-dim vectors.
     "spring.ai.vectorstore.pgvector.dimensions=384",
     // Flyway owns the DDL via VectorFlywayConfig; tell PgVectorStore
     // not to try to create the schema itself.
     "spring.ai.vectorstore.pgvector.initialize-schema=false",
     // Anthropic ChatModel bean creation needs a non-blank key, but the
     // test never actually invokes the LLM. Any placeholder works.
-    "spring.ai.anthropic.api-key=test-key-not-used"
+    "spring.ai.anthropic.api-key=test-key-not-used",
+    // AgentSecurityConfig#validateAuthDecisionMade refuses to boot
+    // when this is unset. RAG plumbing is exercised below the HTTP
+    // layer here, so the open chain is the right test mode.
+    "trabuco.auth.enabled=false",
+    // ApiKeyAuthFilter#validateKeysConfigured refuses to boot when the
+    // filter is enabled (default) and no keys are configured. RAG calls
+    // here go through the service layer, never the filter — but the
+    // bean still has to load, so populate one unused key.
+    "agent.auth.keys.unused.tier=public",
+    "agent.auth.keys.unused.label=unused"
 })
 class VectorRagIntegrationTest {
 
@@ -70,7 +80,7 @@ class VectorRagIntegrationTest {
     void vectorRetrieverReplacesKeywordRetrieverWhenVectorStorePresent() {
         // @ConditionalOnBean(VectorStore.class) on VectorKnowledgeRetriever
         // and @ConditionalOnMissingBean(VectorStore.class) on the keyword
-        // fallback ensure exactly one is wired. Verify the vector path is
+        // Fallback ensure exactly one is wired. Verify the vector path is
         // the one Spring chose.
         assertThat(knowledgeRetriever)
             .as("with PGVector wired, the vector retriever should win the conditional")

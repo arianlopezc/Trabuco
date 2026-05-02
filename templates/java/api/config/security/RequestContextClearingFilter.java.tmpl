@@ -1,0 +1,47 @@
+package {{.GroupID}}.api.config.security;
+
+import {{.GroupID}}.shared.auth.RequestContextHolder;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+
+/**
+ * guarantees {@link RequestContextHolder} is cleared at
+ * the end of every request, even when downstream code throws.
+ *
+ * <p>The {@link JwtAuthenticationConverter} populates the holder
+ * inside {@code convert()}, but Spring Security's converter contract
+ * doesn't promise a matching teardown — and {@code convert()} can
+ * fire more than once per request when the authentication context
+ * is propagated across async boundaries. Without a
+ * filter-level clear, identity values can outlive their request and
+ * leak across virtual-thread carrier reuse.
+ *
+ * <p>This filter runs at the highest precedence so its
+ * {@code finally} block is the outermost cleanup point in the
+ * Request lifecycle. {@code clear()} is idempotent — safe to call
+ * even when the holder was never set (e.g., the permit-all chain).
+ */
+@Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
+public class RequestContextClearingFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain chain) throws ServletException, IOException {
+        try {
+            chain.doFilter(request, response);
+        } finally {
+            RequestContextHolder.clear();
+        }
+    }
+}

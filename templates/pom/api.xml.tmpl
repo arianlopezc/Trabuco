@@ -178,6 +178,15 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- ArchUnit — drives the ApiArchitectureTest guard
+             that enforces every controller endpoint declares an
+             explicit authorization decision. Module-local because
+             Shared's archunit test can't see API's controller classes. -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
 {{- if .AuthEnabled}}
         <!-- spring-security-test: provides MockMvc post-processors like
              with(jwt()) used by SecurityIntegrationTest to inject

@@ -10,7 +10,8 @@ spring:
   application:
     name: {{.ProjectName}}-aiagent
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
+    # Empty default — see API/application.yml.
+    active: ${SPRING_PROFILES_ACTIVE:}
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
   # Virtual threads (Project Loom) — Java 21+ / Spring Boot 3.2+
@@ -22,30 +23,50 @@ spring:
       enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
 {{- if .AuthEnabled}}
   # OAuth2 Resource Server — JWT validation against an external OIDC issuer.
-  # Dormant by default: AgentSecurityConfig.agentPermitAllFilterChain is
-  # active until trabuco.auth.enabled (below) is flipped to true. Same
-  # configuration shape as the API module; both apps validate tokens
-  # against the same issuer for consistent cross-app identity. When
-  # OIDC_ISSUER_URI is unset, Spring's IssuerUriCondition skips
-  # JwtDecoder creation, so an empty default is safe.
+  # Active when trabuco.auth.enabled=true (below). AgentSecurityConfig#validateAuthDecisionMade
+  # also requires audiences to be non-empty when enabled — leaving it empty would
+  # silently disable Spring Boot's audience validator. Same configuration shape
+  # as the API module; both apps validate tokens against the same issuer for
+  # consistent cross-app identity.
   #
-  # Provider examples (set OIDC_ISSUER_URI to one of these):
-  #   Keycloak:    http://localhost:8180/realms/myrealm
-  #   Auth0:       https://YOUR_DOMAIN.auth0.com/
-  #   Okta:        https://YOUR_DOMAIN.okta.com/oauth2/default
-  #   Cognito:     https://cognito-idp.{region}.amazonaws.com/{userPoolId}
-  #   Generic:     https://your-idp.example.com
+  # To enable auth:
+  #   1. Set trabuco.auth.enabled=true
+  #   2. Set OIDC_ISSUER_URI to your IdP's discovery endpoint
+  #   3. Set OIDC_AUDIENCE to the API identifier your IdP mints into the aud claim
+  #
+  # Provider examples (set OIDC_ISSUER_URI / OIDC_AUDIENCE to one of these):
+  #   Keycloak:    OIDC_ISSUER_URI=http://localhost:8180/realms/myrealm
+  #                OIDC_AUDIENCE=<your client_id, configured as a token-mapper aud>
+  #   Auth0:       OIDC_ISSUER_URI=https://YOUR_DOMAIN.auth0.com/
+  #                OIDC_AUDIENCE=https://your-api-identifier
+  #   Okta:        OIDC_ISSUER_URI=https://YOUR_DOMAIN.okta.com/oauth2/default
+  #                OIDC_AUDIENCE=api://your-api
+  #   Cognito:     OIDC_ISSUER_URI=https://cognito-idp.{region}.amazonaws.com/{userPoolId}
+  #                OIDC_AUDIENCE=<your app client_id>
+  #   Generic:     OIDC_ISSUER_URI=https://your-idp.example.com
+  #                OIDC_AUDIENCE=<your service identifier>
   security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${OIDC_ISSUER_URI:}
           audiences: ${OIDC_AUDIENCE:}
+          # See API/application.yml — signature-algorithm whitelist.
+          jws-algorithms: ${OIDC_JWS_ALGORITHMS:RS256,ES256,RS384,ES384,RS512,ES512}
 {{- end}}
   ai:
     mcp:
       server:
-        enabled: true
+        # Off by default since 1.12 (was on, with no auth — see
+        # / audit entries). The MCP server
+        # auto-exposes every @Tool method, so any caller that can reach
+        # /mcp gets full tool access. When enabled, AgentSecurityConfig's
+        # JWT chain gates /mcp/** behind SCOPE_mcp:invoke; AgentMcpAuthorizationFilter
+        # additionally rejects the request when the API-key path's
+        # CallerIdentity tier is not at least 'partner'. Operators must
+        # set MCP_SERVER_ENABLED=true *and* configure either a JWT scope
+        # or a partner-tier API key to expose tools through MCP.
+        enabled: ${MCP_SERVER_ENABLED:false}
         name: {{.ProjectNamePascal}} AI Agent
         version: 1.0.0
     anthropic:
@@ -126,7 +147,8 @@ spring:
   # Database configuration
   datasource:
 {{- if eq .Database "postgresql"}}
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:prefer}
+    # sslmode defaults to `require` since 1.12 — refuses plaintext fallback.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:require}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -188,36 +210,84 @@ spring:
 {{- if .AuthEnabled}}
 
 # Trabuco runtime feature flags
-# Auth scaffolding ships dormant — flip enabled to true (and set
-# OIDC_ISSUER_URI above) to activate JWT validation against the
-# configured OIDC issuer. When false, AgentSecurityConfig.agentPermitAllFilterChain
-# is the active SecurityFilterChain and the legacy ApiKeyAuthFilter
-# (governed independently by app.aiagent.api-key.enabled) handles
-# authentication. The generated source for both chains is identical
-# regardless of this value; it gates the runtime wiring only.
+# Auth scaffolding ships in source for both filter chains. The active
+# chain is selected by trabuco.auth.enabled, which MUST be set
+# explicitly — there is no implicit default. The AgentSecurityConfig
+# @PostConstruct hook refuses to boot if this property is unset.
+# Choose deliberately between:
+#   - true:  JWT validation enforced (set OIDC_ISSUER_URI above) — the
+#            recommended target state when an IdP is available.
+#   - false: legacy API-key path is the sole HTTP-layer auth (governed
+#            by app.aiagent.api-key.enabled below). Useful during
+#            migration or for self-contained agents where issuing JWTs
+#            would be over-engineering.
+# Always set TRABUCO_AUTH_ENABLED at runtime; do not provide a default
+# here (the missing default is the boot-time guardrail).
 trabuco:
   auth:
-    enabled: ${TRABUCO_AUTH_ENABLED:false}
+    enabled: ${TRABUCO_AUTH_ENABLED:}
 {{- end}}
 
 # Agent authentication (legacy API-key path — independent of trabuco.auth.enabled)
+#
+# Keys live under agent.auth.keys.<bearer-value>.{tier,label}. NO keys are
+# shipped here on purpose: ApiKeyAuthFilter#validateKeysConfigured refuses to
+# boot when the filter is enabled and the keys map is empty, which prevents
+# accidental ship-with-defaults. Populate via env-based overrides (Spring
+# Cloud Config, K8s Secret-mounted properties, application-prod.yml, etc.):
+#
+#   agent:
+#     Auth:
+#       keys:
+#         <your-bearer-value>:
+#           tier: partner   # one of: public, partner
+#           label: my-rotation-label   # surfaces in CallerIdentity for logs
+#
+# For local-dev convenience, activate the local-dev profile:
+#   SPRING_PROFILES_ACTIVE=local-dev
+# which loads application-local-dev.yml with seeded demo keys + a startup WARN.
 agent:
   auth:
-    keys:
-      public-read-key:
-        tier: public
-        label: public-read-key
-      partner-secret-key:
-        tier: partner
-        label: partner-secret-key
+    keys: {}
   rate-limits:
     anonymous: ${RATE_LIMIT_ANONYMOUS:10}
     public: ${RATE_LIMIT_PUBLIC:60}
     partner: ${RATE_LIMIT_PARTNER:200}
   guardrails:
     enabled: ${GUARDRAILS_ENABLED:true}
+  # RAG ingestion (POST /ingest, POST /ingest/batch).
+  # OFF by default — the endpoint doesn't register at all
+  # (IngestionController is @ConditionalOnProperty-gated). Set to
+  # true only when you've decided who is allowed to populate the
+  # vector store, what content scanning runs first, and what
+  # per-tenant quotas apply. See IngestionController javadoc for the
+  # operator-policy checklist.
+  ingest:
+    enabled: ${AGENT_INGEST_ENABLED:false}
 
-# Resilience4j Circuit Breaker
+# Resilience4j Circuit Breaker + Time Limiter
+#
+# Spring AI auto-loops tool calls inside a single
+# chat() invocation; a misbehaving tool description or recursive
+# delegation can trap the model in a tool-loop that never stops
+# issuing calls. Spring AI 1.0.x has no native
+# max-tool-call-chain knob — the strongest available bound is
+# per-LLM-call wall-clock plus circuit-breaker-driven cool-off.
+#
+# The {@code llm} TimeLimiter instance is configured but NOT
+# applied to {@code PrimaryAgent.chat()} by default — the method
+# Returns {@code String}, and Resilience4j's {@code @TimeLimiter}
+# requires {@code CompletableFuture}/{@code CompletionStage}.
+# Operators that wrap chat() in an async boundary
+# ({@code CompletableFuture.supplyAsync(agent::chat, ...)}) can
+# annotate the wrapper with {@code @TimeLimiter(name = "llm")}
+# and the config below activates. Combined with
+# {@code @CircuitBreaker} (already on chat()), this caps both
+# per-call latency and per-window failure rate.
+#
+# For the simpler "bound the per-LLM-API-call latency" path,
+# configure spring.ai.anthropic.client.read-timeout or the
+# equivalent for your provider.
 resilience4j:
   circuitbreaker:
     instances:
@@ -228,6 +298,11 @@ resilience4j:
         failureRateThreshold: 50
         waitDurationInOpenState: 30s
         permittedNumberOfCallsInHalfOpenState: 3
+  timelimiter:
+    instances:
+      llm:
+        timeoutDuration: ${AGENT_LLM_TIMEOUT:60s}
+        cancelRunningFuture: true
 
 # CORS configuration
 cors:
@@ -242,7 +317,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: ${MANAGEMENT_ENDPOINTS:health,info,prometheus,metrics}
+        # See API/application.yml — health/info only by default.
+        include: ${MANAGEMENT_ENDPOINTS:health,info}
       base-path: /actuator
   endpoint:
     health:
@@ -252,6 +328,12 @@ management:
         enabled: true
     prometheus:
       enabled: true
+  # /actuator/info defaults to exposing every env var
+  # that starts with `info.*` — including credentials anyone added
+  # via SPRING_APPLICATION_JSON. Disable env contributor by default.
+  info:
+    env:
+      enabled: false
   prometheus:
     metrics:
       export:

@@ -1,9 +1,9 @@
 package {{.GroupID}}.eventconsumer.listener;
 
 import {{.GroupID}}.model.events.PlaceholderCreatedEvent;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 {{- if .UsesSQS}}
 import io.awspring.cloud.sqs.listener.acknowledgement.Acknowledgement;
 import org.mockito.Mock;
@@ -32,7 +32,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class PlaceholderEventListenerTest {
 
-  @InjectMocks
+  // Real (in-memory) tracker — Mockito-inline can't mock the
+  // concrete class on Java 25 due to its synchronized methods.
+  // The tracker is stateless across test runs once {@code reset()}
+  // is called in {@code @BeforeEach}.
+  private final IdempotencyTracker idempotencyTracker = new IdempotencyTracker();
+
   private PlaceholderEventListener listener;
 {{if .UsesSQS}}
   @Mock
@@ -41,6 +46,12 @@ class PlaceholderEventListenerTest {
   @Mock
   private BasicAcknowledgeablePubsubMessage message;
 {{end}}
+  @BeforeEach
+  void freshTracker() {
+    idempotencyTracker.reset();
+    listener = new PlaceholderEventListener(idempotencyTracker);
+  }
+
   @Test
   void handlePlaceholderEvent_withCreatedEvent_processesSuccessfully() {
     // Arrange

@@ -2,13 +2,21 @@ package {{.GroupID}}.aiagent.config;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 {{- if .AuthEnabled}}
@@ -76,13 +84,61 @@ public class AgentExceptionHandler extends ResponseEntityExceptionHandler {
         return problem;
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
-        logger.warn("Invalid argument: {}", ex.getMessage());
+    /**
+     * Surface Bean Validation failures with the per-field errors that
+     * triggered the 400. The default {@link ResponseEntityExceptionHandler}
+     * implementation returns a generic "Bad Request" body, which forces
+     * callers to dig into server logs to find out <i>which</i> field was
+     * wrong. Echoing the field name plus the validation message back in
+     * the response is safe — Bean Validation messages come from the
+     * application's own constraints, not from user input. The actual
+     * rejected value is <b>not</b> echoed (could contain PII or a
+     * malformed payload that we don't want to reflect verbatim).
+     */
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException ex,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+        Map<String, String> fieldErrors = new LinkedHashMap<>();
+        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
+            fieldErrors.putIfAbsent(
+                fe.getField(),
+                fe.getDefaultMessage() == null ? "invalid" : fe.getDefaultMessage());
+        }
+        List<String> globalErrors = ex.getBindingResult().getGlobalErrors().stream()
+            .map(err -> err.getDefaultMessage() == null ? "invalid" : err.getDefaultMessage())
+            .toList();
+        logger.warn(
+            "Bean Validation failed: fields={} globals={}",
+            fieldErrors.keySet(), globalErrors.size());
 
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST,
-            ex.getMessage() != null ? ex.getMessage() : "Invalid argument");
+            "One or more request fields failed validation.");
+        problem.setTitle("Validation Failed");
+        problem.setType(URI.create("urn:problem-type:validation-failed"));
+        if (!fieldErrors.isEmpty()) {
+            problem.setProperty("fieldErrors", fieldErrors);
+        }
+        if (!globalErrors.isEmpty()) {
+            problem.setProperty("globalErrors", globalErrors);
+        }
+        return ResponseEntity.status(status).body(problem);
+    }
+
+    /**
+     * See GlobalExceptionHandler in the API module — exception
+     * message is logged server-side but not echoed in the response.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
+        logger.warn("Invalid argument at {}: {}", request.getRequestURI(), ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            "The request was rejected as invalid. See server logs for details.");
         problem.setTitle("Bad Request");
         problem.setType(URI.create("urn:problem-type:invalid-argument"));
         problem.setInstance(URI.create(request.getRequestURI()));

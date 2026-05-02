@@ -58,10 +58,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    // Auth scaffolding is generated dormant by default; the e2e suite
-    // explicitly enables the JWT chain so the 401/403 paths can be
-    // exercised end-to-end.
-    properties = "trabuco.auth.enabled=true"
+    // The e2e suite explicitly enables the JWT chain so the 401/403
+    // paths can be exercised end-to-end. The audiences and issuer-uri
+    // properties match SignedJwtTestSupport.DEFAULT_{AUDIENCE,ISSUER}
+    // so legitimate test tokens pass validation; the audience and
+    // issuer-mismatch regression tests below mint tokens that diverge.
+    properties = {
+        "trabuco.auth.enabled=true",
+        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://test.example.com",
+        "spring.security.oauth2.resourceserver.jwt.audiences=https://test-api.example.com"
+    }
 )
 @Import({AuthEndToEndTest.RealJwtConfig.class, AuthEndToEndTest.SecuredTestEndpoints.class})
 {{- if and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))}}
@@ -89,7 +95,13 @@ class AuthEndToEndTest {
     static class RealJwtConfig {
         @Bean
         JwtDecoder jwtDecoder() {
-            return SignedJwtTestSupport.decoderWithPublicKey();
+            // productionLikeDecoder() includes issuer + audience
+            // validators matching SignedJwtTestSupport.DEFAULT_ISSUER /
+            // DEFAULT_AUDIENCE. Required so the audience-mismatch and
+            // wrong-issuer regression tests below actually exercise the
+            // validators (signature-only decoder would let those tokens
+            // through and mask the regression).
+            return SignedJwtTestSupport.productionLikeDecoder();
         }
     }
 
@@ -185,6 +197,47 @@ class AuthEndToEndTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resp.getBody()).isEqualTo("ok-admin-only");
+    }
+
+    /**
+     * Regression backstop for (the empty-default
+     * {@code OIDC_AUDIENCE:} that silently disabled audience
+     * validation). Mints a token whose {@code aud} claim points at a
+     * different service; the resource server's audience validator
+     * must reject it with 401.
+     *
+     * <p>If this test ever passes with 200, the audience validator has
+     * been silently disabled — either {@code OIDC_AUDIENCE} is unset
+     * (which {@code validateAuthDecisionMade} should have caught at
+     * boot) or the JwtDecoder bean is missing the audience validator
+     * (regression in {@code SignedJwtTestSupport.productionLikeDecoder}
+     * or, in production, in Spring Boot's auto-config).
+     */
+    @Test
+    void tokenForDifferentServiceAudienceReturns401() {
+        String wrongAud = SignedJwtTestSupport.tokenWithWrongAudience("user-42", "agent:read");
+        ResponseEntity<Map<String, Object>> resp = exchange("/test/any-authenticated", wrongAud);
+
+        assertThat(resp.getStatusCode())
+            .as("audience validator must reject tokens minted for sister services (token confusion)")
+            .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(resp.getBody().get("type")).isEqualTo("urn:problem-type:unauthorized");
+    }
+
+    /**
+     * Regression backstop for cross-IdP token confusion. Mints a token
+     * whose {@code iss} claim does not match the configured resource-
+     * server issuer; the issuer validator must reject it with 401.
+     */
+    @Test
+    void tokenWithWrongIssuerReturns401() {
+        String wrongIss = SignedJwtTestSupport.tokenWithWrongIssuer("user-42", "agent:read");
+        ResponseEntity<Map<String, Object>> resp = exchange("/test/any-authenticated", wrongIss);
+
+        assertThat(resp.getStatusCode())
+            .as("issuer validator must reject tokens minted by a different IdP")
+            .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(resp.getBody().get("type")).isEqualTo("urn:problem-type:unauthorized");
     }
 
     // ─── helpers ───────────────────────────────────────────────────────

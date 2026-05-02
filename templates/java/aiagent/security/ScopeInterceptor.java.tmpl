@@ -6,6 +6,21 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+/**
+ * Enforces {@link RequireScope} annotations on controller methods. The
+ * gate delegates to {@link ScopeEnforcer#requireScope(String)} which
+ * bridges the legacy API-key path and the JWT path: the effective
+ * caller tier is the higher of (API-key-derived, JWT-derived).
+ *
+ * <p>Operators running JWT-only ({@code app.aiagent.api-key.enabled=false},
+ * {@code trabuco.auth.enabled=true}) do not need to swap
+ * {@code @RequireScope} annotations to {@code @PreAuthorize} — both
+ * resolve through the same tier ladder. {@link ScopeEnforcer} maps
+ * {@code SCOPE_partner} / {@code SCOPE_agent:write} / {@code SCOPE_agent:admin}
+ * to the {@code partner} tier, and {@code SCOPE_public} /
+ * {@code SCOPE_agent:read} (or any authenticated token without a
+ * recognized scope) to the {@code public} tier.
+ */
 @Component
 public class ScopeInterceptor implements HandlerInterceptor {
 

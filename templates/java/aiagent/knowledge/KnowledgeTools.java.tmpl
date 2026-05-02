@@ -6,6 +6,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -21,7 +22,7 @@ import java.util.stream.Collectors;
  * <p>Note: when the vector path is active, Spring AI's
  * {@code RetrievalAugmentationAdvisor} (added to the agent's
  * {@code ChatClient} in Phase B) also injects retrieved context into
- * every prompt automatically. The two paths are complementary —
+ * Every prompt automatically. The two paths are complementary —
  * advisor-based retrieval supplies ambient context, the
  * {@code @Tool} path lets the LLM ask explicit questions.
  */
@@ -45,8 +46,35 @@ public class KnowledgeTools {
             return "I don't have information about that. Please contact support directly.";
         }
 
+        // Tool output flows back to the LLM as a tool result — same
+        // indirect-prompt-injection threat as RAG advisor output (
+        // / ). Reuse FencingDocumentRetriever's sanitizer +
+        // wrapper so every chunk arrives inside <untrusted_document>
+        // fences with role-token bleed redacted. The system prompt in
+        // PrimaryAgent tells the model to disregard imperative content
+        // within those tags.
         return docs.stream()
-            .map(Document::getText)
+            .map(KnowledgeTools::fenceForLlm)
             .collect(Collectors.joining("\n\n"));
+    }
+
+    private static String fenceForLlm(Document doc) {
+        // Re-fence using FencingDocumentRetriever's sanitizer to keep
+        // the rule set in one place — single source of truth for the
+        // fence syntax and role-token redactions.
+        Document fenced = FencingDocumentRetriever.fence(toMutableTextDocument(doc));
+        return fenced.getText();
+    }
+
+    private static Document toMutableTextDocument(Document doc) {
+        // Document is immutable; we need a builder to round-trip text
+        // through fence() without leaking the original unsanitized
+        // text. Just rebuild with the same id/text/metadata.
+        Map<String, Object> md = doc.getMetadata() == null ? Map.of() : doc.getMetadata();
+        return Document.builder()
+            .id(doc.getId() == null ? "unknown" : doc.getId())
+            .text(doc.getText() == null ? "" : doc.getText())
+            .metadata(md)
+            .build();
     }
 }

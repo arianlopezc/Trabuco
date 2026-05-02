@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# top-level least-privilege permissions. Without this
+# block, GITHUB_TOKEN inherits the repository default — typically
+# read+write, which lets a compromised step push commits or modify
+# branch protection. Restricting to contents:read means specific
+# jobs that need more (e.g., to upload SARIF, comment on PRs) must
+# raise it explicitly per-job.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

@@ -17,6 +17,7 @@ public class NoSQLConfig {
   // Add custom beans here if needed (e.g., custom converters, auditing)
 }
 {{- else if eq .NoSQLDatabase "redis"}}
+import {{.GroupID}}.model.entities.PlaceholderDocument;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -25,7 +26,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.repository.configuration.EnableRedisRepositories;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 /**
@@ -33,6 +34,21 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
  *
  * <p>Enables Redis repositories and configures the Redis connection.
  * Uses Lettuce as the default client (thread-safe, async-capable).
+ *
+ * <h2>Serializer choice</h2>
+ *
+ * <p>Earlier releases used {@code GenericJackson2JsonRedisSerializer},
+ * which embeds {@code @class} type markers in the stored JSON and
+ * trusts those markers when reading back. That makes any FQCN on the
+ * classpath an instantiation primitive — a Redis key smuggled in by a
+ * compromised neighbour, a backup-restore that includes hostile
+ * payloads, or an attacker with line-of-sight to the Redis port could
+ * drive deserialization into a gadget class. Since 1.12 the template
+ * uses a type-bound {@link Jackson2JsonRedisSerializer} — the
+ * deserializer always materialises {@code PlaceholderDocument},
+ * regardless of any embedded type hint. Replace the bound type with
+ * your real domain entity when you remove the placeholder, or
+ * Register a per-template serializer per stored type.
  */
 @Configuration
 @EnableRedisRepositories(basePackages = "{{.GroupID}}.nosqldatastore.repository")
@@ -51,9 +67,11 @@ public class NoSQLConfig {
     RedisTemplate<String, Object> template = new RedisTemplate<>();
     template.setConnectionFactory(connectionFactory);
     template.setKeySerializer(new StringRedisSerializer());
-    template.setValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
+    Jackson2JsonRedisSerializer<PlaceholderDocument> typed =
+        new Jackson2JsonRedisSerializer<>(redisObjectMapper, PlaceholderDocument.class);
+    template.setValueSerializer(typed);
     template.setHashKeySerializer(new StringRedisSerializer());
-    template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
+    template.setHashValueSerializer(typed);
     template.afterPropertiesSet();
     return template;
   }
