@@ -9,6 +9,15 @@ import java.util.List;
 
 /**
  * Registration record for an outbound webhook.
+ *
+ * <p>{@link #apiKey()} is the per-webhook HMAC signing secret since
+ * 1.12. The field name is preserved for backwards
+ * compatibility with existing immutable serialization, but the
+ * value is no longer the caller's API key — it is a freshly
+ * generated 256-bit secret that {@code WebhookManager.register}
+ * Returns ONCE in the registration response. The receiver stores
+ * it and uses it to verify the {@code X-Webhook-Signature} HMAC
+ * on every delivery.
  */
 @Value.Immutable
 @ImmutableStyle
@@ -19,6 +28,11 @@ public interface WebhookRegistration {
     String webhookId();
     String url();
     List<String> events();
+
+    /**
+     * Per-webhook HMAC signing secret (NOT the partner's API key
+     * since 1.12). See class-level docs.
+     */
     String apiKey();
 
     @Value.Default

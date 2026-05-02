@@ -438,6 +438,18 @@ func (g *Generator) generateAPIModule() error {
 		return fmt.Errorf("failed to generate SecurityHeadersFilter.java: %w", err)
 	}
 
+	// F-DATA-02 / F-DATA-12: WeakCredentialsWarning emits a loud
+	// boot-time error when the datasource password matches a
+	// well-known weak default outside dev/test profiles.
+	if g.config.HasModule(config.ModuleSQLDatastore) {
+		if err := g.writeTemplate(
+			"java/api/config/WeakCredentialsWarning.java.tmpl",
+			g.javaPath("API", filepath.Join("config", "WeakCredentialsWarning.java")),
+		); err != nil {
+			return fmt.Errorf("failed to generate WeakCredentialsWarning.java: %w", err)
+		}
+	}
+
 	// CorrelationIdFilter.java
 	if err := g.writeTemplate(
 		"java/api/config/CorrelationIdFilter.java.tmpl",
@@ -467,9 +479,13 @@ func (g *Generator) generateAPIModule() error {
 			out  string
 		}{
 			{"java/api/config/security/SecurityConfig.java.tmpl", "SecurityConfig.java"},
+			{"java/api/config/security/MethodSecurityConfig.java.tmpl", "MethodSecurityConfig.java"},
 			{"java/api/config/security/JwtAuthenticationConverter.java.tmpl", "JwtAuthenticationConverter.java"},
 			{"java/api/config/security/AuthProblemDetailHandler.java.tmpl", "AuthProblemDetailHandler.java"},
 			{"java/api/config/security/OpenApiSecurityConfig.java.tmpl", "OpenApiSecurityConfig.java"},
+			// F-AUTH-14: filter-level RequestContextHolder.clear() so
+			// identity doesn't leak across virtual-thread carrier reuse.
+			{"java/api/config/security/RequestContextClearingFilter.java.tmpl", "RequestContextClearingFilter.java"},
 		}
 		for _, f := range apiAuthFiles {
 			out := filepath.Join("config", "security", f.out)
@@ -504,6 +520,16 @@ func (g *Generator) generateAPIModule() error {
 				return fmt.Errorf("failed to generate %s: %w", f.out, err)
 			}
 		}
+	}
+
+	// F-WEB-01 ArchUnit guard — every controller endpoint must declare
+	// an explicit authorization decision. Lives module-local because
+	// the test classpath has to see API's own controller classes.
+	if err := g.writeTemplate(
+		"java/api/test/ApiArchitectureTest.java.tmpl",
+		g.testJavaPath("API", "ApiArchitectureTest.java"),
+	); err != nil {
+		return fmt.Errorf("failed to generate ApiArchitectureTest.java: %w", err)
 	}
 
 	// GlobalExceptionHandler integration test — emitted only when both
@@ -758,6 +784,16 @@ func (g *Generator) generateEventConsumerModule() error {
 		return fmt.Errorf("failed to generate PlaceholderEventListener.java: %w", err)
 	}
 
+	// F-EVENTS-05: in-memory idempotency tracker — bounded LRU; doc
+	// recommends DB/Redis-backed replacement for multi-instance
+	// deployments.
+	if err := g.writeTemplate(
+		"java/eventconsumer/listener/IdempotencyTracker.java.tmpl",
+		g.javaPath("EventConsumer", filepath.Join("listener", "IdempotencyTracker.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate IdempotencyTracker.java: %w", err)
+	}
+
 	// application.yml
 	if err := g.writeTemplate(
 		"java/eventconsumer/resources/application.yml.tmpl",
@@ -814,6 +850,7 @@ func (g *Generator) generateAIAgentModuleAuthFiles() error {
 		out  string
 	}{
 		{"java/aiagent/config/security/AgentSecurityConfig.java.tmpl", "AgentSecurityConfig.java"},
+		{"java/aiagent/config/security/MethodSecurityConfig.java.tmpl", "MethodSecurityConfig.java"},
 		{"java/aiagent/config/security/JwtAuthenticationConverter.java.tmpl", "JwtAuthenticationConverter.java"},
 		{"java/aiagent/config/security/AuthProblemDetailHandler.java.tmpl", "AuthProblemDetailHandler.java"},
 	}
@@ -851,6 +888,9 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/config/McpServerConfig.java.tmpl", filepath.Join("config", "McpServerConfig.java")},
 		{"java/aiagent/config/WebConfig.java.tmpl", filepath.Join("config", "WebConfig.java")},
 		{"java/aiagent/config/AgentExceptionHandler.java.tmpl", filepath.Join("config", "AgentExceptionHandler.java")},
+		// F-WEB-03: AIAgent module's response security headers — same set
+		// the API module's SecurityHeadersFilter applies, plus HSTS.
+		{"java/aiagent/config/AgentSecurityHeadersFilter.java.tmpl", filepath.Join("config", "AgentSecurityHeadersFilter.java")},
 	}
 	if g.config.VectorStoreIsPgVector() {
 		// Second Flyway bean for the vector schema. Only emitted when
@@ -892,7 +932,9 @@ func (g *Generator) generateAIAgentModule() error {
 	securityFiles := []struct{ tmpl, out string }{
 		{"java/aiagent/security/CallerIdentity.java.tmpl", filepath.Join("security", "CallerIdentity.java")},
 		{"java/aiagent/security/CallerContext.java.tmpl", filepath.Join("security", "CallerContext.java")},
+		{"java/aiagent/security/AgentAuthProperties.java.tmpl", filepath.Join("security", "AgentAuthProperties.java")},
 		{"java/aiagent/security/ApiKeyAuthFilter.java.tmpl", filepath.Join("security", "ApiKeyAuthFilter.java")},
+		{"java/aiagent/security/DemoKeyStartupWarning.java.tmpl", filepath.Join("security", "DemoKeyStartupWarning.java")},
 		{"java/aiagent/security/ScopeEnforcer.java.tmpl", filepath.Join("security", "ScopeEnforcer.java")},
 		{"java/aiagent/security/RequireScope.java.tmpl", filepath.Join("security", "RequireScope.java")},
 		{"java/aiagent/security/ScopeInterceptor.java.tmpl", filepath.Join("security", "ScopeInterceptor.java")},
@@ -900,6 +942,10 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/security/InputGuardrailAdvisor.java.tmpl", filepath.Join("security", "InputGuardrailAdvisor.java")},
 		{"java/aiagent/security/OutputGuardrailAdvisor.java.tmpl", filepath.Join("security", "OutputGuardrailAdvisor.java")},
 		{"java/aiagent/security/CorrelationIdFilter.java.tmpl", filepath.Join("security", "CorrelationIdFilter.java")},
+		// F-AIAGENT-06 / F-INFRA-15: gates /mcp/** behind JWT scope or
+		// partner-tier API key. Spring conditional registration ties
+		// the filter's existence to spring.ai.mcp.server.enabled=true.
+		{"java/aiagent/security/AgentMcpAuthorizationFilter.java.tmpl", filepath.Join("security", "AgentMcpAuthorizationFilter.java")},
 	}
 	for _, f := range securityFiles {
 		if err := g.writeTemplate(f.tmpl, g.javaPath("AIAgent", f.out)); err != nil {
@@ -965,6 +1011,13 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/knowledge/KnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "KnowledgeRetriever.java")},
 		{"java/aiagent/knowledge/KeywordKnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "KeywordKnowledgeRetriever.java")},
 		{"java/aiagent/knowledge/KnowledgeTools.java.tmpl", filepath.Join("knowledge", "KnowledgeTools.java")},
+		// F-AIAGENT-04: every retrieved chunk reaches the LLM through
+		// FencingDocumentRetriever, which wraps text in
+		// <untrusted_document> tags and strips role-token bleed. Used
+		// by both the RAG advisor (PrimaryAgent) and the @Tool path
+		// (KnowledgeTools), so emit unconditionally whenever AIAgent
+		// is selected — regardless of whether a vector store is wired.
+		{"java/aiagent/knowledge/FencingDocumentRetriever.java.tmpl", filepath.Join("knowledge", "FencingDocumentRetriever.java")},
 	}
 	if g.config.HasVectorStore() {
 		knowledgeFiles = append(knowledgeFiles,
@@ -1049,6 +1102,13 @@ func (g *Generator) generateAIAgentModule() error {
 	}
 
 	if err := g.writeTemplate(
+		"java/aiagent/resources/application-local-dev.yml.tmpl",
+		g.resourcePath("AIAgent", "application-local-dev.yml"),
+	); err != nil {
+		return fmt.Errorf("failed to generate AIAgent application-local-dev.yml: %w", err)
+	}
+
+	if err := g.writeTemplate(
 		"java/aiagent/resources/logback-spring.xml.tmpl",
 		g.resourcePath("AIAgent", "logback-spring.xml"),
 	); err != nil {
@@ -1077,11 +1137,24 @@ func (g *Generator) generateAIAgentModule() error {
 		{"java/aiagent/test/RateLimiterTest.java.tmpl", filepath.Join("security", "RateLimiterTest.java")},
 		{"java/aiagent/test/OutputGuardrailTest.java.tmpl", filepath.Join("security", "OutputGuardrailTest.java")},
 		{"java/aiagent/test/CorrelationIdFilterTest.java.tmpl", filepath.Join("security", "CorrelationIdFilterTest.java")},
+		// F-AIAGENT-06 / F-INFRA-15: regression cases for the MCP
+		// authorization filter (anonymous → 403, public-tier → 403,
+		// partner-tier → pass, JWT with SCOPE_mcp:invoke → pass).
+		{"java/aiagent/test/AgentMcpAuthorizationFilterTest.java.tmpl", filepath.Join("security", "AgentMcpAuthorizationFilterTest.java")},
 		{"java/aiagent/test/ScratchpadTest.java.tmpl", filepath.Join("brain", "ScratchpadTest.java")},
 		{"java/aiagent/test/ReflectionDecisionTest.java.tmpl", filepath.Join("brain", "ReflectionDecisionTest.java")},
 		{"java/aiagent/test/PlaceholderToolsTest.java.tmpl", filepath.Join("tool", "PlaceholderToolsTest.java")},
 		{"java/aiagent/test/TaskManagerTest.java.tmpl", filepath.Join("task", "TaskManagerTest.java")},
 		{"java/aiagent/test/KeywordKnowledgeRetrieverTest.java.tmpl", filepath.Join("knowledge", "KeywordKnowledgeRetrieverTest.java")},
+		// F-AIAGENT-04: regression cases for the retrieved-chunk
+		// fencing pipeline (close-tag bleed, role-token neutering,
+		// source-attribute escaping).
+		{"java/aiagent/test/FencingDocumentRetrieverTest.java.tmpl", filepath.Join("knowledge", "FencingDocumentRetrieverTest.java")},
+		// F-WEB-01 ArchUnit guard for the AIAgent module — every
+		// REST/protocol controller endpoint must declare an explicit
+		// authorization decision (recognises both @PreAuthorize and
+		// the legacy @RequireScope marker).
+		{"java/aiagent/test/AgentArchitectureTest.java.tmpl", "AgentArchitectureTest.java"},
 	}
 	// PGVector + Postgres + SQLDatastore is the only combination where
 	// the integration test can compile and boot — the test imports
@@ -1103,6 +1176,12 @@ func (g *Generator) generateAIAgentModule() error {
 			// VectorRagIntegrationTest because both rely on the
 			// pgvector Testcontainer image.
 			struct{ tmpl, out string }{"java/aiagent/test/AgentWiringIntegrationTest.java.tmpl", "AgentWiringIntegrationTest.java"},
+			// VectorTenantIsolationTest guards F-AIAGENT-03 / F-DATA-08:
+			// ingest as tenant-A, retrieve as tenant-B, assert B sees
+			// nothing of A's content. Same gating as the other vector
+			// integration tests — needs the pgvector Testcontainer
+			// image and the V1 vector schema migration.
+			struct{ tmpl, out string }{"java/aiagent/test/VectorTenantIsolationTest.java.tmpl", filepath.Join("knowledge", "VectorTenantIsolationTest.java")},
 		)
 	}
 	for _, f := range testFiles {

@@ -3,11 +3,16 @@ package {{.GroupID}}.api.config.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
@@ -31,6 +36,8 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class AuthProblemDetailHandler implements AuthenticationEntryPoint, AccessDeniedHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthProblemDetailHandler.class);
+
     private static final URI UNAUTHORIZED_TYPE = URI.create("urn:problem-type:unauthorized");
     private static final URI FORBIDDEN_TYPE    = URI.create("urn:problem-type:forbidden");
 
@@ -43,12 +50,75 @@ public class AuthProblemDetailHandler implements AuthenticationEntryPoint, Acces
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException authException) throws IOException {
+        // distinguish "no credentials" from "credentials present
+        // but rejected" so callers can react sensibly (refresh vs. login)
+        // without us leaking *why* a token was rejected to the wire.
+        // Categories:
+        //   - missing      → InsufficientAuthenticationException with no
+        //                    cause, or a null/blank Authorization header.
+        //                    Title: "Authentication Required".
+        //   - invalid      → OAuth2AuthenticationException (any error code
+        //                    including invalid_token, insufficient_scope as
+        //                    auth-time, etc.). Title: "Invalid Token".
+        //   - other        → Generic 401 fallback.
+        // The wire body keeps the same shape; we vary only title + the
+        // RFC 6750 WWW-Authenticate challenge so monitoring can split
+        // signals server-side. Server log records the actual reason
+        // (correlation-ID-tagged via MDC) for ops investigation.
+        AuthFailure failure = classify(request, authException);
+
+        log.info(
+            "auth_failure category={} class={} reason={} path={}",
+            failure.category,
+            authException.getClass().getSimpleName(),
+            failure.serverReason,
+            request.getRequestURI()
+        );
+
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
         problem.setType(UNAUTHORIZED_TYPE);
-        problem.setTitle("Unauthorized");
-        problem.setDetail("Bearer token is missing or invalid.");
+        problem.setTitle(failure.title);
+        problem.setDetail(failure.clientDetail);
         problem.setInstance(URI.create(request.getRequestURI()));
+        response.setHeader("WWW-Authenticate", failure.challenge);
         write(response, HttpStatus.UNAUTHORIZED, problem);
+    }
+
+    private record AuthFailure(String category, String title, String clientDetail,
+                               String challenge, String serverReason) {}
+
+    private static AuthFailure classify(HttpServletRequest request, AuthenticationException ex) {
+        String authHeader = request.getHeader("Authorization");
+        boolean noCredentials = authHeader == null || authHeader.isBlank();
+
+        if (ex instanceof OAuth2AuthenticationException oauthEx) {
+            OAuth2Error err = oauthEx.getError();
+            String code = err == null ? "invalid_token" : err.getErrorCode();
+            String challenge = "Bearer realm=\"api\", error=\"" + code + "\"";
+            return new AuthFailure(
+                "invalid",
+                "Invalid Token",
+                "Bearer token was rejected. Re-authenticate to obtain a new token.",
+                challenge,
+                code
+            );
+        }
+        if (noCredentials || ex instanceof InsufficientAuthenticationException) {
+            return new AuthFailure(
+                "missing",
+                "Authentication Required",
+                "Authentication is required to access this resource.",
+                "Bearer realm=\"api\"",
+                noCredentials ? "no_authorization_header" : "insufficient_authentication"
+            );
+        }
+        return new AuthFailure(
+            "unauthorized",
+            "Unauthorized",
+            "Authentication failed.",
+            "Bearer realm=\"api\"",
+            ex.getClass().getSimpleName()
+        );
     }
 
     @Override

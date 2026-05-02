@@ -1,9 +1,10 @@
 package {{.GroupID}}.api.config.security;
 
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -13,48 +14,118 @@ import org.springframework.security.web.SecurityFilterChain;
  * Resource-server configuration for the REST API.
  *
  * <p>Provides two mutually-exclusive {@link SecurityFilterChain} beans
- * gated by the {@code trabuco.auth.enabled} property:
+ * gated by the {@code trabuco.auth.enabled} property. <b>The property
+ * MUST be set explicitly to {@code true} or {@code false}</b>; there is
+ * no implicit default. The {@link #validateAuthDecisionMade()} hook
+ * fails boot if the value is missing — this prevents a service from
+ * silently shipping with no authentication because someone forgot to
+ * set the property.
  *
  * <ul>
- *   <li><b>{@link #oauth2FilterChain} — active when
- *       {@code trabuco.auth.enabled=true}</b>. Stateless JWT validation
- *       against the OIDC issuer specified by
+ *   <li><b>{@link #oauth2FilterChain} — when {@code trabuco.auth.enabled=true}</b>.
+ *       Stateless JWT validation against the OIDC issuer specified by
  *       {@code spring.security.oauth2.resourceserver.jwt.issuer-uri}
  *       (typically backed by the {@code OIDC_ISSUER_URI} env var).
  *       RFC-conformant IdPs (Keycloak, Okta, generic OIDC) work with no
  *       code changes; Auth0 and Cognito need a custom
  *       {@link {{.GroupID}}.shared.auth.JwtClaimsExtractor} bean to handle
  *       non-standard claim layouts. Method-level authorization is
- *       enabled via {@link EnableMethodSecurity}; controllers use
- *       {@code @PreAuthorize("hasAuthority('SCOPE_*')")}.</li>
- *   <li><b>{@link #permitAllFilterChain} — the default</b>. Active when
- *       {@code trabuco.auth.enabled} is missing or {@code false}.
- *       Open chain — every request is permitted, no authentication
- *       enforced. The auth scaffolding ships with the project so it's
- *       discoverable in source, but stays dormant until you flip the
- *       property and configure an issuer URI.</li>
+ *       Enabled via the separate {@link MethodSecurityConfig} class
+ *       (only registered when {@code trabuco.auth.enabled=true} so
+ *       {@code @PreAuthorize} annotations don't break local-dev);
+ *       controllers use {@code @PreAuthorize("hasAuthority('SCOPE_*')")}.</li>
+ *   <li><b>{@link #permitAllFilterChain} — when {@code trabuco.auth.enabled=false}</b>.
+ *       Explicit local-development opt-out: every request permitted,
+ *       no authentication enforced. The auth scaffolding still ships
+ *       with the project — it is just not wired into the request path
+ *       in this mode. Setting this to {@code false} is a deliberate
+ *       acknowledgment that the operator is running locally without an
+ *       IdP; deploying this configuration to any non-local environment
+ *       is the operator's responsibility.</li>
  * </ul>
  *
- * <p>To enable: set {@code trabuco.auth.enabled=true} <b>and</b>
- * configure the issuer URI. See {@code docs/auth.md} for per-provider
- * recipes.
+ * <p>To enable auth: set {@code trabuco.auth.enabled=true} <b>and</b>
+ * configure the issuer URI. To run locally without an IdP:
+ * {@code trabuco.auth.enabled=false}. Anything else fails boot. See
+ * {@code docs/auth.md} for per-provider recipes.
  *
- * <p>SECURITY: a permit-all chain is required because Spring Security
- * on the classpath would otherwise auto-configure HTTP Basic on every
- * endpoint — surprising default behavior that this config replaces with
- * an explicit "open" stance until auth is opted into.
+ * <p>SECURITY: a permit-all chain is required for the local-dev mode
+ * because Spring Security on the classpath would otherwise
+ * auto-configure HTTP Basic on every endpoint — surprising default
+ * behavior that this config replaces with an explicit "open" stance
+ * once the operator has opted in by setting {@code enabled=false}.
  */
 @Configuration
-@EnableMethodSecurity
 public class SecurityConfig {
 
     private final JwtAuthenticationConverter jwtConverter;
     private final AuthProblemDetailHandler authProblemHandler;
+    private final String trabucoAuthEnabled;
+    private final String issuerUri;
+    private final String jwkSetUri;
+    private final String audiences;
 
     public SecurityConfig(JwtAuthenticationConverter jwtConverter,
-                          AuthProblemDetailHandler authProblemHandler) {
+                          AuthProblemDetailHandler authProblemHandler,
+                          @Value("${trabuco.auth.enabled:}") String trabucoAuthEnabled,
+                          @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String issuerUri,
+                          @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}") String jwkSetUri,
+                          @Value("${spring.security.oauth2.resourceserver.jwt.audiences:}") String audiences) {
         this.jwtConverter = jwtConverter;
         this.authProblemHandler = authProblemHandler;
+        this.trabucoAuthEnabled = trabucoAuthEnabled;
+        this.issuerUri = issuerUri;
+        this.jwkSetUri = jwkSetUri;
+        this.audiences = audiences;
+    }
+
+    /**
+     * Refuses to boot when {@code trabuco.auth.enabled} is unset or not a
+     * boolean. When {@code true}, also requires
+     * {@code spring.security.oauth2.resourceserver.jwt.issuer-uri} and
+     * {@code spring.security.oauth2.resourceserver.jwt.audiences} to be
+     * non-empty.
+     *
+     * <p>Why both: an empty {@code audiences} list silently disables
+     * Spring Boot's audience validator
+     * ({@code OAuth2ResourceServerJwtConfiguration.audValidator()}),
+     * making the resource server accept any token the issuer signs —
+     * including tokens minted for sister services. Forcing a non-empty
+     * audience at boot prevents token-confusion attacks without writing
+     * a custom {@link org.springframework.security.oauth2.core.OAuth2TokenValidator}.
+     */
+    @PostConstruct
+    void validateAuthDecisionMade() {
+        if (trabucoAuthEnabled == null || trabucoAuthEnabled.isBlank()) {
+            throw new IllegalStateException(
+                "trabuco.auth.enabled is required and must be set explicitly. " +
+                "Set 'true' (with OIDC_ISSUER_URI and OIDC_AUDIENCE configured) for any deployed environment, " +
+                "or 'false' explicitly for local development. " +
+                "See docs/auth.md for per-provider recipes.");
+        }
+        if (!"true".equalsIgnoreCase(trabucoAuthEnabled) && !"false".equalsIgnoreCase(trabucoAuthEnabled)) {
+            throw new IllegalStateException(
+                "trabuco.auth.enabled must be 'true' or 'false', got: '" + trabucoAuthEnabled + "'.");
+        }
+        if ("true".equalsIgnoreCase(trabucoAuthEnabled)) {
+            boolean hasIssuer = issuerUri != null && !issuerUri.isBlank();
+            boolean hasJwkSet = jwkSetUri != null && !jwkSetUri.isBlank();
+            if (!hasIssuer && !hasJwkSet) {
+                throw new IllegalStateException(
+                    "trabuco.auth.enabled=true requires either " +
+                    "spring.security.oauth2.resourceserver.jwt.issuer-uri (recommended — enables automatic issuer " +
+                    "validation, typically set via OIDC_ISSUER_URI) or " +
+                    "spring.security.oauth2.resourceserver.jwt.jwk-set-uri (signature validation only). " +
+                    "See docs/auth.md for per-provider discovery URLs.");
+            }
+            if (audiences == null || audiences.isBlank()) {
+                throw new IllegalStateException(
+                    "trabuco.auth.enabled=true requires spring.security.oauth2.resourceserver.jwt.audiences " +
+                    "(typically set via OIDC_AUDIENCE). An empty audiences list silently disables Spring Boot's " +
+                    "audience validator, leaving the service open to token-confusion attacks. " +
+                    "Set OIDC_AUDIENCE to your service's API identifier; see docs/auth.md for per-provider recipes.");
+            }
+        }
     }
 
     /**
@@ -75,24 +146,36 @@ public class SecurityConfig {
                 .accessDeniedHandler(authProblemHandler))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
+                    "/health",
                     "/actuator/health/**",
                     "/actuator/info",
-                    "/actuator/prometheus",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",
                     "/api-docs/**",
                     "/error"
                 ).permitAll()
+                // / /actuator/prometheus exposes
+                // per-route URI templates (enumerates {id} paths over
+                // time), JVM internals, and queue depth. Since 1.12 it
+                // requires authentication — operators scraping Prometheus
+                // must use a service-account JWT carrying SCOPE_metrics:read,
+                // or move the actuator endpoints to the management port
+                // (management.server.port) and put it on a private network.
+                .requestMatchers("/actuator/prometheus", "/actuator/metrics/**")
+                    .hasAuthority("SCOPE_metrics:read")
                 .anyRequest().authenticated())
             .build();
     }
 
     /**
-     * Default chain — permits all requests. Active when
-     * {@code trabuco.auth.enabled} is unset or {@code false}.
+     * Local-development chain — permits all requests. Active only when
+     * {@code trabuco.auth.enabled=false} is set explicitly. There is no
+     * {@code matchIfMissing} fallback: the {@link #validateAuthDecisionMade()}
+     * @PostConstruct hook above refuses to boot if the property is unset,
+     * so the operator must opt in to this open stance.
      */
     @Bean
-    @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "false", matchIfMissing = true)
+    @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "false")
     public SecurityFilterChain permitAllFilterChain(HttpSecurity http) throws Exception {
         return http
             .csrf(AbstractHttpConfigurer::disable)

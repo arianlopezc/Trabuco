@@ -4,13 +4,21 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 {{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
 import org.springframework.dao.DataIntegrityViolationException;
@@ -39,7 +47,7 @@ import org.springframework.security.access.AccessDeniedException;
  * Global exception handler for the REST API.
  *
  * <p>Emits RFC 7807 Problem Details ({@code application/problem+json}) for
- * every error response. This handler extends {@link ResponseEntityExceptionHandler}
+ * Every error response. This handler extends {@link ResponseEntityExceptionHandler}
  * to inherit Spring's built-in mappings for framework exceptions
  * (validation, malformed JSON, missing parameters, type mismatches, unsupported
  * methods/media types, missing resources). Only project-specific exceptions
@@ -60,6 +68,49 @@ import org.springframework.security.access.AccessDeniedException;
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+  /**
+   * Surface Bean Validation failures with the per-field errors that
+   * triggered the 400. The default {@link ResponseEntityExceptionHandler}
+   * implementation returns a generic "Bad Request" body, so callers have
+   * to read server logs to find out which field was wrong. Echoing the
+   * field name plus the validation message back is safe — the messages
+   * come from the application's own constraints, not from user input.
+   * The rejected value is <b>not</b> echoed (could contain PII or a
+   * malformed payload that we don't want to reflect verbatim).
+   */
+  @Override
+  protected ResponseEntity<Object> handleMethodArgumentNotValid(
+      MethodArgumentNotValidException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    Map<String, String> fieldErrors = new LinkedHashMap<>();
+    for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
+      fieldErrors.putIfAbsent(
+          fe.getField(),
+          fe.getDefaultMessage() == null ? "invalid" : fe.getDefaultMessage());
+    }
+    List<String> globalErrors = ex.getBindingResult().getGlobalErrors().stream()
+        .map(err -> err.getDefaultMessage() == null ? "invalid" : err.getDefaultMessage())
+        .toList();
+    logger.warn(
+        "Bean Validation failed: fields={} globals={}",
+        fieldErrors.keySet(), globalErrors.size());
+
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+        HttpStatus.BAD_REQUEST,
+        "One or more request fields failed validation.");
+    problem.setTitle("Validation Failed");
+    problem.setType(URI.create("urn:problem-type:validation-failed"));
+    if (!fieldErrors.isEmpty()) {
+      problem.setProperty("fieldErrors", fieldErrors);
+    }
+    if (!globalErrors.isEmpty()) {
+      problem.setProperty("globalErrors", globalErrors);
+    }
+    return ResponseEntity.status(status).body(problem);
+  }
 {{- if .AuthEnabled}}
 
   /**
@@ -283,14 +334,23 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   /**
    * Handle illegal argument exceptions raised by application code.
+   *
+   * <p>the exception message is intentionally NOT echoed to
+   * the response body. {@code IllegalArgumentException} is thrown by
+   * many internal layers (parsers, validators, business rules) and
+   * the messages frequently leak field names, internal IDs, or
+   * regex patterns that are useful to an attacker for enumeration.
+   * The full message is logged server-side. The client gets a
+   * generic "Invalid argument" — operators reading the audit trail
+   * can correlate by request URI + correlation id.
    */
   @ExceptionHandler(IllegalArgumentException.class)
   public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
-    logger.warn("Invalid argument: {}", ex.getMessage());
+    logger.warn("Invalid argument at {}: {}", request.getRequestURI(), ex.getMessage());
 
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(
       HttpStatus.BAD_REQUEST,
-      ex.getMessage() != null ? ex.getMessage() : "Invalid argument");
+      "The request was rejected as invalid. See server logs (correlate by request URI) for details.");
     problem.setTitle("Bad Request");
     problem.setType(URI.create("urn:problem-type:invalid-argument"));
     problem.setInstance(URI.create(request.getRequestURI()));

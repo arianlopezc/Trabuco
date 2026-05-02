@@ -1,21 +1,51 @@
 package {{.GroupID}}.aiagent.protocol;
 
+import jakarta.annotation.security.PermitAll;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Discovery endpoint for agent capabilities.
  *
+ * <p>Carries {@code @PermitAll} as an explicit decision: agent
+ * capabilities are advertisement metadata that other agents fetch
+ * before authenticating (the same role the {@code .well-known}
+ * pattern plays in OAuth2 server discovery). Marking the method
+ * {@code @PermitAll} satisfies the {@code controllerHandlersMustDeclareAuthorization}
+ * ArchUnit guard and makes the public exposure deliberate in source.
+ *
+ * <h2>Why dynamic, not static</h2>
+ *
+ * <p>The {@code .well-known/agent.json} payload is built at request
+ * time from the live configuration: when the MCP server is disabled
+ * ({@code spring.ai.mcp.server.enabled=false}, the default since 1.12),
+ * the {@code "mcp"} entry is dropped from the {@code protocols} list
+ * — clients that auto-configure based on advertisement won't try to
+ * dial a port the operator hasn't enabled. The audit recommendation
+ * for explicitly called out this advertisement-truthfulness
+ * requirement.
+ *
  * TODO: Update the tools list to reflect your domain-specific skills.
  */
 @RestController
 public class DiscoveryController {
 
+    private final boolean mcpEnabled;
+
+    public DiscoveryController(
+            @Value("${spring.ai.mcp.server.enabled:false}") boolean mcpEnabled) {
+        this.mcpEnabled = mcpEnabled;
+    }
+
     // TODO: Replace Map<String, Object> with a typed CapabilitiesResponse DTO for production use.
     @GetMapping("/capabilities")
+    @PermitAll
     public Map<String, Object> capabilities() {
         return Map.of(
             "agent", Map.of(
@@ -29,7 +59,41 @@ public class DiscoveryController {
                 Map.of("tool", "ask_question", "description", "Ask a knowledge-base question", "scope", "public", "status", "active"),
                 Map.of("tool", "ask_specialist", "description", "Ask the specialist agent", "scope", "public", "status", "active")
             ),
-            "protocols", Map.of("rest", "active", "mcp", "active", "a2a", "active")
+            "protocols", protocolsMap()
         );
+    }
+
+    /**
+     * Dynamic A2A agent card. Overrides any static
+     * {@code .well-known/agent.json} resource so the advertisement
+     * always matches live config.
+     */
+    @GetMapping(value = "/.well-known/agent.json", produces = "application/json")
+    @PermitAll
+    public Map<String, Object> agentCard() {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("name", "{{.ProjectNamePascal}} AI Agent");
+        card.put("description",
+            "{{.ProjectNamePascal}} intelligent agent with tool use, multi-agent delegation, "
+            + "and protocol support");
+        card.put("version", "1.0.0");
+        card.put("url", "http://localhost:8080");
+        List<String> protocols = new ArrayList<>();
+        protocols.add("rest");
+        if (mcpEnabled) {
+            protocols.add("mcp");
+        }
+        protocols.add("a2a");
+        card.put("protocols", protocols);
+        card.put("authentication", Map.of("schemes", List.of("bearer")));
+        return card;
+    }
+
+    private Map<String, String> protocolsMap() {
+        Map<String, String> protocols = new LinkedHashMap<>();
+        protocols.put("rest", "active");
+        protocols.put("mcp", mcpEnabled ? "active" : "disabled");
+        protocols.put("a2a", "active");
+        return protocols;
     }
 }

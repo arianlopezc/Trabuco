@@ -65,8 +65,11 @@ Map.of(
 ### 3. Test Retrieval
 
 ```bash
+# Replace <YOUR_PUBLIC_KEY> with a key configured under agent.auth.keys.*.
+# Under SPRING_PROFILES_ACTIVE=local-dev the demo value 'dev-public-key'
+# is loaded automatically. See docs/auth.md.
 curl -X POST http://localhost:8080/ask \
-  -H "Authorization: Bearer public-read-key" \
+  -H "Authorization: Bearer <YOUR_PUBLIC_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"question":"How long does shipping take?"}'
 ```

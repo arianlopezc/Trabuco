@@ -1,0 +1,29 @@
+package {{.GroupID}}.aiagent.config.security;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+
+/**
+ * Activates Spring Security's method-security AOP for the AIAgent
+ * module. Mirrors {@code com.{{.GroupID}}.api.config.security.MethodSecurityConfig};
+ * See that class for the full rationale.
+ *
+ * <p>The AIAgent uses {@code @RequireScope} (custom annotation,
+ * enforced by {@code ScopeInterceptor} via {@code ScopeEnforcer}) for
+ * most of its controllers. Those work under both auth modes because
+ * the bridge derives the caller tier from either the
+ * API-key path or the JWT path. Method security here is for the cases
+ * where a developer chooses Spring Security's {@code @PreAuthorize}
+ * directly (typically for finer-grained scopes that don't fit the
+ * three-tier ladder).
+ *
+ * <p>Conditional on {@code trabuco.auth.enabled=true} so that
+ * local-dev / API-key-only deployments aren't blocked by inert
+ * {@code @PreAuthorize} annotations.
+ */
+@Configuration
+@EnableMethodSecurity
+@ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "true")
+public class MethodSecurityConfig {
+}

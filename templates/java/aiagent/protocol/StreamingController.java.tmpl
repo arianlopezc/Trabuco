@@ -17,9 +17,27 @@ import java.util.Map;
 @RestController
 public class StreamingController {
 
+    /**
+     * per-caller cap on concurrent SSE streams. Each
+     * emitter pins a Tomcat HTTP thread for up to 60 seconds; one
+     * partner opening connections in a loop can exhaust the entire
+     * thread pool and deny service to every other caller. The cap
+     * is keyed by {@link CallerIdentity#keyHash} so partner-A
+     * holding 32 streams doesn't reduce partner-B's quota.
+     *
+     * <p>32 is conservative for a typical partner load; tune via
+     * {@code agent.streaming.max-per-caller} when your traffic
+     * profile demands more. Anonymous callers are excluded by the
+     * {@code @RequireScope("partner")} gate before this counter
+     * even fires.
+     */
+    private static final int MAX_STREAMS_PER_CALLER = 32;
+
     private final TaskManager taskManager;
     private final RateLimiter rateLimiter;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> activeStreamsByCaller =
+        new java.util.concurrent.ConcurrentHashMap<>();
 
     public StreamingController(TaskManager taskManager, RateLimiter rateLimiter) {
         this.taskManager = taskManager;
@@ -29,14 +47,44 @@ public class StreamingController {
     @GetMapping("/tasks/{taskId}/stream")
     @RequireScope("partner")
     public SseEmitter streamTask(@PathVariable String taskId) {
-        rateLimiter.checkRateLimit(CallerContext.get());
+        var caller = CallerContext.get();
+        rateLimiter.checkRateLimit(caller);
 
-        var task = taskManager.getTask(taskId);
-        if (task == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found: " + taskId);
+        // Enforce concurrent-stream cap before allocating
+        // an emitter (which would otherwise grab a Tomcat thread).
+        java.util.concurrent.atomic.AtomicInteger active = activeStreamsByCaller
+            .computeIfAbsent(caller.keyHash(), k -> new java.util.concurrent.atomic.AtomicInteger(0));
+        if (active.incrementAndGet() > MAX_STREAMS_PER_CALLER) {
+            active.decrementAndGet();
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                "SSE stream cap exceeded (" + MAX_STREAMS_PER_CALLER + " concurrent per caller)");
         }
 
+        // Ownership check: getTaskForOwner returns
+        // Optional.empty() if the task doesn't exist OR if the caller
+        // didn't submit it. Both cases throw 404 — same shape, no
+        // information about whether the task UUID exists.
+        var task = taskManager.getTaskForOwner(taskId, caller.keyHash())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found: " + taskId));
+
         SseEmitter emitter = new SseEmitter(60_000L); // 60 second timeout
+
+        // release the per-caller slot when the emitter
+        // closes — by completion, by timeout, or by client
+        // disconnect (the SseEmitter framework calls these callbacks
+        // for each terminal state).
+        Runnable releaseSlot = () -> {
+            int remaining = active.decrementAndGet();
+            if (remaining <= 0) {
+                activeStreamsByCaller.remove(caller.keyHash());
+            }
+        };
+        emitter.onCompletion(releaseSlot);
+        emitter.onTimeout(() -> {
+            releaseSlot.run();
+            emitter.complete();
+        });
+        emitter.onError(t -> releaseSlot.run());
 
         taskManager.subscribe(taskId, event -> {
             try {

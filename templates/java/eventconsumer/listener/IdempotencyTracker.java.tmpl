@@ -1,0 +1,106 @@
+package {{.GroupID}}.eventconsumer.listener;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * Tracks recently-processed event IDs so duplicate deliveries can
+ * be detected and skipped.
+ *
+ * <h2>Why this exists</h2>
+ *
+ * <p>Every supported broker (Kafka with at-least-once delivery,
+ * RabbitMQ with manual acks, SQS, Pub/Sub) can replay a message
+ * after a transient handler failure or a slow ack. Without a
+ * dedup check, the same event side-effect runs twice — over-counted
+ * jobs, double-charged invoices, duplicate downstream emits.
+ *
+ * <h2>This implementation: in-memory LRU</h2>
+ *
+ * <p>Bounded {@link LinkedHashMap} with {@link #DEFAULT_CAPACITY}
+ * entries; oldest evicted on overflow. The cap is the key
+ * trade-off — too small and slow replays escape the dedup window;
+ * too large and memory grows unbounded under high event rate.
+ * The 100k default holds about 1 hour of events at 28 events/s
+ * sustained.
+ *
+ * <h2>Production replacement</h2>
+ *
+ * <p>For multi-instance deployments (where the same event can be
+ * delivered to different consumer instances), this in-memory
+ * tracker is insufficient: consumer A's "seen" state isn't visible
+ * to consumer B. Replace with one of:
+ *
+ * <ul>
+ *   <li><b>DB-backed.</b> An {@code event_idempotency} table with
+ *       {@code event_id PRIMARY KEY} and a TTL column; insert with
+ *       {@code ON CONFLICT DO NOTHING} — a successful insert means
+ *       "first time", a conflict means "duplicate". Reaper job
+ *       drops rows older than the broker's max replay window.</li>
+ *   <li><b>Redis.</b> {@code SET event_id 1 NX EX <ttl>} — atomic,
+ *       one round-trip; expiry tied to the broker's replay window.</li>
+ *   <li><b>Broker-native.</b> Kafka exactly-once-semantics, RabbitMQ
+ *       deduplication plugin, etc. — pushes the problem out of
+ *       application code at the cost of additional broker config.</li>
+ * </ul>
+ *
+ * <p>Swap by providing your own bean of this type with the same
+ * {@link #checkAndMark} contract.
+ */
+@Component
+public class IdempotencyTracker {
+
+    private static final Logger log = LoggerFactory.getLogger(IdempotencyTracker.class);
+
+    private static final int DEFAULT_CAPACITY = 100_000;
+
+    private final Map<String, Boolean> seen;
+
+    public IdempotencyTracker() {
+        this.seen = java.util.Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, false) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                return size() > DEFAULT_CAPACITY;
+            }
+        });
+    }
+
+    /**
+     * Returns {@code true} if the event id has not been seen before
+     * (the caller should proceed to handle it). Returns {@code false}
+     * if the id is already in the LRU window (the caller should skip
+     * processing — the event has already been handled or is being
+     * handled by a peer).
+     *
+     * <p>The check + mark are a single atomic operation under the
+     * synchronized map's lock.
+     */
+    public boolean checkAndMark(String eventId) {
+        if (eventId == null || eventId.isBlank()) {
+            // No id → no dedup possible. Process every time.
+            // This is an integration smell (well-formed events have ids)
+            // — surface it but don't drop the event.
+            log.warn("Event has null/blank eventId; cannot dedup");
+            return true;
+        }
+        synchronized (seen) {
+            if (seen.containsKey(eventId)) {
+                log.debug("Skipping duplicate event delivery: eventId={}", eventId);
+                return false;
+            }
+            seen.put(eventId, Boolean.TRUE);
+            return true;
+        }
+    }
+
+    /** Test helper. */
+    public void reset() {
+        synchronized (seen) {
+            seen.clear();
+        }
+    }
+}

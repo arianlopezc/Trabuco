@@ -5,20 +5,32 @@ import java.util.Map;
 
 public class TaskRecord {
     private final String taskId;
+    /**
+     * Hash of the credential that submitted the task — sourced from
+     * {@code CallerIdentity.keyHash()}. Carries SHA-256 of an API key
+     * for the legacy path or {@code "jwt:<subject>"} for the JWT path.
+     * Compared against the current caller's keyHash by
+     * {@code TaskManager.getTaskForOwner} so {@code tasks/get} and
+     * {@code /tasks/{id}/stream} can't return another caller's task
+     * results (BOLA close).
+     */
+    private final String ownerKeyHash;
     private volatile String status;
     private volatile Map<String, Object> result;
     private volatile String error;
     private final Instant createdAt;
     private volatile Instant updatedAt;
 
-    public TaskRecord(String taskId) {
+    public TaskRecord(String taskId, String ownerKeyHash) {
         this.taskId = taskId;
+        this.ownerKeyHash = ownerKeyHash;
         this.status = "submitted";
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
 
     public String getTaskId() { return taskId; }
+    public String getOwnerKeyHash() { return ownerKeyHash; }
     public String getStatus() { return status; }
     public Map<String, Object> getResult() { return result; }
     public String getError() { return error; }

@@ -18,6 +18,24 @@ func (g *Generator) generateDocs() error {
 		return err
 	}
 
+	// F-INFRA-01: Maven Wrapper. Ships {@code only-script} distribution
+	// (no embedded jar) so the bootstrap script downloads the pinned
+	// Maven distribution at first invocation. Pinning the Maven version
+	// per-project means CI / deployment / local-dev all build with the
+	// same Maven release — closing the "build is non-reproducible" gap.
+	if err := g.writeTemplateExecutable("maven-wrapper/mvnw.tmpl", "mvnw"); err != nil {
+		return fmt.Errorf("failed to generate mvnw: %w", err)
+	}
+	if err := g.writeTemplate("maven-wrapper/mvnw.cmd.tmpl", "mvnw.cmd"); err != nil {
+		return fmt.Errorf("failed to generate mvnw.cmd: %w", err)
+	}
+	if err := g.writeTemplate(
+		"maven-wrapper/.mvn/wrapper/maven-wrapper.properties.tmpl",
+		".mvn/wrapper/maven-wrapper.properties",
+	); err != nil {
+		return fmt.Errorf("failed to generate maven-wrapper.properties: %w", err)
+	}
+
 	// Generate AGENTS.md cross-tool baseline first (when any AI agent is selected).
 	// This is written before per-agent files so that Codex (which uses AGENTS.md as its
 	// primary context file) can overwrite it with the full content from CLAUDE.md.tmpl.

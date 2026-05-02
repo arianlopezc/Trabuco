@@ -53,7 +53,10 @@ func registerInitProject(s *server.MCPServer, version string) {
 				"GENERATES: Multi-module Maven project with Spring Boot 3.4, Spring Data JDBC (not JPA), Immutables for DTOs/entities, "+
 				"Testcontainers for integration tests, Spotless for code formatting, JaCoCo for coverage, and Docker Compose for local development. "+
 				"When API or AIAgent module is selected, also generates OIDC Resource Server scaffolding (dual SecurityFilterChain, JWT validation, "+
-				"RFC 7807 ProblemDetail handlers, Model+Shared auth utilities) — dormant by default, activated by trabuco.auth.enabled=true at runtime. "+
+				"RFC 7807 ProblemDetail handlers, Model+Shared auth utilities). The generated app refuses to boot until trabuco.auth.enabled is set explicitly to 'true' or 'false' " +
+				"(no implicit default — a deliberate guardrail so no service ships with neither chain wired). 'true' requires OIDC_ISSUER_URI AND OIDC_AUDIENCE " +
+				"(audience is required to close the silent-empty-default token-confusion vector); 'false' enables the open chain " +
+				"(local dev, or — for AIAgent — the legacy API-key path only). "+
 				"DOES NOT GENERATE: Identity-provider side (login forms, token issuance, user management), frontend/UI code, GraphQL endpoints, Kubernetes manifests, "+
 				"Terraform/cloud deployment configs, custom business logic, or production database schemas. "+
 				"The project includes placeholder entities that should be replaced with real domain objects. "+
@@ -278,7 +281,7 @@ func registerInitProject(s *server.MCPServer, version string) {
 		}
 		if hasModule(resolvedModules, config.ModuleAPI) || hasModule(resolvedModules, config.ModuleAIAgent) {
 			boundaries = append(boundaries,
-				"Auth scaffolding generated dormant. Activate at runtime by setting trabuco.auth.enabled=true and OIDC_ISSUER_URI. See docs/auth.md.",
+				"Auth scaffolding requires an explicit decision: set trabuco.auth.enabled=true with both OIDC_ISSUER_URI and OIDC_AUDIENCE for any deployed environment (audience is required to close the silent-empty-default token-confusion vector), or =false to opt into the open chain for local dev. The app refuses to boot if unset. See docs/auth.md.",
 			)
 		}
 
@@ -613,7 +616,7 @@ func detectUnsupported(lower string) []string {
 		message  string
 	}{
 		{[]string{"login", "signup", "password reset", "mfa", "user management", "auth server", "oauth server", "idp", "identity provider", "token issuance", "session"},
-			"Authentication identity-provider side (login forms, signup, password reset, MFA, token issuance, user management) is NOT generated. Trabuco's auth scaffolding is resource-server only — pair with a hosted IdP (Keycloak / Auth0 / Okta / Cognito) and validate its tokens via the OIDC chain that ships dormant in API/AIAgent (activate with trabuco.auth.enabled=true). See docs/auth.md."},
+			"Authentication identity-provider side (login forms, signup, password reset, MFA, token issuance, user management) is NOT generated. Trabuco's auth scaffolding is resource-server only — pair with a hosted IdP (Keycloak / Auth0 / Okta / Cognito) and validate its tokens via the OIDC chain in API/AIAgent. The chain requires an explicit boot-time decision (trabuco.auth.enabled=true|false); see docs/auth.md."},
 		{[]string{"frontend", "react", "angular", "vue", "ui", "html", "css", "template"},
 			"Frontend/UI: Trabuco generates backend only. Use a separate frontend framework"},
 		{[]string{"graphql"},

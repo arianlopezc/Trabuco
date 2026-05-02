@@ -53,6 +53,12 @@ import org.springframework.messaging.handler.annotation.Header;
 public class PlaceholderEventListener {
 
   private static final Logger logger = LoggerFactory.getLogger(PlaceholderEventListener.class);
+
+  private final IdempotencyTracker idempotencyTracker;
+
+  public PlaceholderEventListener(IdempotencyTracker idempotencyTracker) {
+    this.idempotencyTracker = idempotencyTracker;
+  }
 {{if .UsesKafka}}
   /**
    * Main event handler with automatic retry and DLT support.
@@ -79,9 +85,21 @@ public class PlaceholderEventListener {
     logger.info("Received event: eventId={}, type={}",
       event.eventId(), event.getClass().getSimpleName());
 
+    // Skip duplicate deliveries (broker replays).
+    if (!idempotencyTracker.checkAndMark(event.eventId())) {
+      return;
+    }
+
     switch (event) {
       case PlaceholderCreatedEvent created -> handleCreated(created);
-      // Add more cases as event types grow
+      // Explicit default that fails loudly. When a new
+      // permitted subtype is added to the sealed PlaceholderEvent
+      // interface, this default fires until the new branch is wired —
+      // surfacing the gap during integration test rather than silently
+      // ack'ing the message and committing the offset / acking RabbitMQ.
+      default -> throw new IllegalStateException(
+        "Unhandled PlaceholderEvent subtype: " + event.getClass().getName()
+        + ". Add a case for it in PlaceholderEventListener.");
     }
   }
 
@@ -110,9 +128,21 @@ public class PlaceholderEventListener {
     logger.info("Received event: eventId={}, type={}",
       event.eventId(), event.getClass().getSimpleName());
 
+    // Skip duplicate deliveries (broker replays).
+    if (!idempotencyTracker.checkAndMark(event.eventId())) {
+      return;
+    }
+
     switch (event) {
       case PlaceholderCreatedEvent created -> handleCreated(created);
-      // Add more cases as event types grow
+      // Explicit default that fails loudly. When a new
+      // permitted subtype is added to the sealed PlaceholderEvent
+      // interface, this default fires until the new branch is wired —
+      // surfacing the gap during integration test rather than silently
+      // ack'ing the message and committing the offset / acking RabbitMQ.
+      default -> throw new IllegalStateException(
+        "Unhandled PlaceholderEvent subtype: " + event.getClass().getName()
+        + ". Add a case for it in PlaceholderEventListener.");
     }
   }
 {{else if .UsesSQS}}

@@ -8,11 +8,18 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -47,23 +54,67 @@ import java.util.UUID;
  */
 public final class SignedJwtTestSupport {
 
-    private static final String DEFAULT_ISSUER = "https://test.example.com";
+    /**
+     * The issuer claim every test-minted JWT carries by default.
+     * Tests configure the resource server with this value via
+     * {@code spring.security.oauth2.resourceserver.jwt.issuer-uri} so
+     * issuer validation passes for legitimate tokens. Use
+     * {@link #tokenWithWrongIssuer} to mint a token that fails
+     * issuer validation.
+     */
+    public static final String DEFAULT_ISSUER = "https://test.example.com";
+
+    /**
+     * The audience claim every test-minted JWT carries by default.
+     * Tests configure the resource server with this value via
+     * {@code spring.security.oauth2.resourceserver.jwt.audiences} so
+     * audience validation passes for legitimate tokens and the
+     * audience-mismatch case can be asserted via
+     * {@link #tokenWithWrongAudience} — the regression backstop for
+     * the silent empty-audience-default bypass.
+     */
+    public static final String DEFAULT_AUDIENCE = "https://test-api.example.com";
+
     private static final RSAKey RSA_KEY = generateKey();
 
     private SignedJwtTestSupport() {}
 
     /**
-     * Mints a signed JWT with the given subject, scopes, and a 1-hour
-     * expiry from now. Signed with the test RSA private key so it
-     * verifies against {@link #decoderWithPublicKey()}.
+     * Mints a signed JWT with the given subject, scopes, the standard
+     * test issuer and audience, and a 1-hour expiry from now. Signed
+     * with the test RSA private key so it verifies against
+     * {@link #decoderWithPublicKey()}.
      */
     public static String signedJwt(String subject, String... scopes) {
-        return sign(subject, scopes, Instant.now().minusSeconds(60), Instant.now().plusSeconds(3600));
+        return sign(DEFAULT_ISSUER, DEFAULT_AUDIENCE, subject, scopes,
+            Instant.now().minusSeconds(60), Instant.now().plusSeconds(3600));
     }
 
     /** Mints a JWT whose {@code exp} claim is in the past. */
     public static String expiredJwt(String subject, String... scopes) {
-        return sign(subject, scopes, Instant.now().minusSeconds(7200), Instant.now().minusSeconds(3600));
+        return sign(DEFAULT_ISSUER, DEFAULT_AUDIENCE, subject, scopes,
+            Instant.now().minusSeconds(7200), Instant.now().minusSeconds(3600));
+    }
+
+    /**
+     * Mints a JWT whose {@code aud} claim points at a different
+     * service. Used by audience-mismatch regression tests — proves
+     * the audience validator rejects tokens minted for sister
+     * services (token-confusion attack vector).
+     */
+    public static String tokenWithWrongAudience(String subject, String... scopes) {
+        return sign(DEFAULT_ISSUER, "https://other-service.example.com", subject, scopes,
+            Instant.now().minusSeconds(60), Instant.now().plusSeconds(3600));
+    }
+
+    /**
+     * Mints a JWT whose {@code iss} claim does not match the
+     * configured resource-server issuer. Used to assert the issuer
+     * validator rejects cross-IdP tokens.
+     */
+    public static String tokenWithWrongIssuer(String subject, String... scopes) {
+        return sign("https://wrong-issuer.example.com", DEFAULT_AUDIENCE, subject, scopes,
+            Instant.now().minusSeconds(60), Instant.now().plusSeconds(3600));
     }
 
     /**
@@ -74,7 +125,7 @@ public final class SignedJwtTestSupport {
     public static String tokenSignedWithDifferentKey(String subject, String... scopes) {
         try {
             RSAKey otherKey = new RSAKeyGenerator(2048).keyID("other-kid").generate();
-            return signWithKey(otherKey, subject, scopes,
+            return signWithKey(otherKey, DEFAULT_ISSUER, DEFAULT_AUDIENCE, subject, scopes,
                 Instant.now().minusSeconds(60), Instant.now().plusSeconds(3600));
         } catch (JOSEException e) {
             throw new RuntimeException("failed to generate alternate key", e);
@@ -82,8 +133,14 @@ public final class SignedJwtTestSupport {
     }
 
     /**
-     * Returns a {@link JwtDecoder} that validates tokens against the
-     * test RSA public key. Use as a @Bean override in @TestConfiguration.
+     * Returns a signature-only {@link JwtDecoder} — validates the RSA
+     * signature against the test public key but performs no claim
+     * validation (no issuer check, no audience check). Use only in
+     * tests that intentionally bypass claim validation.
+     *
+     * <p>For end-to-end tests that should mirror production behaviour
+     * — including issuer and audience validation — use
+     * {@link #productionLikeDecoder()}.
      */
     public static JwtDecoder decoderWithPublicKey() {
         try {
@@ -93,15 +150,44 @@ public final class SignedJwtTestSupport {
         }
     }
 
-    private static String sign(String subject, String[] scopes, Instant iat, Instant exp) {
-        return signWithKey(RSA_KEY, subject, scopes, iat, exp);
+    /**
+     * Returns a {@link JwtDecoder} that mirrors production: signature
+     * + default validators (timestamp) + issuer validator (matches
+     * {@link #DEFAULT_ISSUER}) + audience validator (matches
+     * {@link #DEFAULT_AUDIENCE}).
+     *
+     * <p>This is the right decoder for end-to-end tests that should
+     * exercise the same claim-validation chain Spring Boot's
+     * auto-config builds for production. Use as a @Bean override in
+     * @TestConfiguration:
+     *
+     * <pre>{@code
+     * @Bean JwtDecoder jwtDecoder() {
+     *     return SignedJwtTestSupport.productionLikeDecoder();
+     * }
+     * }</pre>
+     */
+    public static JwtDecoder productionLikeDecoder() {
+        NimbusJwtDecoder decoder = (NimbusJwtDecoder) decoderWithPublicKey();
+        OAuth2TokenValidator<Jwt> issuerValidator = new JwtIssuerValidator(DEFAULT_ISSUER);
+        OAuth2TokenValidator<Jwt> audienceValidator = new JwtClaimValidator<List<String>>(
+            "aud", aud -> aud != null && aud.contains(DEFAULT_AUDIENCE));
+        OAuth2TokenValidator<Jwt> defaults = JwtValidators.createDefault();
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+            defaults, issuerValidator, audienceValidator));
+        return decoder;
     }
 
-    private static String signWithKey(RSAKey key, String subject, String[] scopes, Instant iat, Instant exp) {
+    private static String sign(String issuer, String audience, String subject, String[] scopes, Instant iat, Instant exp) {
+        return signWithKey(RSA_KEY, issuer, audience, subject, scopes, iat, exp);
+    }
+
+    private static String signWithKey(RSAKey key, String issuer, String audience, String subject, String[] scopes, Instant iat, Instant exp) {
         try {
             JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject(subject)
-                .issuer(DEFAULT_ISSUER)
+                .issuer(issuer)
+                .audience(audience)
                 .issueTime(Date.from(iat))
                 .expirationTime(Date.from(exp))
                 .jwtID(UUID.randomUUID().toString())

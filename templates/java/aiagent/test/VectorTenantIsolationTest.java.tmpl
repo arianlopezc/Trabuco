@@ -1,0 +1,163 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.ai.document.Document;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.TestPropertySource;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Regression guard for / — vector store
+ * tenant isolation.
+ *
+ * <p>Before the fix, {@code DocumentIngestionService} stored chunks
+ * without a {@code tenant_id} stamp and {@code VectorKnowledgeRetriever}
+ * issued unfiltered {@code SearchRequest}s. The result: tenant-A's
+ * chunks were retrievable by tenant-B if the embedding similarity was
+ * high enough. This test ingests as tenant-A, retrieves as tenant-B,
+ * and asserts B sees nothing of A's content even when the query is a
+ * near-perfect semantic match for A's chunks.
+ *
+ * <p>Boots a real {@code pgvector/pgvector:pg16} container so the
+ * Spring AI {@code FilterExpressionBuilder.eq("tenant_id", ...)}
+ * pushdown is exercised end-to-end (including the
+ * {@code documents_tenant_id} expression index from
+ * {@code V1__create_vector_schema.sql}).
+ *
+ * <p>Skipped when Docker is unavailable.
+ */
+@SpringBootTest
+@Testcontainers(disabledWithoutDocker = true)
+@TestPropertySource(properties = {
+    "spring.ai.vectorstore.pgvector.dimensions=384",
+    "spring.ai.vectorstore.pgvector.initialize-schema=false",
+    "spring.ai.anthropic.api-key=test-key-not-used",
+    "trabuco.auth.enabled=false",
+    // ApiKeyAuthFilter#validateKeysConfigured refuses to boot when the
+    // filter is enabled (default) and no keys are configured. The
+    // ingest/retrieve calls below set CallerContext explicitly, so the
+    // filter runtime never matters — but the bean still has to load.
+    "agent.auth.keys.unused.tier=public",
+    "agent.auth.keys.unused.label=unused"
+})
+class VectorTenantIsolationTest {
+
+    @Container
+    @ServiceConnection
+    static final PostgreSQLContainer pgvector =
+        new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg16")
+            .asCompatibleSubstituteFor("postgres"));
+
+    @Autowired
+    private DocumentIngestionService ingestionService;
+
+    @Autowired
+    private KnowledgeRetriever knowledgeRetriever;
+
+    @AfterEach
+    void clearCaller() {
+        // Tests below set CallerContext on the test thread; clear so a
+        // missed clear in one case can't leak into the next.
+        CallerContext.clear();
+    }
+
+    @Test
+    void retrieveAsTenantBCannotSeeTenantAsChunks() {
+        // 1. Ingest as tenant-A.
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("tenant-a-hash")
+            .keyLabel("tenant-a")
+            .tenantId("tenant-a")
+            .build());
+        ingestionService.ingest(
+            "The quarterly revenue forecast for Acme Corp is confidential.",
+            Map.of("source", "tenant-a-doc"));
+        CallerContext.clear();
+
+        // 2. Retrieve as tenant-B with a query that semantically matches
+        //    tenant-A's chunk. Without the fix, B sees A's content.
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("tenant-b-hash")
+            .keyLabel("tenant-b")
+            .tenantId("tenant-b")
+            .build());
+        List<Document> hits = knowledgeRetriever.retrieve(
+            "Acme Corp revenue forecast", 5);
+
+        assertThat(hits)
+            .as("tenant-B must not retrieve tenant-A's chunks — regression")
+            .allSatisfy(d -> assertThat(d.getMetadata().get("tenant_id"))
+                .as("every returned chunk must belong to tenant-B")
+                .isEqualTo("tenant-b"));
+    }
+
+    @Test
+    void retrieveAsTenantASeesItsOwnChunks() {
+        // Same tenant on both sides — the filter must NOT block legitimate
+        // intra-tenant retrieval. This is the dual of the previous test:
+        // a too-aggressive filter would silently break the happy path.
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("tenant-a2-hash")
+            .keyLabel("tenant-a2")
+            .tenantId("tenant-a2")
+            .build());
+        ingestionService.ingest(
+            "Project Phoenix kickoff is scheduled for Q3.",
+            Map.of("source", "phoenix-doc"));
+
+        List<Document> hits = knowledgeRetriever.retrieve("Phoenix kickoff", 5);
+
+        assertThat(hits)
+            .as("tenant-A2 must retrieve its own chunks")
+            .isNotEmpty();
+        assertThat(hits)
+            .as("every returned chunk must belong to tenant-A2")
+            .allSatisfy(d -> assertThat(d.getMetadata().get("tenant_id")).isEqualTo("tenant-a2"));
+    }
+
+    @Test
+    void callerSuppliedTenantIdInMetadataIsOverwritten() {
+        // A malicious caller tries to inject another tenant's id via
+        // Request metadata. The server must strip it.
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("tenant-c-hash")
+            .keyLabel("tenant-c")
+            .tenantId("tenant-c")
+            .build());
+        // Caller claims tenant-victim — server must overwrite with tenant-c.
+        ingestionService.ingest(
+            "Stealth document.",
+            Map.of("tenant_id", "tenant-victim", "source", "spoof-test"));
+        CallerContext.clear();
+
+        // tenant-victim must see nothing — the spoofed id was stripped.
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("tenant-victim-hash")
+            .keyLabel("tenant-victim")
+            .tenantId("tenant-victim")
+            .build());
+        List<Document> victimHits = knowledgeRetriever.retrieve("Stealth document", 5);
+
+        assertThat(victimHits)
+            .as("tenant-victim must not see chunks ingested under spoofed metadata — server-side stamping wins")
+            .noneSatisfy(d -> assertThat(d.getText()).contains("Stealth document"));
+    }
+}

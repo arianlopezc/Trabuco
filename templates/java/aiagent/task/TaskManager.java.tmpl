@@ -6,20 +6,51 @@ import java.time.Instant;
 import {{.GroupID}}.aiagent.task.ImmutableTaskEvent;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
 
+/**
+ * In-memory task tracker.
+ *
+ * <p>the task and subscriber maps are bounded — without a
+ * cap, a misbehaving caller (or upstream loop) could submit tasks
+ * indefinitely and exhaust heap. Reaching {@link #TASK_REGISTRY_MAX}
+ * throws an {@link IllegalStateException}; reaching
+ * {@link #SUBSCRIBERS_MAX_PER_TASK} drops new subscribers with a
+ * warn-log. For multi-process deployments, replace this in-memory
+ * store with a database-backed task table that enforces caps via
+ * a count query.
+ */
 @Component
 public class TaskManager {
+
+    private static final int TASK_REGISTRY_MAX = 10_000;
+
+    private static final int SUBSCRIBERS_MAX_PER_TASK = 32;
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TaskManager.class);
 
     private final ConcurrentHashMap<String, TaskRecord> tasks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, List<Consumer<TaskEvent>>> subscribers = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public String submitTask(Callable<Map<String, Object>> work) {
+    /**
+     * Submits a task and records the owning credential hash so
+     * {@link #getTaskForOwner} can reject cross-caller polls. Pass
+     * {@code CallerIdentity.keyHash()} for {@code ownerKeyHash} —
+     * SHA-256 of the API key for the legacy path, or
+     * {@code "jwt:<subject>"} for the JWT path.
+     */
+    public String submitTask(Callable<Map<String, Object>> work, String ownerKeyHash) {
+        if (tasks.size() >= TASK_REGISTRY_MAX) {
+            throw new IllegalStateException(
+                "Task registry is full (max " + TASK_REGISTRY_MAX + " active tasks). "
+                + "Wait for completed tasks to be reaped, or migrate to a persistent store.");
+        }
         String taskId = "TASK-" + UUID.randomUUID();
-        var record = new TaskRecord(taskId);
+        var record = new TaskRecord(taskId, ownerKeyHash);
         tasks.put(taskId, record);
 
         executor.submit(() -> {
@@ -40,12 +71,40 @@ public class TaskManager {
         return taskId;
     }
 
+    /**
+     * Internal lookup with no authorization. Use only from same-VM
+     * code that has already validated authorization (e.g., the task
+     * executor itself). For HTTP-layer access, use
+     * {@link #getTaskForOwner}.
+     */
     public TaskRecord getTask(String taskId) {
         return tasks.get(taskId);
     }
 
+    /**
+     * Authorization-aware lookup for HTTP-layer access. Returns
+     * {@link Optional#empty} when the task does not exist <b>or</b>
+     * when the caller's {@code keyHash} does not match the recorded
+     * owner — the two cases are indistinguishable to the caller, so
+     * an attacker enumerating UUIDs cannot tell whether a given
+     * task_id exists. This is the BOLA close-out for {@code tasks/get}
+     * and {@code /tasks/{id}/stream}.
+     */
+    public Optional<TaskRecord> getTaskForOwner(String taskId, String ownerKeyHash) {
+        TaskRecord record = tasks.get(taskId);
+        if (record == null) return Optional.empty();
+        if (!record.getOwnerKeyHash().equals(ownerKeyHash)) return Optional.empty();
+        return Optional.of(record);
+    }
+
     public void subscribe(String taskId, Consumer<TaskEvent> listener) {
-        subscribers.computeIfAbsent(taskId, k -> new CopyOnWriteArrayList<>()).add(listener);
+        var list = subscribers.computeIfAbsent(taskId, k -> new CopyOnWriteArrayList<>());
+        if (list.size() >= SUBSCRIBERS_MAX_PER_TASK) {
+            log.warn("Subscriber cap reached for task {} ({} subscribers); dropping new subscription",
+                taskId, SUBSCRIBERS_MAX_PER_TASK);
+            return;
+        }
+        list.add(listener);
     }
 
     public void unsubscribe(String taskId, Consumer<TaskEvent> listener) {

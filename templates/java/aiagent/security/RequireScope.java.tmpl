@@ -5,6 +5,24 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+/**
+ * Tier-based authorization annotation. Enforced by
+ * {@link ScopeInterceptor} via {@link ScopeEnforcer}, which bridges
+ * the legacy API-key path ({@link CallerContext}-derived identity) and
+ * the JWT path
+ * ({@link org.springframework.security.core.context.SecurityContextHolder}-derived
+ * identity).
+ *
+ * <p>Tier ladder: {@code anonymous} &lt; {@code public} &lt; {@code partner}.
+ * The effective caller is the higher of the two sources, so
+ * {@code @RequireScope("partner")} works under either auth mode and
+ * during hybrid mode (both filters active).
+ *
+ * <p>Use this annotation or Spring Security's
+ * {@code @PreAuthorize("hasAuthority('SCOPE_*')")} interchangeably —
+ * they resolve through the same gate. There is no need to swap
+ * annotations when migrating from API-key to JWT.
+ */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface RequireScope {

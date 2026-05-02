@@ -359,7 +359,11 @@ HOW TO ENABLE VECTOR RAG (RETRIEVAL-AUGMENTED GENERATION):
      top-K (default 4) prepends the prompt as context.
 4. Ingest documents via DocumentIngestionService.ingest(text, metadata)
    programmatically, or POST /ingest (gated by @RequireScope("partner")
-   on the legacy API-key path).
+   AND the agent.ingest.enabled property — default false, so the
+   endpoint does not register until the operator opts in). Per-document
+   bounds: 1 MB text, 32 metadata keys; rate-limited per caller; audit
+   logged at INFO. Per-tenant quotas + content scanning are
+   operator-policy decisions — wire them into DocumentIngestionService.
 5. PGVector + Postgres: an integration test (VectorRagIntegrationTest)
    boots a real pgvector/pgvector:pg16 Testcontainer and asserts the
    ingest → similarity-search round-trip.
@@ -391,9 +395,10 @@ auth → scope → rate limit → guardrail → agent → output guardrail
      existing @RequireScope annotation.
    Both run side-by-side; flip either property to migrate. Default
    state matches pre-1.11 AIAgent behavior (API-key on, JWT dormant).
-2. Scope: @PreAuthorize("hasAuthority('SCOPE_*')") on @Tool methods
-   for the JWT path; @RequireScope("public") + ScopeInterceptor for
-   the legacy path.
+2. Scope: @PreAuthorize("hasAuthority('SCOPE_*')") and @RequireScope("public"|"partner")
+   work interchangeably. Since 1.12, ScopeEnforcer bridges the two so
+   either annotation resolves through the same tier ladder under either
+   auth mode (API-key, JWT-only, or hybrid).
 3. Rate limit: throttle requests per user/API key
 4. Input guardrail: validate the prompt against domain rules
 5. Agent: process the request with the LLM

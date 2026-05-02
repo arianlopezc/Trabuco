@@ -1,20 +1,25 @@
 package {{.GroupID}}.aiagent.security;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import {{.GroupID}}.aiagent.security.AgentAuthProperties.KeyConfig;
 import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -32,23 +37,78 @@ import java.util.Map;
  * <p>The two paths coexist: requests with JWT bearer tokens are
  * validated by the OIDC resource server (only when
  * {@code trabuco.auth.enabled=true}); requests with API-key bearer
- * tokens flow through this filter. To migrate fully to JWT-only, set
- * {@code app.aiagent.api-key.enabled=false} and replace
- * {@code @RequireScope} annotations with
- * {@code @PreAuthorize("hasAuthority('SCOPE_*')")}.
+ * tokens flow through this filter. {@code @RequireScope} works under
+ * <b>either</b> auth mode — {@link ScopeEnforcer} bridges the two
+ * identity sources, so migrating to JWT-only does not require
+ * swapping annotations on existing controllers.
+ *
+ * <p>Key configuration is sourced from {@link AgentAuthProperties}
+ * (bound from {@code agent.auth.keys.*}). Earlier releases baked
+ * placeholder keys ({@code public-read-key}, {@code partner-secret-key})
+ * into this class as a {@code Map.of(...)} literal — those are
+ * <b>removed</b>. The filter refuses to boot when it is enabled but no
+ * keys are configured (see {@link #validateKeysConfigured}). For local
+ * development, activate the {@code local-dev} profile to load demo
+ * keys from {@code application-local-dev.yml}.
  */
 @Component
 @ConditionalOnProperty(name = "app.aiagent.api-key.enabled", havingValue = "true", matchIfMissing = true)
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
-    // TODO: Replace with a configuration bean or externalized config for production use.
-    // These are placeholder keys for development only.
-    private static final Map<String, KeyEntry> API_KEYS = Map.of(
-        "public-read-key", new KeyEntry("public", "public-read-key"),
-        "partner-secret-key", new KeyEntry("partner", "partner-secret-key")
-    );
+    private static final Logger log = LoggerFactory.getLogger(ApiKeyAuthFilter.class);
 
-    private record KeyEntry(String tier, String label) {}
+    /**
+     * Pre-hashed key registry. The original plaintext keys are dropped
+     * from the long-lived bean state at construction time — only their
+     * SHA-256 digests remain. This minimizes blast radius if a heap dump
+     * leaks (a separate concern from the authentication path itself).
+     *
+     * <p>Iteration order is preserved (LinkedHashMap) so the
+     * constant-time comparison loop in {@link #lookup(String)} touches
+     * the same number of entries regardless of which inbound key
+     * arrives — the attacker cannot infer order-of-registration via
+     * response timing.
+     */
+    private final Map<byte[], KeyConfig> apiKeysByHash;
+
+    /**
+     * Snapshot of registered key labels — used by the boot-time
+     * info log only; no auth logic touches it.
+     */
+    private final java.util.List<String> registeredLabels;
+
+    public ApiKeyAuthFilter(AgentAuthProperties props) {
+        Map<byte[], KeyConfig> hashed = new LinkedHashMap<>();
+        for (Map.Entry<String, KeyConfig> e : props.keys().entrySet()) {
+            hashed.put(sha256Bytes(e.getKey()), e.getValue());
+        }
+        this.apiKeysByHash = java.util.Collections.unmodifiableMap(hashed);
+        this.registeredLabels = props.keys().values().stream().map(KeyConfig::label).toList();
+    }
+
+    /**
+     * Refuses to boot when the filter is active but no keys are
+     * configured. Without this guard, the filter would silently 401
+     * Every request — an opaque failure mode. Forcing the operator to
+     * either provide keys or disable the filter ensures the auth
+     * decision is explicit. Additionally logs a WARN when more than
+     * one key shares the same value, which would otherwise let
+     * higher-tier identities silently shadow lower-tier ones.
+     */
+    @PostConstruct
+    void validateKeysConfigured() {
+        if (apiKeysByHash.isEmpty()) {
+            throw new IllegalStateException(
+                "ApiKeyAuthFilter is enabled (app.aiagent.api-key.enabled=true, the default) but no keys are configured. " +
+                "Populate agent.auth.keys.<key>.tier and agent.auth.keys.<key>.label in application.yml " +
+                "(or any active profile / env source), or set app.aiagent.api-key.enabled=false to disable the filter. " +
+                "For local development, activate the local-dev profile (SPRING_PROFILES_ACTIVE=local-dev) to load demo keys. " +
+                "See docs/auth.md.");
+        }
+        log.info("ApiKeyAuthFilter loaded {} key(s); labels: {}",
+            apiKeysByHash.size(),
+            registeredLabels);
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -63,22 +123,27 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
             }
 
             if (!authHeader.toLowerCase().startsWith("bearer ")) {
-                sendError(response, HttpStatus.FORBIDDEN, "Invalid API key");
+                // / 401 (not 403) for missing /
+                // malformed credentials, with WWW-Authenticate so RFC
+                // 7235 clients can self-correct. 403 is reserved for
+                // the credential-recognised-but-insufficient case.
+                sendError(response, HttpStatus.UNAUTHORIZED, "Bearer scheme required");
                 return;
             }
 
             String key = authHeader.substring(7).trim();
-            KeyEntry entry = API_KEYS.get(key);
+            byte[] inboundHash = sha256Bytes(key);
+            KeyConfig entry = lookup(inboundHash);
 
             if (entry == null) {
-                sendError(response, HttpStatus.FORBIDDEN, "Invalid API key");
+                sendError(response, HttpStatus.UNAUTHORIZED, "Invalid API key");
                 return;
             }
 
-            String keyHash = sha256(key);
+            String keyHashHex = toHex(inboundHash);
             CallerContext.set(ImmutableCallerIdentity.builder()
                 .tier(entry.tier())
-                .keyHash(keyHash)
+                .keyHash(keyHashHex)
                 .keyLabel(entry.label())
                 .build());
             chain.doFilter(request, response);
@@ -89,19 +154,51 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     private void sendError(HttpServletResponse response, HttpStatus status, String message) throws IOException {
         response.setStatus(status.value());
+        if (status == HttpStatus.UNAUTHORIZED) {
+            // RFC 7235 §3.1 requires this header on 401 so
+            // clients know which scheme to retry with.
+            response.setHeader("WWW-Authenticate", "Bearer realm=\"agent\", error=\"invalid_token\"");
+        }
         response.setContentType("application/json");
         response.getWriter().write("{\"error\":\"" + message + "\"}");
     }
 
-    private String sha256(String input) {
+    /**
+     * Constant-time lookup. Iterates the full registered-key set,
+     * comparing each registered hash against the inbound hash with
+     * {@link MessageDigest#isEqual} (which short-circuit-resistant by
+     * design). Without the loop, {@code Map.get} would short-circuit
+     * on the first mismatched bucket — leaking, via timing, information
+     * about whether any registered key shares the inbound hash's prefix.
+     *
+     * <p>O(n) where n is the number of registered keys. For the
+     * scaffolding's expected scale (a handful of partner keys), this
+     * is microseconds. If your deployment has thousands of keys,
+     * front this filter with a token-introspection endpoint instead.
+     */
+    private KeyConfig lookup(byte[] inboundHash) {
+        KeyConfig found = null;
+        for (Map.Entry<byte[], KeyConfig> e : apiKeysByHash.entrySet()) {
+            // Don't break on match: complete the full pass so timing
+            // does not leak which entry (or whether any) matched.
+            if (MessageDigest.isEqual(e.getKey(), inboundHash)) {
+                found = e.getValue();
+            }
+        }
+        return found;
+    }
+
+    private static byte[] sha256Bytes(String input) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
-            for (byte b : hash) hex.append(String.format("%02x", b));
-            return hex.toString();
+            return MessageDigest.getInstance("SHA-256").digest(input.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder hex = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) hex.append(String.format("%02x", b));
+        return hex.toString();
     }
 }

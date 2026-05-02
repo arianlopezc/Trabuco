@@ -22,31 +22,52 @@ AIAgent/
 
 **File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/protocol/A2AController.java`
 
-In the `handleTasksSend` method, add a case to the switch:
+In the `handleTasksSend` method, add a case to the switch. The
+**baseline scope** for every JSON-RPC method is enforced declaratively
+in `METHOD_SCOPE` at dispatch (`tasks/send` defaults to `public`). You
+only call `ScopeEnforcer.requireScope("partner", caller)` inside a
+case when the skill needs a stricter tier than the baseline. Always
+pass `caller.keyHash()` to `submitTask` so `tasks/get` can verify
+ownership later.
 
 ```java
 case "{skill_name}" -> {
-    ScopeEnforcer.requireScope("{scope}", caller);
+    // Baseline "public" already enforced at dispatch — uncomment the
+    // line below only when this skill must require partner-tier auth.
+    // ScopeEnforcer.requireScope("partner", caller);
     String param = (String) input.get("{param_name}");
-    String taskId = taskManager.submitTask(() ->
-        Map.of("result", toolClass.{method}(param)));
+    String taskId = taskManager.submitTask(
+        () -> Map.of("result", toolClass.{method}(param)),
+        caller.keyHash());
     yield JsonRpcResponse.success(rpcId,
         Map.of("task_id", taskId, "status", "submitted"));
 }
 ```
 
-**Scope options (legacy API-key path, governed by `app.aiagent.api-key.enabled`):**
-- `"anonymous"` — no authentication required
-- `"public"` — requires public-read-key
-- `"partner"` — requires partner-secret-key
+**Adding a brand-new JSON-RPC method (sibling of `tasks/send` /
+`tasks/chat` / `tasks/get`):** register it in `A2AController.METHOD_SCOPE`
+with its baseline scope. Methods not in the map are rejected at
+dispatch with `-32601 Unknown method` — fail-closed by design.
 
-**JWT path (governed by `trabuco.auth.enabled=true` + `OIDC_ISSUER_URI`):**
-When the OIDC chain is active, A2A callers send a JWT bearer token instead
-of an API key. Replace the `ScopeEnforcer.requireScope(...)` line with
-`@PreAuthorize("hasAuthority('SCOPE_<scope>')")` on the underlying tool
-method, or with a programmatic `SecurityContextHolder` check inside the
-handler. The two systems coexist; pick one per skill or run both during
-migration.
+**Scope options (legacy API-key path, governed by `app.aiagent.api-key.enabled`):**
+- `"public"` — requires a `public`-tier key (see `agent.auth.keys.*` in your config)
+- `"partner"` — requires a `partner`-tier key (see `agent.auth.keys.*` in your config)
+
+> Trabuco no longer ships seeded keys. Configure `agent.auth.keys.<your-bearer-value>.tier`
+> in `application.yml` (or any active profile / env source), or activate the
+> `local-dev` profile (`SPRING_PROFILES_ACTIVE=local-dev`) to load the demo
+> set (`dev-public-key`, `dev-partner-key`). See `docs/auth.md`.
+
+**JWT path (governed by `trabuco.auth.enabled=true` + `OIDC_ISSUER_URI` + `OIDC_AUDIENCE`):**
+When the OIDC chain is active, A2A callers send a JWT bearer token
+instead of an API key. You don't need to swap annotations:
+`ScopeEnforcer` bridges the two systems by deriving the effective tier
+from the JWT's authorities when no API-key matched (`SCOPE_partner` /
+`SCOPE_agent:write` / `SCOPE_agent:admin` → `partner`; `SCOPE_public`
+/ `SCOPE_agent:read` or any authenticated token → `public`). Existing
+`@RequireScope` calls work transparently. Use Spring Security's
+`@PreAuthorize("hasAuthority('SCOPE_<scope>')")` only when you need
+finer-grained scopes that don't map to the tier ladder.
 
 ### 2. Update Agent Card
 
@@ -67,15 +88,19 @@ Add to DiscoveryController's capabilities list.
 ### 4. Test via curl
 
 ```bash
+# Replace <YOUR_PUBLIC_KEY> with a key configured under
+# agent.auth.keys.*. Under SPRING_PROFILES_ACTIVE=local-dev the demo
+# value 'dev-public-key' is loaded automatically.
+
 # Submit task
 curl -X POST http://localhost:8080/a2a \
-  -H "Authorization: Bearer public-read-key" \
+  -H "Authorization: Bearer <YOUR_PUBLIC_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"tasks/send","params":{"skill":"{skill_name}","input":{"{param}":"value"}}}'
 
 # Poll result
 curl -X POST http://localhost:8080/a2a \
-  -H "Authorization: Bearer public-read-key" \
+  -H "Authorization: Bearer <YOUR_PUBLIC_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"2","method":"tasks/get","params":{"task_id":"TASK-..."}}'
 ```

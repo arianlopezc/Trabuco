@@ -17,7 +17,7 @@ import java.util.Optional;
  *       before processing the inner payload.</li>
  *   <li>Broker messages: serialize the wrapper as the message body, or
  *       use {@link AuthContextPropagator} (Shared) to render claims as
- *       broker headers and keep the body unchanged.</li>
+ *       Broker headers and keep the body unchanged.</li>
  *   <li>Webhook delivery payloads: include the original requester's
  *       identity for downstream services to honor.</li>
  * </ul>

@@ -1,7 +1,16 @@
 package {{.GroupID}}.aiagent.protocol;
 
 import {{.GroupID}}.aiagent.knowledge.DocumentIngestionService;
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import {{.GroupID}}.aiagent.security.RateLimiter;
 import {{.GroupID}}.aiagent.security.RequireScope;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -28,27 +37,67 @@ import java.util.Map;
  * runtime conditional layered on top is unnecessary and broken (see
  * {@code KnowledgeBeansConfiguration} for the canonical Phase D writeup).
  *
- * <p>Authorization (legacy API-key path):
- * {@code @RequireScope("partner")} routes ingestion through
- * {@code ScopeInterceptor} → {@code ScopeEnforcer}. The legacy path is
- * default-on (governed by {@code app.aiagent.api-key.enabled}, default
- * {@code true}), so ingestion works out of the box.
+ * <h2>Operator opt-in: {@code agent.ingest.enabled} (default {@code false})</h2>
  *
- * <p>To switch to JWT (after flipping {@code trabuco.auth.enabled=true}):
- * replace each {@code @RequireScope("partner")} with
- * {@code @org.springframework.security.access.prepost.PreAuthorize(
- * "hasAuthority('SCOPE_admin')")} (or
- * {@code AuthorityScope.AUTHORITY_ADMIN} if you've imported the
- * Model-side constant). Do not stack both annotations — pick one.
+ * <p>The entire controller is gated by
+ * {@code @ConditionalOnProperty(value = "agent.ingest.enabled", havingValue = "true")}.
+ * Out of the box {@code POST /ingest} returns 404 — RAG ingestion is
+ * a privileged write path into the prompt-augmentation pipeline, and
+ * an unconfigured deployment should not expose it. Set
+ * {@code agent.ingest.enabled=true} only when you have decided who is
+ * allowed to populate the knowledge base, what content scanning runs
+ * before ingestion, and what per-tenant quotas apply (see below).
+ *
+ * <h2>Authorization</h2>
+ *
+ * <p>{@code @RequireScope("partner")} routes ingestion through
+ * {@code ScopeInterceptor} → {@code ScopeEnforcer}. Since 1.12,
+ * {@code ScopeEnforcer} bridges the legacy API-key path and the JWT
+ * path, so this annotation works under either auth mode without a
+ * code change. Operators wanting finer-grained scopes can replace the
+ * annotation with
+ * {@code @PreAuthorize("hasAuthority('SCOPE_rag:write')")}; the two
+ * are interchangeable.
+ *
+ * <h2>Size bounds + rate limiting</h2>
+ *
+ * <p>{@code IngestRequest.text} is bounded at 1 MB by
+ * {@code @Size(max = 1_000_000)} and {@code metadata} at 32 keys.
+ * The injected {@link RateLimiter} fires per call, keyed on caller
+ * identity. Each ingest emits an INFO audit log so the operator has
+ * an attribution trail.
+ *
+ * <h2>Not generated — operator-policy decisions</h2>
+ *
+ * <ul>
+ *   <li><b>Per-tenant quotas.</b> If the {@code Document.metadata}
+ * carries a {@code tenantId} (see ), enforce daily
+ *       byte/document quotas in {@code DocumentIngestionService}.</li>
+ *   <li><b>Content scanning.</b> MIME sniffing, entropy checks, and
+ *       known-malicious-source detection live in domain-specific
+ *       scanners — wire them into {@code DocumentIngestionService}
+ *       before {@code vectorStore.add(...)}.</li>
+ *   <li><b>Source allow-list.</b> If your domain ingests from a fixed
+ *       set of upstreams (S3 buckets, partner SFTP), validate the
+ *       {@code metadata.source} value against the allow-list.</li>
+ * </ul>
+ *
+ * <p>OWASP LLM Top-10 LLM-04 (Data and Model Poisoning) covers the
+ * full threat model.
  */
 @RestController
 @RequestMapping("/ingest")
+@ConditionalOnProperty(value = "agent.ingest.enabled", havingValue = "true")
 public class IngestionController {
 
-    private final DocumentIngestionService ingestionService;
+    private static final Logger log = LoggerFactory.getLogger(IngestionController.class);
 
-    public IngestionController(DocumentIngestionService ingestionService) {
+    private final DocumentIngestionService ingestionService;
+    private final RateLimiter rateLimiter;
+
+    public IngestionController(DocumentIngestionService ingestionService, RateLimiter rateLimiter) {
         this.ingestionService = ingestionService;
+        this.rateLimiter = rateLimiter;
     }
 
     /**
@@ -62,8 +111,15 @@ public class IngestionController {
      */
     @PostMapping
     @RequireScope("partner")
-    public ResponseEntity<Map<String, Object>> ingest(@RequestBody IngestRequest req) {
-        ingestionService.ingest(req.text(), req.metadata());
+    public ResponseEntity<Map<String, Object>> ingest(@Valid @RequestBody IngestRequest req) {
+        CallerIdentity caller = CallerContext.get();
+        rateLimiter.checkRateLimit(caller);
+        Map<String, Object> safeMetadata = sanitizeMetadata(req.metadata());
+        log.info("RAG ingest: caller={}, textBytes={}, metadataKeys={}",
+            caller.keyLabel(),
+            req.text().length(),
+            safeMetadata.size());
+        ingestionService.ingest(req.text(), safeMetadata);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(
             Map.of("status", "ingested", "chunks", "split-and-stored"));
     }
@@ -75,11 +131,14 @@ public class IngestionController {
      */
     @PostMapping("/batch")
     @RequireScope("partner")
-    public ResponseEntity<Map<String, Object>> ingestBatch(@RequestBody List<IngestRequest> requests) {
+    public ResponseEntity<Map<String, Object>> ingestBatch(@Valid @RequestBody List<IngestRequest> requests) {
+        CallerIdentity caller = CallerContext.get();
+        rateLimiter.checkRateLimit(caller);
+        log.info("RAG ingest (batch): caller={}, count={}", caller.keyLabel(), requests.size());
         List<org.springframework.ai.document.Document> docs = requests.stream()
             .map(r -> org.springframework.ai.document.Document.builder()
                 .text(r.text())
-                .metadata(r.metadata() == null ? Map.of() : r.metadata())
+                .metadata(sanitizeMetadata(r.metadata()))
                 .build())
             .toList();
         ingestionService.ingest(docs);
@@ -88,8 +147,97 @@ public class IngestionController {
     }
 
     /**
-     * Request payload — text + optional metadata. Java {@code record}
-     * for compact serialization.
+     * Enforce a metadata schema on caller-supplied
+     * {@code metadata}. Without this, a partner can stuff arbitrary
+     * keys (and arbitrary nested types) into the vector store; those
+     * values feed back into the LLM prompt at retrieval time and into
+     * tenant filtering logic at storage time. The threats are
+     * (a) prompt-injection via metadata field names that some
+     * downstream consumer concatenates into context, (b)
+     * mass-assignment of fields the agent reserves for its own use
+     * ({@code tenant_id}, {@code chunk_index}, etc.).
+     *
+     * <p>Rules applied:
+     *
+     * <ul>
+     *   <li>Keys must match {@link #ALLOWED_METADATA_KEYS} OR start
+     *       with {@code "x-"} (caller-namespaced extension keys).
+     *       Unknown / reserved keys are dropped with a WARN log.</li>
+     *   <li>Values must be primitives, strings (≤1 KB), or numbers.
+     *       Maps, lists, and arbitrary objects are rejected.</li>
+     *   <li>String values that contain newlines or control characters
+     *       have those characters stripped — defence against partner
+     *       payloads that try to inject log-line forgery sequences.</li>
+     * </ul>
+     *
+     * <p>Operators with a domain-specific schema should add their
+     * keys to {@code ALLOWED_METADATA_KEYS} (or use the {@code x-*}
+     * convention when they don't want to fork the controller).
      */
-    public record IngestRequest(String text, Map<String, Object> metadata) {}
+    static final java.util.Set<String> ALLOWED_METADATA_KEYS = java.util.Set.of(
+        "source", "title", "author", "version", "language", "topic",
+        "url", "category", "publishedAt", "summary");
+
+    static final int MAX_VALUE_LENGTH = 1024;
+
+    static Map<String, Object> sanitizeMetadata(Map<String, Object> in) {
+        if (in == null || in.isEmpty()) {
+            return Map.of();
+        }
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        for (var entry : in.entrySet()) {
+            String key = entry.getKey();
+            if (key == null || key.isBlank()) continue;
+            boolean allowed = ALLOWED_METADATA_KEYS.contains(key) || key.startsWith("x-");
+            if (!allowed) {
+                log.warn("Ingest metadata: dropping unknown key '{}' (not in allow-list, not x-*)", key);
+                continue;
+            }
+            Object value = entry.getValue();
+            Object safe = sanitizeValue(value);
+            if (safe == null) {
+                log.warn("Ingest metadata: dropping key '{}' — value type {} not allowed", key,
+                    value == null ? "null" : value.getClass().getName());
+                continue;
+            }
+            out.put(key, safe);
+        }
+        return java.util.Collections.unmodifiableMap(out);
+    }
+
+    private static Object sanitizeValue(Object v) {
+        if (v == null) return null;
+        if (v instanceof String s) {
+            if (s.length() > MAX_VALUE_LENGTH) {
+                s = s.substring(0, MAX_VALUE_LENGTH);
+            }
+            // Strip ASCII control chars (including newlines) to defeat
+            // log-forgery and prompt-injection via embedded markers.
+            return s.replaceAll("[\\x00-\\x1F\\x7F]", " ");
+        }
+        if (v instanceof Number || v instanceof Boolean) {
+            return v;
+        }
+        return null;
+    }
+
+    /**
+     * Request payload — text + optional metadata.
+     *
+     * <p>Bounds:
+     * <ul>
+     *   <li>{@code text}: up to 1 MB. The Spring AI
+     *       {@code TokenTextSplitter} chunks the input downstream;
+     *       this cap is per-document, not per-chunk. Lift via field
+     *       {@code @Size(max = ...)} only after considering the
+     *       resulting embedding cost — embedding APIs charge per token.</li>
+     *   <li>{@code metadata}: up to 32 keys. The metadata schema is
+     *       further enforced by {@link #sanitizeMetadata} — see that
+     *       method's doc for the allow-list and value-type rules.</li>
+     * </ul>
+     */
+    public record IngestRequest(
+        @NotBlank @Size(max = 1_000_000, message = "text exceeds 1 MB cap") String text,
+        @Size(max = 32, message = "metadata exceeds 32-key cap") Map<String, Object> metadata
+    ) {}
 }

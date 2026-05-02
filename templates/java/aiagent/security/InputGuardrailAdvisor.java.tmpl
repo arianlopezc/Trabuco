@@ -48,16 +48,40 @@ public class InputGuardrailAdvisor {
 
     private final ChatModel guardrailModel;
     private final ChatClient chatClient;
+    private final boolean enabled;
+    private final boolean failClosed;
 
-    public InputGuardrailAdvisor(@Qualifier("guardrailChatModel") ChatModel guardrailModel) {
+    public InputGuardrailAdvisor(
+            @Qualifier("guardrailChatModel") ChatModel guardrailModel,
+            @org.springframework.beans.factory.annotation.Value("${agent.guardrails.enabled:true}") boolean enabled,
+            @org.springframework.beans.factory.annotation.Value("${agent.guardrails.fail-closed:false}") boolean failClosed) {
         this.guardrailModel = guardrailModel;
         this.chatClient = ChatClient.create(guardrailModel);
+        this.enabled = enabled;
+        this.failClosed = failClosed;
+        log.info("InputGuardrailAdvisor: enabled={}, failClosed={}", enabled, failClosed);
     }
 
     /**
-     * Classify user input. Returns null if allowed, or a rejection message if blocked.
+     * Classify user input. Returns null if allowed, or a rejection
+     * message if blocked.
+     *
+     * <p>(since 1.12):
+     * <ul>
+     *   <li>{@code agent.guardrails.enabled=false} bypasses the
+     *       classifier entirely (the previous implementation ignored
+     *       the flag).</li>
+     *   <li>{@code agent.guardrails.fail-closed=true} causes
+     *       classifier exceptions to BLOCK the input. Default is
+     *       fail-open for availability — operators handling sensitive
+     *       payloads (regulated data, child-safety contexts) should
+     *       flip this on.</li>
+     * </ul>
      */
     public String classify(String userInput) {
+        if (!enabled) {
+            return null;
+        }
         try {
             String response = this.chatClient.prompt()
                 .user(CLASSIFICATION_PROMPT.formatted(userInput))
@@ -66,15 +90,18 @@ public class InputGuardrailAdvisor {
 
             if (response != null && response.toUpperCase().contains("BLOCKED")) {
                 log.warn("Input blocked by guardrail: {}", userInput.substring(0, Math.min(50, userInput.length())));
-                // Extract reason
                 int reasonIdx = response.indexOf("REASON:");
                 String reason = reasonIdx >= 0 ? response.substring(reasonIdx + 7).trim() : "Input classified as inappropriate.";
                 return "I can only help with {{.ProjectNamePascal}}-related questions. " + reason;
             }
             return null; // allowed
         } catch (Exception e) {
-            log.error("Guardrail classification failed, allowing input: {}", e.getMessage());
-            return null; // fail-open for availability; production might fail-closed
+            if (failClosed) {
+                log.error("Guardrail classification failed; failing closed (agent.guardrails.fail-closed=true): {}", e.getMessage());
+                return "Request could not be classified. Please try again.";
+            }
+            log.error("Guardrail classification failed, allowing input (agent.guardrails.fail-closed=false): {}", e.getMessage());
+            return null;
         }
     }
 }

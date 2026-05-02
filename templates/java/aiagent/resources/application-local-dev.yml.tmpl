@@ -1,0 +1,38 @@
+# Local-dev profile — activated by SPRING_PROFILES_ACTIVE=local-dev.
+#
+# Seeds demo API keys so a freshly-generated AIAgent service can be
+# exercised without configuring a real key store. The DemoKeyStartupWarning
+# bean (active under this profile) emits a WARN at startup that names the
+# loaded demo keys, making it loud that this profile must NOT be activated
+# in any deployed environment.
+#
+# Why these specific values:
+#   - "dev-public-key" / "dev-partner-key" carry "dev" in the literal so
+#     anyone copy-pasting them sees they're demo credentials, unlike the
+#     pre-1.12 well-known "partner-secret-key" which read as a real value.
+#   - Both keys also work with trabuco.auth.enabled=false (the JWT chain
+#     is dormant under this profile) — the API-key path is the only
+#     active auth.
+#
+# Activate locally:
+#   SPRING_PROFILES_ACTIVE=local-dev mvn spring-boot:run -pl AIAgent
+#
+#   curl -H "Authorization: Bearer dev-partner-key" http://localhost:8080/...
+#
+# To rotate the demo keys, edit this file in place — they're project-local
+# and not load-bearing for any deployed environment.
+
+trabuco:
+  auth:
+    # Local dev runs without an IdP; the API-key path is the active auth.
+    enabled: false
+
+agent:
+  auth:
+    keys:
+      dev-public-key:
+        tier: public
+        label: dev-public-key
+      dev-partner-key:
+        tier: partner
+        label: dev-partner-key

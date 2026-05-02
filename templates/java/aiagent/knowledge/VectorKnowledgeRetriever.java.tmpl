@@ -1,8 +1,11 @@
 package {{.GroupID}}.aiagent.knowledge;
 
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 
 import java.util.List;
 
@@ -28,8 +31,24 @@ import java.util.List;
  * declares this as a regular {@code @Bean} that takes
  * {@link VectorStore} as a constructor parameter; Spring resolves the
  * dependency in the normal lifecycle.
+ *
+ * <h2>Tenant isolation</h2>
+ *
+ * <p>Every {@link SearchRequest} carries
+ * {@code FilterExpressionBuilder.eq("tenant_id", caller.tenantId())} —
+ * the retriever cannot return another tenant's chunks even if the
+ * embedding-similarity score is higher. This works alongside the
+ * matching ingest-time stamping in {@code DocumentIngestionService}
+ * and the b-tree expression index on {@code (metadata->>'tenant_id')}
+ * declared in {@code V1__create_vector_schema.sql}.
+ *
+ * <p>The default tenant is the caller's API-key hash (one tenant per
+ * credential). JWT-mode deployments override this with the
+ * {@code tenant_id} JWT claim — see {@code CallerIdentity.tenantId()}.
  */
 public class VectorKnowledgeRetriever implements KnowledgeRetriever {
+
+    private static final String TENANT_ID_KEY = "tenant_id";
 
     private final VectorStore vectorStore;
 
@@ -39,9 +58,12 @@ public class VectorKnowledgeRetriever implements KnowledgeRetriever {
 
     @Override
     public List<Document> retrieve(String query, int topK) {
+        CallerIdentity caller = CallerContext.get();
+        FilterExpressionBuilder filter = new FilterExpressionBuilder();
         SearchRequest request = SearchRequest.builder()
             .query(query)
             .topK(topK)
+            .filterExpression(filter.eq(TENANT_ID_KEY, caller.tenantId()).build())
             .build();
         List<Document> results = vectorStore.similaritySearch(request);
         return results == null ? List.of() : results;

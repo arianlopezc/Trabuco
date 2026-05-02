@@ -32,3 +32,9 @@ npm/node_modules/
 coverage.out
 coverage.html
 IMPLEMENTATION_PLAN.md
+
+# Security audit working notes (raw findings, enriched reports). The
+# distilled checklist lives under plugin/skills/audit/ and is
+# committed; everything in .security-audit/ is local-only working
+# material.
+.security-audit/

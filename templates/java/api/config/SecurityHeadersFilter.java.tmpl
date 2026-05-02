@@ -31,7 +31,14 @@ public class SecurityHeadersFilter implements Filter {
   @Value("${security.headers.x-content-type-options:nosniff}")
   private String xContentTypeOptions;
 
-  @Value("${security.headers.x-xss-protection:1; mode=block}")
+  // X-XSS-Protection is OWASP-deprecated since 2020. The
+  // CSP-driven defense (already set above) is the modern equivalent.
+  // The header is left here for the small set of legacy clients
+  // that still honour it; default disables it ("0") because the
+  // 2018 Edge variant introduced an XSS Auditor that itself had
+  // bypass classes. Set X_XSS_PROTECTION=1; mode=block to re-enable
+  // if your audit policy still requires it.
+  @Value("${security.headers.x-xss-protection:0}")
   private String xXssProtection;
 
   @Value("${security.headers.referrer-policy:strict-origin-when-cross-origin}")

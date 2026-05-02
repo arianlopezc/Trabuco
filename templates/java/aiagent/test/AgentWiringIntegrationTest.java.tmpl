@@ -63,13 +63,28 @@ import static org.assertj.core.api.Assertions.assertThat;
     // to be non-blank for bean creation (we never call the LLM here).
     "spring.ai.vectorstore.pgvector.dimensions=384",
     "spring.ai.vectorstore.pgvector.initialize-schema=false",
-    "spring.ai.anthropic.api-key=test-key-not-used"
-    // Leave the legacy API-key filter on (default). The /ingest
-    // endpoint is annotated @RequireScope("partner"); the test sends
-    // the seeded {@code partner-secret-key} bearer to clear the scope
-    // gate. The bug class we're guarding against is "controller never
-    // registers" (404); proving the request reaches the handler and
-    // returns 202 is a stronger signal than just bean presence.
+    "spring.ai.anthropic.api-key=test-key-not-used",
+    // AgentSecurityConfig#validateAuthDecisionMade refuses to boot
+    // when this is unset. The legacy API-key path is the right mode
+    // for this test — see comment below.
+    "trabuco.auth.enabled=false",
+    // ApiKeyAuthFilter#validateKeysConfigured refuses to boot when
+    // the filter is enabled (default) and no keys are configured.
+    // Inject a single test-only partner key so the /ingest call
+    // below clears @RequireScope("partner"). The literal value is
+    // local to this test class — production keys are operator-supplied.
+    "agent.auth.keys.test-partner.tier=partner",
+    "agent.auth.keys.test-partner.label=test-partner",
+    // IngestionController is @ConditionalOnProperty-gated
+    // and ships disabled. Turn it on for the test so /ingest registers
+    // and the wiring assertion below verifies it routes traffic.
+    "agent.ingest.enabled=true"
+    // The /ingest endpoint is annotated @RequireScope("partner");
+    // the test sends the test-partner bearer to clear the scope
+    // gate. The bug class we're guarding against is "controller
+    // never registers" (404); proving the request reaches the
+    // handler and returns 202 is a stronger signal than just bean
+    // presence.
 })
 class AgentWiringIntegrationTest {
 
@@ -126,10 +141,11 @@ class AgentWiringIntegrationTest {
             "metadata", Map.of("source", "wiring-test"));
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        // partner-secret-key is the seeded partner-tier key in
-        // ApiKeyAuthFilter — needed to satisfy the @RequireScope("partner")
-        // gate on POST /ingest.
-        headers.setBearerAuth("partner-secret-key");
+        // test-partner is the partner-tier key configured by this
+        // test's @TestPropertySource above — needed to satisfy the
+        // @RequireScope("partner") gate on POST /ingest. Production
+        // keys are never hardcoded; see docs/auth.md.
+        headers.setBearerAuth("test-partner");
 
         ResponseEntity<Map> resp = restTemplate.exchange(
             "/ingest",

@@ -1,5 +1,6 @@
 package {{.GroupID}}.api.controller;
 
+import jakarta.annotation.security.PermitAll;
 import java.time.Instant;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
@@ -12,12 +13,27 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>Provides a simple health endpoint for load balancers and monitoring.
  * For more detailed health info, use Spring Actuator at /actuator/health.
+ *
+ * <p>{@code @PermitAll} is an explicit authorization decision: load
+ * balancer probes don't carry credentials, so the endpoint must remain
+ * open. The {@code SecurityConfig#oauth2FilterChain} permits {@code /health}
+ * via URL matcher; this annotation keeps the same intent visible in
+ * source and satisfies the {@code controllerHandlersMustDeclareAuthorization}
+ * ArchUnit guard.
+ *
+ * <p>class-level {@code method = RequestMethod.GET} keeps
+ * the endpoint to GET only — without it, the bare
+ * {@code @RequestMapping} accepts every HTTP method including TRACE
+ * (which echoes request headers including Authorization on some
+ * proxies — XST attack surface) and unsupported methods that would
+ * otherwise route to the GET handler.
  */
 @RestController
-@RequestMapping("/health")
+@RequestMapping(value = "/health", method = org.springframework.web.bind.annotation.RequestMethod.GET)
 public class HealthController {
 
   @GetMapping
+  @PermitAll
   public ResponseEntity<Map<String, Object>> health() {
     return ResponseEntity.ok(Map.of(
       "status", "UP",

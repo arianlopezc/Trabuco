@@ -5,7 +5,8 @@ spring:
   application:
     name: {{.ProjectName}}-worker
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
+    # Empty default — see API/application.yml.
+    active: ${SPRING_PROFILES_ACTIVE:}
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
   # Virtual threads (Project Loom) — Java 21+ / Spring Boot 3.2+
@@ -77,7 +78,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # See API/application.yml — health/info only by default.
+        include: ${MANAGEMENT_ENDPOINTS:health,info}
   endpoint:
     health:
       probes:
@@ -85,6 +87,10 @@ management:
       show-details: when_authorized
     prometheus:
       enabled: true
+  # See API/application.yml — disable env contributor.
+  info:
+    env:
+      enabled: false
   prometheus:
     metrics:
       export:
@@ -102,16 +108,29 @@ jobrunr:
     poll-interval-in-seconds: 5
     # Number of worker threads (default: 2x CPU cores)
     # worker-count: 4
-  # JobRunr Dashboard (http://localhost:8000)
-  # WARNING: The dashboard has no authentication by default!
-  # For production, either:
-  # 1. Disable the dashboard (enabled: false)
-  # 2. Use a reverse proxy with authentication
-  # 3. Use JobRunr Pro with built-in authentication
-  # See: https://www.jobrunr.io/en/guides/authentication/basic-authentication/
+  # JobRunr Dashboard
+  #
+  # Off by default since 1.12 (was on, with no auth — see
+  # docs/jobrunr-dashboard.md and the audit entry).
+  # When enabled, JobRunrConfig requires JOBRUNR_DASHBOARD_USERNAME +
+  # JOBRUNR_DASHBOARD_PASSWORD and binds the dashboard to 127.0.0.1
+  # by default. Override JOBRUNR_DASHBOARD_BIND_ADDRESS to expose
+  # externally — but front it with TLS + a reverse proxy / SSO if you do.
+  #
+  # Local dev:   JOBRUNR_DASHBOARD_ENABLED=true \
+  #              JOBRUNR_DASHBOARD_USERNAME=admin \
+  #              JOBRUNR_DASHBOARD_PASSWORD=<some-secret>
+  # Production:  Prefer JobRunr Pro IAM, or proxy through the API
+  #              module's Spring Security chain.
   dashboard:
-    enabled: ${JOBRUNR_DASHBOARD_ENABLED:true}
+    enabled: ${JOBRUNR_DASHBOARD_ENABLED:false}
     port: ${JOBRUNR_DASHBOARD_PORT:8000}
+    # JobRunr's auto-config wires these into
+    # JobRunrDashboardWebServerConfiguration.andBasicAuthentication.
+    # Must be non-blank when dashboard.enabled=true (JobRunrConfig
+    # validates this at boot — see DashboardCredentialsValidator).
+    username: ${JOBRUNR_DASHBOARD_USERNAME:}
+    password: ${JOBRUNR_DASHBOARD_PASSWORD:}
   # Job configuration
   jobs:
     # Default number of retries (with exponential backoff)

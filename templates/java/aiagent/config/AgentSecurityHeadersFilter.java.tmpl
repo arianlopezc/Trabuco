@@ -1,0 +1,82 @@
+package {{.GroupID}}.aiagent.config;
+
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+
+/**
+ * Sets security response headers on every AIAgent module response.
+ *
+ * <p>(since 1.12): the AIAgent module's
+ * {@code /ask}, {@code /chat}, {@code /ingest}, {@code /webhooks},
+ * {@code /tasks/{id}/stream}, {@code /a2a}, and {@code /capabilities}
+ * endpoints used to respond without HSTS, X-Frame-Options, CSP,
+ * X-Content-Type-Options, Referrer-Policy, or Permissions-Policy.
+ * That parity gap with the API module's
+ * {@code SecurityHeadersFilter} is closed here.
+ *
+ * <p>The headers are intentionally identical to the API filter so an
+ * AIAgent service deployed alongside an API service presents the
+ * same browser-side controls. Operators tuning the values for their
+ * deployment override the {@code security.headers.*} properties.
+ */
+@Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
+public class AgentSecurityHeadersFilter implements Filter {
+
+    @Value("${security.headers.content-security-policy:default-src 'self'}")
+    private String contentSecurityPolicy;
+
+    @Value("${security.headers.x-frame-options:DENY}")
+    private String xFrameOptions;
+
+    @Value("${security.headers.x-content-type-options:nosniff}")
+    private String xContentTypeOptions;
+
+    // See API SecurityHeadersFilter — X-XSS-Protection
+    // OWASP-deprecated; CSP is the modern defense.
+    @Value("${security.headers.x-xss-protection:0}")
+    private String xXssProtection;
+
+    @Value("${security.headers.referrer-policy:strict-origin-when-cross-origin}")
+    private String referrerPolicy;
+
+    @Value("${security.headers.permissions-policy:geolocation=(), microphone=(), camera=()}")
+    private String permissionsPolicy;
+
+    @Value("${security.headers.strict-transport-security:max-age=31536000; includeSubDomains}")
+    private String strictTransportSecurity;
+
+    @Value("${security.headers.enabled:true}")
+    private boolean enabled;
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+
+        if (enabled && response instanceof HttpServletResponse httpResponse) {
+            httpResponse.setHeader("X-Frame-Options", xFrameOptions);
+            httpResponse.setHeader("X-Content-Type-Options", xContentTypeOptions);
+            httpResponse.setHeader("X-XSS-Protection", xXssProtection);
+            httpResponse.setHeader("Referrer-Policy", referrerPolicy);
+            httpResponse.setHeader("Content-Security-Policy", contentSecurityPolicy);
+            httpResponse.setHeader("Permissions-Policy", permissionsPolicy);
+            // HSTS — only effective over TLS, but harmless to send on
+            // plaintext; browsers ignore it from non-HTTPS responses.
+            httpResponse.setHeader("Strict-Transport-Security", strictTransportSecurity);
+            httpResponse.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+            httpResponse.setHeader("Pragma", "no-cache");
+            httpResponse.setHeader("Expires", "0");
+        }
+
+        chain.doFilter(request, response);
+    }
+}

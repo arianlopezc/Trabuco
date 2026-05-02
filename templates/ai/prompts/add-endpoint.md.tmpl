@@ -81,6 +81,7 @@ import {{.GroupID}}.shared.service.{EntityName}Service;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -96,6 +97,7 @@ public class {EntityName}Controller {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('SCOPE_{entity_name}:read')")
     public List<Immutable{EntityName}Response> getAll() {
         return service.findAll().stream()
             .map(Immutable{EntityName}Response::from)
@@ -103,6 +105,7 @@ public class {EntityName}Controller {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('SCOPE_{entity_name}:read')")
     public ResponseEntity<Immutable{EntityName}Response> getById(@PathVariable {{if .HasModule "SQLDatastore"}}Long{{else}}String{{end}} id) {
         return service.findById(id)
             .map(entity -> ResponseEntity.ok(Immutable{EntityName}Response.from(entity)))
@@ -111,6 +114,7 @@ public class {EntityName}Controller {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('SCOPE_{entity_name}:write')")
     public Immutable{EntityName}Response create(@Valid @RequestBody Immutable{EntityName}Request request) {
         Immutable{EntityName} entity = Immutable{EntityName}.builder()
             .name(request.name())
@@ -120,6 +124,7 @@ public class {EntityName}Controller {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('SCOPE_{entity_name}:write')")
     public ResponseEntity<Immutable{EntityName}Response> update(
             @PathVariable {{if .HasModule "SQLDatastore"}}Long{{else}}String{{end}} id,
             @Valid @RequestBody Immutable{EntityName}Request request) {
@@ -136,6 +141,7 @@ public class {EntityName}Controller {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('SCOPE_{entity_name}:delete')")
     public ResponseEntity<Void> delete(@PathVariable {{if .HasModule "SQLDatastore"}}Long{{else}}String{{end}} id) {
         return service.findById(id)
             .map(entity -> {
@@ -150,6 +156,33 @@ public class {EntityName}Controller {
 **Replace placeholders:**
 - `{EntityName}` → Actual entity name (PascalCase)
 - `{entities}` → Plural form, lowercase (e.g., `products`, `orders`)
+- `{entity_name}` → Singular lowercase, used in scope names (e.g., `product`, `order`)
+
+**Authorization model:** every endpoint carries `@PreAuthorize` matching
+its HTTP verb to a domain-specific scope (`SCOPE_{entity_name}:read|write|delete`).
+The scopes are issued by your IdP and arrive on the JWT's `scope`
+claim. Method security is profile-gated by `MethodSecurityConfig`
+(`@ConditionalOnProperty("trabuco.auth.enabled", havingValue="true")`)
+so `mvn spring-boot:run` works without an IdP in local-dev mode —
+annotations exist in source but are inert when auth is off, then
+become live the moment the operator turns auth on.
+
+**Per-record ownership (BOLA close).** Scope-only checks let any
+holder of `SCOPE_{entity_name}:write` mutate any record. For
+multi-tenant or per-user data, also enforce ownership using
+`@PostAuthorize`:
+
+```java
+@GetMapping("/{id}")
+@PreAuthorize("hasAuthority('SCOPE_{entity_name}:read')")
+@PostAuthorize(
+    "returnObject.body == null || " +
+    "returnObject.body.tenantId == authentication.principal.claims['tenant_id']")
+public ResponseEntity<Immutable{EntityName}Response> getById(...) { ... }
+```
+
+For mutations, prefer enforcing ownership inside the service (load →
+check → update) — the controller hasn't loaded the record yet.
 
 ### 4. Update Service (if delete method needed)
 

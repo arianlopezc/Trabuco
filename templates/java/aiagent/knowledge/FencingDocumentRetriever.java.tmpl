@@ -1,0 +1,139 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.rag.Query;
+import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
+
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+
+/**
+ * Wraps a delegate {@link DocumentRetriever} so every chunk returned to
+ * the LLM is fenced with provenance markers and stripped of obvious
+ * prompt-injection primitives.
+ *
+ * <h2>Why this exists</h2>
+ *
+ * <p>Spring AI's default {@code RetrievalAugmentationAdvisor} concatenates
+ * retrieved text directly into the prompt with no untrusted-content
+ * delimiters. Combined with an open ingest path, that means anyone who
+ * can write to the vector store can rewrite the system prompt for every
+ * downstream call (indirect prompt injection — OWASP LLM-01, OWASP LLM-04,
+ * ). Even on a closed ingest path, retrieved content from
+ * upstream sources (web pages, partner docs, third-party knowledge bases)
+ * is untrusted by default and should be marked as such before reaching
+ * the model.
+ *
+ * <h2>What this retriever does</h2>
+ *
+ * <ol>
+ *   <li><b>Sanitize tag-bleed.</b> Any literal {@code </untrusted_document>}
+ *       substring in the source chunk is replaced with
+ *       {@code [/untrusted_document_redacted]} so a sophisticated injection
+ *       cannot close our fence prematurely.</li>
+ *   <li><b>Strip role tokens.</b> Lines like {@code assistant:},
+ *       {@code system:}, {@code </s>}, and the ChatML markers
+ *       {@code <|im_start|>} / {@code <|im_end|>} are commonly used by
+ *       attackers to splice fake conversational turns into the prompt
+ *       — they are replaced with neutered placeholders.</li>
+ *   <li><b>Fence with provenance.</b> Each chunk is wrapped in
+ *       {@code <untrusted_document source="..." id="...">...</untrusted_document>}
+ *       so the model can be instructed (in the system prompt) to treat
+ *       fenced content as data, not instructions.</li>
+ * </ol>
+ *
+ * <p>None of this is a substitute for the input/output guardrail LLMs
+ * downstream — it is the cheap, deterministic first line of defence.
+ * The LLM may still be fooled by a clever payload; the system prompt
+ * (in {@code PrimaryAgent}) explicitly instructs it to disregard
+ * imperative content within fences as a complementary mitigation.
+ */
+public class FencingDocumentRetriever implements DocumentRetriever {
+
+    static final String FENCE_OPEN = "<untrusted_document";
+
+    static final String FENCE_CLOSE = "</untrusted_document>";
+
+    private static final String FENCE_CLOSE_REDACTED = "[/untrusted_document_redacted]";
+
+    /**
+     * Patterns that try to splice fake roles into the prompt — common
+     * across multiple LLM training-data formats. The replacement is
+     * a literal-text neutering, not a removal, so the chunk's meaning
+     * is preserved for the model's reasoning while the dispatch syntax
+     * is broken.
+     */
+    private static final List<Pattern> ROLE_TOKEN_PATTERNS = List.of(
+        Pattern.compile("(?i)\\bassistant\\s*:", Pattern.MULTILINE),
+        Pattern.compile("(?i)\\bsystem\\s*:", Pattern.MULTILINE),
+        Pattern.compile("(?i)\\buser\\s*:", Pattern.MULTILINE),
+        Pattern.compile("<\\|im_start\\|>"),
+        Pattern.compile("<\\|im_end\\|>"),
+        Pattern.compile("</?s>"));
+
+    private final DocumentRetriever delegate;
+
+    public FencingDocumentRetriever(DocumentRetriever delegate) {
+        this.delegate = delegate;
+    }
+
+    @Override
+    public List<Document> retrieve(Query query) {
+        List<Document> raw = delegate.retrieve(query);
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        return raw.stream().map(FencingDocumentRetriever::fence).toList();
+    }
+
+    static Document fence(Document doc) {
+        String safeText = sanitize(doc.getText() == null ? "" : doc.getText());
+        String source = stringMetadata(doc.getMetadata(), "source");
+        String fenced = FENCE_OPEN
+            + " source=\"" + escapeAttr(source) + "\""
+            + " id=\"" + escapeAttr(doc.getId() == null ? "unknown" : doc.getId()) + "\">"
+            + safeText
+            + FENCE_CLOSE;
+        return Document.builder()
+            .id(doc.getId())
+            .text(fenced)
+            .metadata(doc.getMetadata() == null ? Map.of() : doc.getMetadata())
+            .build();
+    }
+
+    static String sanitize(String text) {
+        String t = text.replace(FENCE_CLOSE, FENCE_CLOSE_REDACTED);
+        for (Pattern p : ROLE_TOKEN_PATTERNS) {
+            // HTML-encode the matched substring so the surrounding
+            // [redacted: ...] envelope cannot leak the original token
+            // back into the prompt — important for special tokens like
+            // <|im_start|> which the tokenizer would otherwise still
+            // map back to their role-marker IDs.
+            t = p.matcher(t).replaceAll(match -> "[redacted:" + encodeForLog(match.group()) + "]");
+        }
+        return t;
+    }
+
+    private static String encodeForLog(String s) {
+        return s
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("|", "&#124;")
+            .replace("[", "(")
+            .replace("]", ")");
+    }
+
+    private static String stringMetadata(Map<String, Object> metadata, String key) {
+        if (metadata == null) {
+            return "unknown";
+        }
+        Object v = metadata.get(key);
+        return v == null ? "unknown" : v.toString();
+    }
+
+    private static String escapeAttr(String s) {
+        return s.replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+}

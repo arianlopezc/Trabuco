@@ -45,7 +45,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code @Testcontainers(disabledWithoutDocker = true)}) so CI runners
  * without Docker continue to pass the rest of the suite.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    // SecurityConfig#validateAuthDecisionMade refuses to boot when the
+    // property is unset. This integration test exercises the
+    // GlobalExceptionHandler via plain REST POSTs (no JWTs in flight),
+    // so the open chain is the right mode.
+    properties = "trabuco.auth.enabled=false"
+)
 @Testcontainers(disabledWithoutDocker = true)
 @Sql(statements =
     "ALTER TABLE placeholders ADD CONSTRAINT placeholders_name_unique UNIQUE (name)",

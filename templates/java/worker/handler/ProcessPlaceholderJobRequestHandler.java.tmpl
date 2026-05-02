@@ -5,6 +5,11 @@ import org.jobrunr.jobs.annotations.Job;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+// AuthScope / RequestContextHolder imports — uncomment when you
+// add an IdentityClaims field to your job request, per the wire-up
+// pattern in the class doc above.
+// import {{.GroupID}}.shared.auth.AuthScope;
+// import {{.GroupID}}.shared.auth.RequestContextHolder;
 
 /**
  * Concrete handler for ProcessPlaceholderJobRequest.
@@ -28,6 +33,28 @@ import org.springframework.stereotype.Component;
  * - If this handler modifies data, consider adding @Transactional
  * - Use @Transactional(propagation = Propagation.REQUIRES_NEW) for independent transactions
  * - JobRunr runs handlers outside of any existing transaction context
+ *
+ * <h2>Identity propagation</h2>
+ *
+ * <p>JobRunr handlers run on background threads with no inherited
+ * {@link RequestContextHolder} state — the enqueuing request's
+ * identity is gone by the time the job fires. Per-message identity
+ * has to ride <i>inside</i> the job payload. The recommended pattern:
+ *
+ * <ol>
+ *   <li>When extending the placeholder for a real domain, replace
+ *       {@code ProcessPlaceholderJobRequest} with a record that
+ *       carries the caller's identity, e.g.:
+ *       {@code public record MyJobRequest(String payload, IdentityClaims caller) {...}}.</li>
+ *   <li>The job-enqueuing service stamps {@code caller} from
+ *       {@link RequestContextHolder#getOrEmpty()} at enqueue time.</li>
+ *   <li>This handler restores the identity via {@link AuthScope} so
+ *       any downstream service call (DB, Spring Security gates,
+ *       audit logging) sees the original caller.</li>
+ * </ol>
+ *
+ * <p>The placeholder request type does not carry a caller field —
+ * the wire-up below is the template you copy when you replace it.
  */
 @Component
 public class ProcessPlaceholderJobRequestHandler
@@ -53,8 +80,8 @@ public class ProcessPlaceholderJobRequestHandler
   public void run(ProcessPlaceholderJobRequest request) {
     log.info("Processing placeholder job with message: {}", request.message());
 
-    // TODO: Remove this sleep and replace with actual business logic
-    // This is just a placeholder to demonstrate job execution
+    // TODO: Remove this sleep and replace with actual business logic.
+    // This is just a placeholder to demonstrate job execution.
     try {
       Thread.sleep(100); // Brief delay for demo - DELETE THIS
     } catch (InterruptedException e) {
@@ -62,6 +89,19 @@ public class ProcessPlaceholderJobRequestHandler
       throw new RuntimeException("Job interrupted", e);
     }
 
+    // identity-propagation wire-up template. When you
+    // Replace this placeholder, add an IdentityClaims field to your
+    // job request record and uncomment the following pattern:
+    //
+    //   try (var scope = AuthScope.set(request.caller())) {
+    //       // any service call inside this block sees the original
+    //       // caller via RequestContextHolder.get()
+    //       placeholderService.process(request.message());
+    //   }
+    //
+    // The enqueuing PlaceholderJobService stamps caller from
+    // RequestContextHolder.getOrEmpty() at the call site.
+    //
     // TODO: Replace with actual business logic, e.g.:
     // placeholderService.process(request.message());
 

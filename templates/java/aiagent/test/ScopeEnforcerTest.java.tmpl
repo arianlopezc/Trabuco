@@ -3,7 +3,12 @@ package {{.GroupID}}.aiagent.security;
 import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -12,6 +17,7 @@ class ScopeEnforcerTest {
     @AfterEach
     void cleanup() {
         CallerContext.clear();
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -38,5 +44,75 @@ class ScopeEnforcerTest {
     void usesCallerContext() {
         CallerContext.set(ImmutableCallerIdentity.builder().tier("partner").keyHash("h").keyLabel("l").build());
         assertThatCode(() -> ScopeEnforcer.requireScope("partner")).doesNotThrowAnyException();
+    }
+
+    // ─── JWT bridge regression tests ─────────────────────────
+    //
+    // Earlier releases enforced @RequireScope only via CallerContext, so
+    // when ApiKeyAuthFilter was disabled (app.aiagent.api-key.enabled=false)
+    // and JWT was the only auth path, every request became anonymous and
+    // Every @RequireScope-annotated endpoint started 401-ing legitimate
+    // JWT users. The bridge in ScopeEnforcer.effectiveCaller / .jwtDerivedCaller
+    // resolves the JWT scope claim into the same tier ladder.
+
+    @Test
+    void jwtBridge_partnerScopeMapsToPartnerTier() {
+        var auth = new UsernamePasswordAuthenticationToken(
+            "user-42", null,
+            List.of(new SimpleGrantedAuthority("SCOPE_partner")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        // CallerContext is unset (anonymous) — must fall back to JWT.
+        assertThatCode(() -> ScopeEnforcer.requireScope("partner"))
+            .as("JWT with SCOPE_partner must satisfy @RequireScope(\"partner\")")
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void jwtBridge_agentWriteScopeAlsoMapsToPartnerTier() {
+        var auth = new UsernamePasswordAuthenticationToken(
+            "user-42", null,
+            List.of(new SimpleGrantedAuthority("SCOPE_agent:write")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        assertThatCode(() -> ScopeEnforcer.requireScope("partner")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void jwtBridge_publicScopeOnlyDoesNotSatisfyPartnerTier() {
+        var auth = new UsernamePasswordAuthenticationToken(
+            "user-42", null,
+            List.of(new SimpleGrantedAuthority("SCOPE_agent:read")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        assertThatThrownBy(() -> ScopeEnforcer.requireScope("partner"))
+            .as("JWT with only SCOPE_agent:read must NOT satisfy @RequireScope(\"partner\")")
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("partner");
+    }
+
+    @Test
+    void jwtBridge_authenticatedWithoutRecognizedScopeIsTreatedAsPublic() {
+        // Authenticated JWT but with a scope name we don't recognize.
+        // Convention: any valid token earns at least the public tier.
+        var auth = new UsernamePasswordAuthenticationToken(
+            "user-42", null,
+            List.of(new SimpleGrantedAuthority("SCOPE_some:custom:scope")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        assertThatCode(() -> ScopeEnforcer.requireScope("public")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> ScopeEnforcer.requireScope("partner"))
+            .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void jwtBridge_apiKeyTakesPrecedenceWhenHigher() {
+        // Hybrid mode: API-key path resolved partner; JWT path resolved
+        // public-only. The effective caller takes the higher tier.
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner").keyHash("h").keyLabel("api-key").build());
+        var auth = new UsernamePasswordAuthenticationToken(
+            "user-42", null,
+            List.of(new SimpleGrantedAuthority("SCOPE_agent:read")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        assertThatCode(() -> ScopeEnforcer.requireScope("partner"))
+            .as("hybrid mode: api-key partner > jwt public — partner wins")
+            .doesNotThrowAnyException();
     }
 }

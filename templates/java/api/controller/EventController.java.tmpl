@@ -2,11 +2,15 @@ package {{.GroupID}}.api.controller;
 
 import {{.GroupID}}.events.EventPublisher;
 import {{.GroupID}}.model.events.PlaceholderCreatedEvent;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,18 +20,31 @@ import org.springframework.web.bind.annotation.RestController;
  * Example controller demonstrating event publishing.
  *
  * <p>This controller shows how to publish events to {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{end}}
- * that will be consumed by the EventConsumer module.</p>
+ * that will be consumed by the EventConsumer module.
  *
  * <p>Example request:
  * <pre>
  * POST /api/events/placeholder
  * Content-Type: application/json
  *
- * <p>{
+ * {
  *   "name": "Example Placeholder"
  * }
  * </pre>
- * </p>
+ *
+ * <h2>Authorization model</h2>
+ *
+ * <p>Every method carries {@code @PreAuthorize("hasAuthority('SCOPE_events:publish')")}.
+ * Without scope-level enforcement, any authenticated caller could
+ * flood the broker — these endpoints push to async pipelines whose
+ * receiving handlers can't trivially apply backpressure on the
+ * caller. Rename {@code events} in the scope literal to your domain
+ * (e.g., {@code SCOPE_orders:publish}) when you replace this scaffold.
+ *
+ * <p>Method security is profile-gated by {@code MethodSecurityConfig}
+ * (active only when {@code trabuco.auth.enabled=true}) so local-dev
+ * (auth off) reaches the controller without a token while any
+ * deployed environment enforces the gate.
  */
 @RestController
 @RequestMapping("/api/events")
@@ -51,15 +68,15 @@ public class EventController {
    * @return Response with the generated event ID
    */
   @PostMapping("/placeholder")
+  @PreAuthorize("hasAuthority('SCOPE_events:publish')")
   public ResponseEntity<Map<String, String>> publishPlaceholderEvent(
-      @RequestBody Map<String, String> request) {
+      @Valid @RequestBody PlaceholderEventRequest request) {
 
-    String name = request.getOrDefault("name", "Unnamed");
     String entityId = UUID.randomUUID().toString();
 
-    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create(entityId, name);
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create(entityId, request.name());
 
-    logger.info("Publishing PlaceholderCreatedEvent: entityId={}, name={}", entityId, name);
+    logger.info("Publishing PlaceholderCreatedEvent: entityId={}, name={}", entityId, request.name());
     eventPublisher.publish(event);
 
     return ResponseEntity.accepted().body(Map.of(
@@ -68,4 +85,25 @@ public class EventController {
       "message", "Event published successfully"
     ));
   }
+
+  /**
+   * typed request DTO with validation. Replacing the
+   * untyped {@code Map<String, String>} body closes the
+   * mass-assignment / unbounded-input gap and surfaces input rules
+   * in code rather than scattered controller string-fishing.
+   *
+   * <p>Bounds:
+   * <ul>
+   *   <li>{@code name}: required, 1–256 chars. Bumps would let a
+   *       caller stuff log lines or DB columns with arbitrarily
+   *       long content.</li>
+   * </ul>
+   *
+   * <p>Replace with your domain's actual event payload when you
+   * Remove the placeholder. Per-event DTOs (one per topic) usually
+   * beat a single shared envelope: validation rules differ.
+   */
+  public record PlaceholderEventRequest(
+      @NotBlank @Size(max = 256, message = "name must be 1–256 chars") String name
+  ) {}
 }

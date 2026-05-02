@@ -1,7 +1,10 @@
 package {{.GroupID}}.aiagent.security;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Deque;
@@ -9,6 +12,27 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
+/**
+ * Per-tier sliding-window rate limiter.
+ *
+ * <p>(since 1.12): anonymous callers used to share a single
+ * bucket keyed by the literal string {@code "anonymous"} — meaning
+ * the 10-rps anonymous quota applied across the entire internet, so
+ * one noisy or malicious actor could starve every legitimate
+ * unauthenticated request. Anonymous buckets are now keyed by the
+ * caller's client IP (resolved from {@code X-Forwarded-For} when
+ * present, falling back to the servlet remote address). Authenticated
+ * callers continue to be keyed by their {@link CallerIdentity#keyHash}
+ * — the keyHash is per-credential, which is the correct partition
+ * for per-credential quotas.
+ *
+ * <p><b>Operational note.</b> {@code X-Forwarded-For} can be spoofed
+ * by any caller — use only when running behind a reverse proxy that
+ * strips and re-writes the header (nginx, ALB, Cloudflare, etc.).
+ * For deployments where no trusted proxy sits in front, prefer
+ * Bucket4j-Spring with a connection-source filter, which the
+ * {@code .env.example} documents as the production-grade replacement.
+ */
 @Component
 public class RateLimiter {
 
@@ -20,6 +44,15 @@ public class RateLimiter {
         "partner", 200
     );
 
+    /**
+     * Bound on the number of distinct rate-limit buckets. Without a
+     * cap, an attacker rotating source IPs creates a new bucket for
+     * each connection — heap exhaustion via the rate-limit map
+     * itself. 100k buckets ≈ ~10 MB of windows; reaching the cap
+     * triggers eviction of the oldest empty bucket.
+     */
+    private static final int MAX_BUCKETS = 100_000;
+
     private final ConcurrentHashMap<String, Deque<Long>> store = new ConcurrentHashMap<>();
 
     public void checkRateLimit(CallerIdentity caller) {
@@ -27,7 +60,17 @@ public class RateLimiter {
         long now = System.currentTimeMillis();
         long windowStart = now - 60_000;
 
-        Deque<Long> window = store.computeIfAbsent(caller.keyHash(), k -> new ConcurrentLinkedDeque<>());
+        String bucketKey = bucketKeyFor(caller);
+        Deque<Long> window = store.computeIfAbsent(bucketKey, k -> {
+            // Soft cap on bucket count; refuse new buckets when full.
+            // The empty-deque shortcut means real callers in flight
+            // continue to be served from existing buckets.
+            if (store.size() >= MAX_BUCKETS) {
+                throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Rate-limit registry capacity exceeded; try again shortly.");
+            }
+            return new ConcurrentLinkedDeque<>();
+        });
 
         // Remove expired entries
         while (!window.isEmpty() && window.peekFirst() < windowStart) {
@@ -39,6 +82,55 @@ public class RateLimiter {
         }
 
         window.addLast(now);
+    }
+
+    /**
+     * Selects the rate-limit bucket key for a caller. Authenticated
+     * callers (any tier above {@code anonymous}) get their
+     * {@link CallerIdentity#keyHash} as the bucket key — that is
+     * stable, unique per credential, and correctly partitions
+     * quotas per partner. Anonymous callers fall through to the
+     * client IP — see class-level docs for the X-Forwarded-For
+     * caveat.
+     */
+    private String bucketKeyFor(CallerIdentity caller) {
+        if (!"anonymous".equals(caller.tier())) {
+            return caller.keyHash();
+        }
+        return "anon:" + currentClientIp();
+    }
+
+    /**
+     * Best-effort client-IP resolution from the current request
+     * attributes. Falls back to a literal {@code "unknown"} key when
+     * no servlet request is bound (called from a non-HTTP path —
+     * e.g., direct service-to-service invocation). The fallback
+     * collapses all such callers into one bucket, which is a stricter
+     * limit than the previous global bucket and acceptable for the
+     * scaffolding's expected scale.
+     */
+    private static String currentClientIp() {
+        try {
+            var attrs = RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof ServletRequestAttributes sra) {
+                HttpServletRequest req = sra.getRequest();
+                String forwarded = req.getHeader("X-Forwarded-For");
+                if (forwarded != null && !forwarded.isBlank()) {
+                    // Take only the first hop — subsequent values
+                    // may have been added by intermediate proxies
+                    // and should not count toward the bucket.
+                    int comma = forwarded.indexOf(',');
+                    return comma >= 0 ? forwarded.substring(0, comma).trim() : forwarded.trim();
+                }
+                String remote = req.getRemoteAddr();
+                if (remote != null && !remote.isBlank()) {
+                    return remote;
+                }
+            }
+        } catch (IllegalStateException ignored) {
+            // No request bound to current thread — non-HTTP entry path.
+        }
+        return "unknown";
     }
 
     public void reset() {

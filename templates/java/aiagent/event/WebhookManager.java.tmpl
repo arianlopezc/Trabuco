@@ -1,36 +1,124 @@
 package {{.GroupID}}.aiagent.event;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.netty.channel.ChannelOption;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import {{.GroupID}}.aiagent.event.ImmutableWebhookRegistration;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
+/**
+ * Outbound webhook dispatcher.
+ *
+ * <h2>Hardening (/ / )</h2>
+ *
+ * <p>The default {@code WebClient.create()} ships with no timeouts,
+ * unbounded redirects, and unbounded response buffering — a webhook
+ * with a slow / hostile / large endpoint can starve threads and
+ * exhaust memory. This implementation:
+ *
+ * <ul>
+ *   <li>Bounds connect / read / write timeouts to 5s each
+ *       ({@code WEBHOOK_TIMEOUT_SECONDS} override).</li>
+ *   <li>Caps response body buffering at 256 KB
+ *       ({@code WEBHOOK_MAX_BODY_BYTES} override).</li>
+ *   <li>Disables auto-followed redirects — webhook delivery is
+ *       fire-and-forget POST; redirects can be SSRF amplifiers.</li>
+ *   <li>Caps the registered-webhook map at
+ *       {@code WEBHOOK_REGISTRY_MAX_ENTRIES} (default 1000) so a
+ *       partner cannot exhaust heap by registering URLs in a loop.</li>
+ * </ul>
+ */
 @Component
 public class WebhookManager {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookManager.class);
+
+    private static final int CONNECT_TIMEOUT_MS = 5_000;
+    private static final long IO_TIMEOUT_SECONDS = 5L;
+    private static final int MAX_RESPONSE_BYTES = 256 * 1024;
+    private static final int REGISTRY_MAX_ENTRIES = 1_000;
+
     private final ConcurrentHashMap<String, WebhookRegistration> webhooks = new ConcurrentHashMap<>();
-    private final WebClient webClient = WebClient.create();
+    private final WebClient webClient = buildWebClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public WebhookRegistration register(String url, List<String> events, String apiKey) {
+    private static WebClient buildWebClient() {
+        HttpClient http = HttpClient.create()
+            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT_MS)
+            .responseTimeout(Duration.ofSeconds(IO_TIMEOUT_SECONDS))
+            .followRedirect(false)
+            .doOnConnected(conn -> conn
+                .addHandlerLast(new ReadTimeoutHandler(IO_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                .addHandlerLast(new WriteTimeoutHandler(IO_TIMEOUT_SECONDS, TimeUnit.SECONDS)));
+        return WebClient.builder()
+            .clientConnector(new ReactorClientHttpConnector(http))
+            .codecs(c -> c.defaultCodecs().maxInMemorySize(MAX_RESPONSE_BYTES))
+            .build();
+    }
+
+    /**
+     * Register a new webhook. The {@code callerLabel} is recorded for
+     * audit; a fresh per-webhook signing secret is generated server-side
+     * and used to HMAC every dispatched payload (— earlier
+     * versions reused the caller's API key as the signing secret, which
+     * is the wrong cryptographic primitive: the API key authenticates
+     * the partner TO the agent, the signing secret authenticates the
+     * agent TO the webhook receiver — different directions, different
+     * blast radius).
+     *
+     * <p>The returned {@link WebhookRegistration} carries the freshly
+     * generated secret; the controller surfaces it ONCE in the
+     * registration response. Loss of the secret requires re-registering
+     * the webhook.
+     */
+    public WebhookRegistration register(String url, List<String> events, String callerLabel) {
+        if (webhooks.size() >= REGISTRY_MAX_ENTRIES) {
+            // refuse new registrations beyond the cap.
+            // The cap is per-process (in-memory store) — for clusters,
+            // back the registry with a database and apply the cap via
+            // a unique-index + count check.
+            throw new IllegalStateException(
+                "Webhook registry is full (max " + REGISTRY_MAX_ENTRIES + " entries). "
+                + "Deregister unused webhooks before registering new ones.");
+        }
+        String signingSecret = generateSigningSecret();
         var reg = ImmutableWebhookRegistration.builder()
             .webhookId("WH-" + UUID.randomUUID())
             .url(url)
             .events(events)
-            .apiKey(apiKey)
+            .apiKey(signingSecret)
             .build();
         webhooks.put(reg.webhookId(), reg);
+        log.info("Webhook registered: id={}, url={}, callerLabel={}",
+            reg.webhookId(), url, callerLabel);
         return reg;
+    }
+
+    /**
+     * 32-byte (256-bit) random signing secret, hex-encoded — the same
+     * format the rest of Trabuco's auth machinery uses. Generated with
+     * {@link java.security.SecureRandom} so the receiver can rely on
+     * unpredictability for replay-protection nonces.
+     */
+    private static String generateSigningSecret() {
+        byte[] bytes = new byte[32];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
     }
 
     public List<WebhookRegistration> listWebhooks() {

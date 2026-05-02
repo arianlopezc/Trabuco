@@ -13,7 +13,12 @@
 # Module-gating: this script is generated per project. Checks for modules not
 # selected are omitted entirely, matching the subagent behavior.
 
-set -u
+# -e so any unexpected failure aborts; -o pipefail so a failure
+# anywhere in a pipe (e.g., `grep | tr` when grep crashes) propagates instead
+# of silently producing empty output that looks like "no findings". Existing
+# greps that legitimately exit 1 ("no matches") already terminate with
+# `|| true`, so -e doesn't change their semantics.
+set -euo pipefail
 FAIL=0
 FINDINGS=0
 
@@ -38,6 +43,17 @@ done
 collect_files() {
   local pattern=$1
   if [ "$SCOPE" = "diff" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+    # GITHUB_BASE_REF arrives from the GitHub Actions runtime as
+    # a PR base-branch name. We interpolate it into a git revision spec, so
+    # any character outside the standard branch-name set (letters, digits,
+    # `.`, `_`, `-`, `/`) is rejected — a name like
+    # `master`..`$(rm -rf /)` couldn't actually pass GitHub validation, but
+    # we don't want a future runtime change to leak shell metacharacters or
+    # extra git revspec operators (`..`, `^`, `~`) through anyway.
+    if ! [[ "$GITHUB_BASE_REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+      echo "review-checks.sh: refusing to use unsafe GITHUB_BASE_REF=$GITHUB_BASE_REF" >&2
+      exit 2
+    fi
     git diff --name-only --diff-filter=AM "origin/$GITHUB_BASE_REF"...HEAD -- "$pattern" 2>/dev/null || true
   elif [ "$SCOPE" = "local" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # Working-tree deltas: diff vs HEAD picks up staged+unstaged modifications;
@@ -59,7 +75,10 @@ collect_files() {
 #                     forbidden patterns (ArchUnit rules, mocks).
 #   JAVA_ALL_FILES  — main + test. Secrets and boundary-import checks run here.
 JAVA_ALL_FILES=$(collect_files '*.java' | tr '\n' ' ')
-JAVA_MAIN_FILES=$(collect_files '*.java' | grep '/src/main/java/' | tr '\n' ' ')
+# `grep` returning 1 when no .java files match `/src/main/java/` is a normal
+# state (e.g., scope=diff with only test changes). Mask the non-zero exit so
+# pipefail+set -e don't abort the whole script.
+JAVA_MAIN_FILES=$( { collect_files '*.java' | grep '/src/main/java/' || true; } | tr '\n' ' ')
 {{- if .HasModule "SQLDatastore"}}
 SQL_FILES=$(collect_files 'SQLDatastore/src/main/resources/db/migration/*.sql' | tr '\n' ' ')
 {{- end}}
@@ -335,7 +354,7 @@ run_grep_check "MongoDB \$where eval (slow + unindexed)" \
 # --- API (controller) patterns -----------------------------------------------
 # Narrow scope to controller files to avoid flagging worker/event-consumer
 # catch-log-rethrow (which IS required there for retry/DLQ).
-CONTROLLER_FILES=$(echo "$JAVA_FILES" | tr ' ' '\n' | grep -E '/api/controller/.*\.java$' | tr '\n' ' ')
+CONTROLLER_FILES=$( { echo "$JAVA_FILES" | tr ' ' '\n' | grep -E '/api/controller/.*\.java$' || true; } | tr '\n' ' ')
 if [ -n "${CONTROLLER_FILES// /}" ]; then
   run_grep_check "Controller try/catch that only builds ResponseEntity (redundant — GlobalExceptionHandler owns this)" \
     "api.redundant-try-catch" \

@@ -1,24 +1,33 @@
 # Authentication
 
-Trabuco generates production-ready OIDC Resource Server scaffolding by
-default whenever the **API** or **AIAgent** module is selected. The code
-ships **dormant**: every generated project includes the JWT validation
-chain, the scope-mapping converter, RFC 7807 ProblemDetail handlers, and
-test utilities — but a permit-all SecurityFilterChain is the active bean
-until you flip the runtime gate.
+Trabuco generates production-ready OIDC Resource Server scaffolding
+whenever the **API** or **AIAgent** module is selected. Every generated
+project includes the JWT validation chain, the scope-mapping converter,
+RFC 7807 ProblemDetail handlers, and test utilities. Which chain is
+active is selected at runtime by `trabuco.auth.enabled`, which **must
+be set explicitly** — there is no implicit default. The generated app
+refuses to boot if the property is unset.
 
 This document covers what gets generated, how to enable it, how to wire
 each major IdP, and how to test code that depends on identity.
 
 ## Enabling auth
 
-Auth is gated at runtime by a single property:
+Auth is gated at runtime by a single property that **must be set
+explicitly**:
 
 ```yaml
 trabuco:
   auth:
-    enabled: ${TRABUCO_AUTH_ENABLED:false}   # default
+    enabled: ${TRABUCO_AUTH_ENABLED:}   # no default — required
 ```
+
+`SecurityConfig#validateAuthDecisionMade` (and the AIAgent equivalent)
+reads this property at boot and refuses to start the application if it
+is unset, blank, or anything other than `true`/`false`. The error message
+points operators back to this document. The intent is that no service
+ever ships with neither filter chain wired because someone forgot a
+property.
 
 To turn the JWT validation chain on:
 
@@ -26,32 +35,38 @@ To turn the JWT validation chain on:
 2. Set `OIDC_ISSUER_URI` to your IdP's discovery endpoint (see provider
    recipes below).
 
-When `trabuco.auth.enabled` is missing or `false`, the
-`SecurityConfig.permitAllFilterChain` bean is the active filter chain
-and no authentication is enforced. When set to `true`, the
-`oauth2FilterChain` bean takes over and validates incoming JWTs against
-the configured issuer. The two chains are mutually exclusive
-(`@ConditionalOnProperty` pair) so exactly one is wired at any time.
+To run locally without an IdP, or — for AIAgent — to operate on the
+legacy API-key path only, set `trabuco.auth.enabled=false` explicitly.
+
+When set to `false`, the `permitAllFilterChain` bean is the active
+filter chain and no JWT enforcement runs at the HTTP layer. When set
+to `true`, the `oauth2FilterChain` bean takes over and validates
+incoming JWTs against the configured issuer. The two chains are mutually
+exclusive (`@ConditionalOnProperty` pair) so exactly one is wired at
+any time.
 
 Both `SecurityConfig` (API) and `AgentSecurityConfig` (AIAgent) follow
 the same dual-chain pattern.
 
-## Why dormant by default
+## Why an explicit decision is required
 
-The auth code is always present so it's discoverable in source — you can
-read it, customize the claim extractor, drop in scope checks on
-controllers — without re-running the generator or installing a CLI flag.
-But until you have an IdP configured and have decided to enforce auth,
-the runtime stays open. This avoids a class of mistakes where projects
-boot with a half-configured resource server and either:
+A scaffolded service is one rushed deploy away from production. If the
+runtime gate had an implicit default, a developer who forgot to set the
+property would ship — silently — with no auth on the API module (which
+has no fallback) or with only the seeded API-key path on AIAgent. The
+explicit-decision guardrail makes that mistake impossible: the app
+won't boot until the operator chooses.
 
-- fail mysteriously at startup because the issuer URI isn't set, or
-- silently accept unsigned tokens because a misconfiguration disabled
-  signature verification.
+The auth code is always present in source so it's discoverable — you
+can read it, customize the claim extractor, drop in scope checks on
+controllers — without re-running the generator or installing a CLI
+flag. The choice between `enabled=true` and `enabled=false` is a
+runtime concern, not a code-generation concern.
 
-When the gate is off, both failure modes are physically impossible: the
-JWT chain bean isn't created, no JwtDecoder is wired, the issuer URI is
-never read.
+When `enabled=false`, the JWT chain bean isn't created, no JwtDecoder
+is wired, the issuer URI is never read — so failure modes like
+"silently accepting unsigned tokens because the issuer was misconfigured"
+are physically impossible.
 
 ## What gets generated
 
@@ -136,6 +151,11 @@ Below are the values for each major IdP.
 ```bash
 export TRABUCO_AUTH_ENABLED=true
 export OIDC_ISSUER_URI=http://localhost:8180/realms/myrealm
+# OIDC_AUDIENCE is required (validateAuthDecisionMade refuses to boot without it).
+# Keycloak doesn't put aud=<client_id> by default — configure a token mapper
+# to add the client_id (or any service identifier you choose) as the aud claim,
+# then set OIDC_AUDIENCE to that value.
+export OIDC_AUDIENCE=my-api-service
 ```
 
 For local dev, run Keycloak in Docker:
@@ -189,6 +209,9 @@ public class Auth0JwtClaimsExtractor implements JwtClaimsExtractor {
 ```bash
 export TRABUCO_AUTH_ENABLED=true
 export OIDC_ISSUER_URI=https://YOUR_DOMAIN.okta.com/oauth2/default
+# Set OIDC_AUDIENCE to the API resource identifier configured in your
+# Okta authorization server (Authorization Servers → Default → Settings → Audience).
+export OIDC_AUDIENCE=api://your-api
 ```
 
 Okta emits standard `scp` (array form). The default extractor handles
@@ -199,6 +222,10 @@ both `scope` and `scp` automatically — no customization needed.
 ```bash
 export TRABUCO_AUTH_ENABLED=true
 export OIDC_ISSUER_URI=https://cognito-idp.{region}.amazonaws.com/{userPoolId}
+# Cognito puts the app client_id in the aud claim by default for ID tokens.
+# For access tokens, the aud claim is named client_id (not aud); see the
+# custom JwtClaimsExtractor below if you need access-token validation.
+export OIDC_AUDIENCE=YOUR_APP_CLIENT_ID
 ```
 
 **Custom extractor required.** Cognito puts group membership in
@@ -238,13 +265,16 @@ For any other RFC-conformant OIDC provider:
 ```bash
 export TRABUCO_AUTH_ENABLED=true
 export OIDC_ISSUER_URI=https://your-idp.example.com
+# Pick whatever value your IdP mints into the aud claim — typically
+# the API URL or a configured "audience" / "resource" identifier.
+export OIDC_AUDIENCE=https://your-service-identifier
 ```
 
 The default extractor reads the standard `scope` (or `scp`) claim. If
 the provider emits a non-standard layout, register a custom
 `JwtClaimsExtractor` bean with `@Primary`.
 
-## Migration from API-key auth (AIAgent)
+## Configuring the legacy API-key path (AIAgent)
 
 The AIAgent module ships with two coexisting auth mechanisms — the
 legacy tier-based `ApiKeyAuthFilter` (governed by
@@ -253,29 +283,82 @@ legacy tier-based `ApiKeyAuthFilter` (governed by
 
 | `app.aiagent.api-key.enabled` | `trabuco.auth.enabled` | Behavior |
 |-----------------------------|-----------------------|----------|
-| `true` (default)            | `false` (default)     | Legacy API-key path active, JWT dormant. Pre-auth-scaffolding behavior preserved. |
+| `true` (default)            | `false` (explicit)    | Legacy API-key path is the only HTTP-layer auth. Pre-auth-scaffolding behavior preserved. |
 | `true`                      | `true`                | Hybrid — both filters run, either credential type accepted. |
 | `false`                     | `true`                | JWT-only. Recommended target state. |
-| `false`                     | `false`               | No auth enforced. (Don't run this in prod.) |
+| `false`                     | `false`               | No HTTP-layer auth enforced. (Don't run this in prod.) |
+| any                         | *unset*               | App refuses to boot. `validateAuthDecisionMade` rejects the missing property. |
+
+### Configuring API keys (no seeded defaults since 1.12)
+
+Trabuco no longer ships seeded keys (`partner-secret-key`,
+`public-read-key`) in source. The filter consumes
+`@ConfigurationProperties("agent.auth")` and refuses to boot when it is
+enabled but the keys map is empty. Operators must populate the keys via
+config:
+
+```yaml
+# application-prod.yml (or any env-specific override)
+agent:
+  auth:
+    keys:
+      "${PARTNER_KEY_VALUE}":           # the literal bearer token clients send
+        tier: partner                   # public | partner — drives ScopeEnforcer
+        label: prod-partner-2026-q1     # rotation tag for logs / metrics
+      "${INTERNAL_KEY_VALUE}":
+        tier: partner
+        label: internal-services
+```
+
+Inject the key values via env vars / Spring Cloud Config / K8s Secret —
+do not commit literals. To rotate a key, add the new entry, deploy, then
+remove the old one once clients have rolled forward.
+
+For local development, the `local-dev` profile loads two demo keys
+(`dev-public-key`, `dev-partner-key`) from `application-local-dev.yml`
+and emits a noisy startup `WARN`:
+
+```bash
+SPRING_PROFILES_ACTIVE=local-dev mvn spring-boot:run -pl AIAgent
+
+curl -H "Authorization: Bearer dev-partner-key" \
+     http://localhost:8080/ingest -d '{...}'
+```
+
+Do **not** activate the `local-dev` profile in any deployed
+environment. The `DemoKeyStartupWarning` bean only registers under that
+profile, so CI / staging / prod never see the demo keys.
 
 Incremental migration path:
 
 1. **Project is generated with both paths already wired** — no
    regeneration needed.
-2. **Adopt JWT for new endpoints.** Use
-   `@PreAuthorize("hasAuthority('SCOPE_agent:read')")` instead of
-   `@RequireScope`. Set `trabuco.auth.enabled=true` and configure the
-   issuer URI.
-3. **Migrate existing endpoints incrementally.** Replace
-   `@RequireScope("public")` with the appropriate
-   `@PreAuthorize("hasAuthority('SCOPE_*')")` annotation.
+2. **Turn the JWT chain on.** Set `trabuco.auth.enabled=true` and
+   configure `OIDC_ISSUER_URI` + `OIDC_AUDIENCE`. Existing
+   `@RequireScope` annotations keep working — `ScopeEnforcer` bridges
+   the JWT scope claim into the same tier ladder.
+3. **Optionally adopt `@PreAuthorize` for new endpoints.** Use
+   `@PreAuthorize("hasAuthority('SCOPE_*')")` when you need finer
+   scopes than the three-tier ladder offers. The two annotations
+   coexist on the same controller without conflict.
 4. **Disable the legacy filter when ready.** Set
-   `app.aiagent.api-key.enabled=false` in `application.yml`. Remove the
-   API-key handling code if you want to clean up.
+   `app.aiagent.api-key.enabled=false` in `application.yml`. Existing
+   `@RequireScope` annotations keep enforcing the tier ladder via the
+   JWT bridge — you do not need to remove them.
 
-The two systems have different semantics: tiers are hierarchical
-(`anonymous < public < partner`), JWT scopes are flat presence checks.
-Don't try to bridge them — pick one per endpoint.
+The two systems are bridged in `ScopeEnforcer` (since 1.12). The JWT
+authority → tier mapping:
+
+| JWT authorities | Effective tier |
+| --------------- | -------------- |
+| `SCOPE_partner`, `SCOPE_agent:write`, `SCOPE_agent:admin` | `partner` |
+| `SCOPE_public`, `SCOPE_agent:read` | `public` |
+| Authenticated, no recognized scope | `public` (any valid token earns baseline trust) |
+| Anonymous / no JWT | `anonymous` |
+
+Hybrid mode (both filters on) takes the higher tier of (API-key
+result, JWT result), so a request authenticated through either path
+with sufficient scope is allowed.
 
 ## Testing
 
@@ -298,9 +381,12 @@ SecurityContextHolder.getContext().setAuthentication(
     MockJwtFactory.authentication("user-42", "agent:read"));
 ```
 
-Tests that exercise the JWT filter chain must explicitly opt into auth
-via a property — the dormant default would otherwise route every
-request through the permit-all chain and short-circuit the 401 path:
+Tests that exercise the JWT filter chain must set
+`trabuco.auth.enabled=true` explicitly. Tests that don't care about
+auth (or that exercise the open chain) must set it to `false`. Either
+way, the property must appear in the test's `@TestPropertySource` /
+`@SpringBootTest(properties=...)` block — `validateAuthDecisionMade`
+refuses to boot without it:
 
 ```java
 @SpringBootTest
@@ -346,9 +432,27 @@ side. Trabuco only validates the tokens they issue.
   for Java 21 compatibility. When the runtime is Java 25+, this can
   be replaced with `ScopedValue` for inherited propagation across
   structured concurrency.
+- **Tenant isolation in the AIAgent vector store (since 1.12).**
+  `CallerIdentity.tenantId()` defaults to `keyHash()` — one logical
+  tenant per credential, the safe default for single-tenant or
+  per-partner deployments. JWT-mode deployments override this with
+  the `tenant_id` claim (read by `ScopeEnforcer.jwtDerivedCaller`).
+  Every chunk written through `DocumentIngestionService.ingest(...)`
+  is server-side stamped with `metadata.tenant_id = caller.tenantId()`
+  — caller-supplied `tenant_id` in the request body is overwritten
+  and a WARN is logged. `VectorKnowledgeRetriever.retrieve(...)`
+  filters every `SearchRequest` with
+  `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())`. The
+  PGVector schema ships a btree expression index on
+  `(metadata->>'tenant_id')` so the planner prunes by tenant before
+  HNSW similarity search runs. Cross-tenant retrieval is blocked
+  by construction.
 - **Why dual chains, not a single conditional bean.** Spring Security
   on the classpath would auto-configure HTTP Basic on every endpoint if
-  no `SecurityFilterChain` bean is provided. The permit-all chain is
-  the explicit "open" stance that takes its place when auth is
-  dormant — making "no enforcement" a deliberate config rather than
-  surprising default behavior.
+  no `SecurityFilterChain` bean is provided. The open chain
+  (`permitAllFilterChain` / `agentPermitAllFilterChain`) is the
+  explicit replacement when the operator opts into the open stance via
+  `trabuco.auth.enabled=false` — making "no JWT enforcement" a
+  deliberate config rather than surprising default behavior. The
+  `validateAuthDecisionMade` boot guardrail ensures neither chain is
+  silently selected by omission.

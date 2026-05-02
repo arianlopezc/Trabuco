@@ -5,7 +5,8 @@
 spring:
   datasource:
 {{- if eq .Database "postgresql"}}
-    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:prefer}}
+    # sslmode defaults to `require` since 1.12 — refuses plaintext fallback.
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:require}}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -29,11 +30,24 @@ spring:
       connection-timeout: ${DB_CONNECTION_TIMEOUT:20000}
       idle-timeout: ${DB_IDLE_TIMEOUT:300000}
       max-lifetime: ${DB_MAX_LIFETIME:1200000}
-      leak-detection-threshold: ${DB_LEAK_DETECTION:0}
+      # 30s default surfaces connection leaks instead of
+      # silently exhausting the pool. Override per workload.
+      leak-detection-threshold: ${DB_LEAK_DETECTION:30000}
 
   # Flyway Migration Settings
+  #
+  # Operators can run migrations as a privileged DBA role distinct from
+  # the runtime app role by setting FLYWAY_USERNAME / FLYWAY_PASSWORD.
+  # When unset, Spring Boot wires Flyway with the same datasource
+  # credentials configured above — and tooling such as Testcontainers
+  # `@ServiceConnection` can override both at once. We deliberately do
+  # NOT pin user/password to per-driver literal defaults here: doing so
+  # leaks the postgres `postgres/postgres` defaults into MySQL/H2 builds
+  # and overrides Testcontainer-injected credentials in CI.
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
     locations: classpath:db/migration
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
     validate-on-migrate: ${FLYWAY_VALIDATE:true}
+    # clean-disabled defaults to true.
+    clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}

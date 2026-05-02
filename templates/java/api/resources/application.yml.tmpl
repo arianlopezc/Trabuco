@@ -2,17 +2,47 @@ server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
   compression:
-    enabled: true
-    mime-types: application/json,application/xml,text/html,text/xml,text/plain,application/javascript,text/css
+    # gzip is off by default. Compressing responses that
+    # mix attacker-controlled and secret tokens is the BREACH/CRIME
+    # attack class — token-aware proxies (CDNs) can in principle
+    # extract per-character secrets from compressed responses on
+    # TLS-terminated connections. Enable per-route via the
+    # CDN/reverse-proxy if your traffic profile makes the
+    # bandwidth saving worthwhile.
+    enabled: ${SERVER_COMPRESSION_ENABLED:false}
+    mime-types: text/html,text/xml,text/plain,text/css
     min-response-size: 1024
+  # hard cap on inbound request body. Without these bounds
+  # a malicious caller can submit unbounded JSON / multipart and force
+  # the server to allocate proportional heap before any controller
+  # validation fires. Tomcat enforces these at the container layer,
+  # before Spring sees the request.
+  tomcat:
+    max-http-form-post-size: ${SERVER_MAX_FORM_POST_SIZE:2MB}
+    max-swallow-size: ${SERVER_MAX_SWALLOW_SIZE:2MB}
 
 spring:
   application:
     name: {{.ProjectName}}-api
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
+    # no default profile. Earlier templates defaulted to
+    # `local`, which silently inherited dev configuration if
+    # SPRING_PROFILES_ACTIVE was unset in production. The empty
+    # Default activates only Spring Boot's `default` profile in
+    # production; operators set SPRING_PROFILES_ACTIVE=local for
+    # local development (or =local-dev for dev-defaults like demo
+    # API keys).
+    active: ${SPRING_PROFILES_ACTIVE:}
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+  # multipart upload caps. The Tomcat-level
+  # max-http-form-post-size handles non-multipart bodies; these handle
+  # file uploads. Pair with @Size on @RequestBody DTO fields for
+  # deep validation.
+  servlet:
+    multipart:
+      max-file-size: ${SERVER_MULTIPART_FILE:10MB}
+      max-request-size: ${SERVER_MULTIPART_REQ:10MB}
   # Virtual threads (Project Loom) — Java 21+ / Spring Boot 3.2+
   # When enabled, Tomcat handles each request on a virtual thread, @Async runs
   # on virtual threads, and the default TaskExecutor is virtual-thread-backed.
@@ -30,24 +60,32 @@ spring:
       enabled: true
 {{- if .AuthEnabled}}
   # OAuth2 Resource Server — JWT validation against an external OIDC issuer.
-  # Dormant by default: the SecurityConfig.permitAllFilterChain bean is
-  # active until trabuco.auth.enabled (below) is flipped to true. When
-  # OIDC_ISSUER_URI is unset, Spring's IssuerUriCondition skips JwtDecoder
-  # creation entirely (StringUtils.hasText), so an empty default is safe.
+  # Active when trabuco.auth.enabled=true (below). SecurityConfig#validateAuthDecisionMade
+  # also requires audiences to be non-empty when enabled — leaving it empty would
+  # silently disable Spring Boot's audience validator and make the service
+  # accept tokens minted for sister services (token confusion). Set OIDC_AUDIENCE
+  # explicitly even when your IdP doesn't strictly enforce it; this is the
+  # defense-in-depth posture every deployed service should adopt.
   #
   # To enable auth:
   #   1. Set trabuco.auth.enabled=true
   #   2. Set OIDC_ISSUER_URI to your IdP's discovery endpoint
+  #   3. Set OIDC_AUDIENCE to the API identifier your IdP mints into the aud claim
   #
   # The decoder auto-fetches JWKS, handles key rotation, and validates
   # iss / exp / aud.
   #
-  # Provider examples (set OIDC_ISSUER_URI to one of these):
-  #   Keycloak:    http://localhost:8180/realms/myrealm
-  #   Auth0:       https://YOUR_DOMAIN.auth0.com/
-  #   Okta:        https://YOUR_DOMAIN.okta.com/oauth2/default
-  #   Cognito:     https://cognito-idp.{region}.amazonaws.com/{userPoolId}
-  #   Generic:     https://your-idp.example.com
+  # Provider examples (set OIDC_ISSUER_URI / OIDC_AUDIENCE to one of these):
+  #   Keycloak:    OIDC_ISSUER_URI=http://localhost:8180/realms/myrealm
+  #                OIDC_AUDIENCE=<your client_id, configured as a token-mapper aud>
+  #   Auth0:       OIDC_ISSUER_URI=https://YOUR_DOMAIN.auth0.com/
+  #                OIDC_AUDIENCE=https://your-api-identifier
+  #   Okta:        OIDC_ISSUER_URI=https://YOUR_DOMAIN.okta.com/oauth2/default
+  #                OIDC_AUDIENCE=api://your-api
+  #   Cognito:     OIDC_ISSUER_URI=https://cognito-idp.{region}.amazonaws.com/{userPoolId}
+  #                OIDC_AUDIENCE=<your app client_id>
+  #   Generic:     OIDC_ISSUER_URI=https://your-idp.example.com
+  #                OIDC_AUDIENCE=<your service identifier>
   #
   # Auth0 and Cognito additionally need a custom JwtClaimsExtractor bean
   # (replace DefaultJwtClaimsExtractor in shared.auth) — see docs/auth.md.
@@ -57,6 +95,13 @@ spring:
         jwt:
           issuer-uri: ${OIDC_ISSUER_URI:}
           audiences: ${OIDC_AUDIENCE:}
+          # signature-algorithm whitelist. Without this the
+          # decoder accepts whatever the issuer's JWKS advertises —
+          # historically a path to algorithm-confusion attacks (HS256
+          # over an RSA public key, the famous JWT vuln). RS256 + ES256
+          # cover modern OIDC providers (Keycloak/Auth0/Okta/Cognito);
+          # extend the list if your IdP uses something exotic.
+          jws-algorithms: ${OIDC_JWS_ALGORITHMS:RS256,ES256,RS384,ES384,RS512,ES512}
 {{- end}}
 {{- if .HasModule "SQLDatastore"}}
 
@@ -65,7 +110,12 @@ spring:
   # Use docker-compose up -d to start the database container
   datasource:
 {{- if eq .Database "postgresql"}}
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:prefer}
+    # sslmode defaults to `require` since 1.12 (was `prefer`).
+    # `prefer` silently downgrades to plaintext if the server doesn't
+    # advertise TLS — masking misconfigured deployments. `require`
+    # refuses to connect over plaintext. For local Postgres without
+    # TLS (docker-compose), set DB_SSL_MODE=disable explicitly.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:require}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -87,12 +137,32 @@ spring:
       connection-timeout: 20000
       idle-timeout: 300000
       max-lifetime: 1200000
+      # surface connection leaks at 30s. Without this set,
+      # leaks accumulate silently until the pool is starved and every
+      # Request times out. 30s is conservative for typical request
+      # paths; tune per workload.
+      leak-detection-threshold: ${DB_LEAK_DETECTION:30000}
 
   # Flyway migrations
+  #
+  # Flyway by default reuses the runtime app's DB credentials, so the
+  # runtime user inherits DDL privileges — broad blast radius if the
+  # app is compromised. Operators can run migrations as a separate
+  # higher-privileged DBA role by setting FLYWAY_USERNAME /
+  # FLYWAY_PASSWORD env vars (Spring binds these to
+  # spring.flyway.user / spring.flyway.password automatically).
+  # We deliberately do NOT pin user/password to a per-driver literal
+  # default here: doing so leaks the postgres `postgres/postgres`
+  # defaults into MySQL/H2 builds and overrides Testcontainer-injected
+  # credentials in CI.
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # clean-disabled defaults to true since 1.12 — prevents
+    # accidental data loss via {@code flyway clean}. Operators with a
+    # legitimate need (CI test reset only) override per environment.
+    clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}
 {{- end}}
 {{- if .HasModule "NoSQLDatastore"}}
 {{- if eq .NoSQLDatabase "mongodb"}}
@@ -137,20 +207,34 @@ spring:
 {{- if and (.HasModule "EventConsumer") (.UsesKafka)}}
 
   # Kafka Configuration (for event publishing)
+  # See EventConsumer/application.yml — KAFKA_SECURITY_PROTOCOL
+  # opt-in for SASL_SSL/SSL in production; PLAINTEXT default for local
+  # docker-compose only.
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
     producer:
+      # Idempotent + acks=all — see EventConsumer/application.yml.
+      acks: all
+      properties:
+        enable.idempotence: true
+      retries: 5
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 {{- else if and (.HasModule "EventConsumer") (.UsesRabbitMQ)}}
 
   # RabbitMQ Configuration (for event publishing)
+  # See EventConsumer/application.yml — guest:guest is
+  # localhost-only in modern RabbitMQ; production must set creds + TLS.
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
+    ssl:
+      enabled: ${RABBITMQ_USE_SSL:false}
 {{- else if and (.HasModule "EventConsumer") (.UsesSQS)}}
 
   # AWS SQS Configuration (for event publishing)
@@ -194,15 +278,20 @@ resilience4j:
 {{- if .AuthEnabled}}
 
 # Trabuco runtime feature flags
-# Auth scaffolding ships dormant — flip enabled to true (and set
-# OIDC_ISSUER_URI above) to activate JWT validation against the
-# configured OIDC issuer. When false, SecurityConfig.permitAllFilterChain
-# is the active SecurityFilterChain and no auth is enforced. The
-# generated source for both chains is identical regardless of this
-# value; it gates the runtime wiring only.
+# Auth scaffolding ships in source for both filter chains. The active
+# chain is selected by trabuco.auth.enabled, which MUST be set
+# explicitly — there is no implicit default. The SecurityConfig
+# @PostConstruct hook refuses to boot if this property is unset, so
+# Every deployment makes a deliberate choice between:
+#   - true:  JWT validation enforced (set OIDC_ISSUER_URI above and
+#            configure provider-specific claims via JwtClaimsExtractor)
+#   - false: open chain (local development, or — for AIAgent — to run
+#            on the legacy API-key path only)
+# Always set TRABUCO_AUTH_ENABLED at runtime; do not provide a default
+# here (the missing default is the boot-time guardrail).
 trabuco:
   auth:
-    enabled: ${TRABUCO_AUTH_ENABLED:false}
+    enabled: ${TRABUCO_AUTH_ENABLED:}
 {{- end}}
 
 # CORS configuration
@@ -258,7 +347,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: ${MANAGEMENT_ENDPOINTS:health,info,prometheus,metrics}
+        # Actuator exposure defaults to `health,info` only since 1.12.
+        # `prometheus` and `metrics` leak per-route URI templates and JVM
+        # internals — operators that need them set
+        # MANAGEMENT_ENDPOINTS=health,info,prometheus,metrics explicitly.
+        # When exposed, /actuator/prometheus + /actuator/metrics/** are
+        # scope-gated by SecurityConfig (SCOPE_metrics:read).
+        include: ${MANAGEMENT_ENDPOINTS:health,info}
       base-path: /actuator
   endpoint:
     health:
@@ -286,6 +381,17 @@ management:
       enabled: false
 
 # OpenAPI/Swagger configuration
+#
+# / api-docs and swagger-ui leak the full API
+# surface. They're useful in dev / for partner onboarding, but
+# shouldn't ship to production. Defaults to enabled here so
+# `mvn spring-boot:run` works out of the box; production
+# environments must set SPRINGDOC_ENABLED=false (or activate a prod
+# profile that overrides). When the JWT chain is on,
+# {@code SecurityConfig} permits {@code /swagger-ui/**} and
+# {@code /api-docs/**} in the URL matcher — gate via
+# {@code SCOPE_docs:read} (uncomment the {@code requestMatchers}
+# clause in SecurityConfig.java) for partner-only access.
 springdoc:
   api-docs:
     enabled: ${SPRINGDOC_ENABLED:true}

@@ -5,8 +5,10 @@ import {{.GroupID}}.model.dto.JsonRpcResponse;
 import {{.GroupID}}.aiagent.security.CallerContext;
 import {{.GroupID}}.aiagent.security.CallerIdentity;
 import {{.GroupID}}.aiagent.security.RateLimiter;
+import {{.GroupID}}.aiagent.security.RequireScope;
 import {{.GroupID}}.aiagent.security.ScopeEnforcer;
 import {{.GroupID}}.aiagent.task.TaskManager;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,17 +19,67 @@ import java.util.Map;
 /**
  * Agent-to-Agent (A2A) protocol controller.
  *
- * Implements JSON-RPC 2.0 over HTTP for inter-agent communication.
- * Supports tasks/send (skill invocation), tasks/chat (LLM conversation),
- * and tasks/get (task status polling).
+ * <p>Implements JSON-RPC 2.0 over HTTP for inter-agent communication.
+ * Supports {@code tasks/send} (skill invocation), {@code tasks/chat}
+ * (LLM conversation), and {@code tasks/get} (task status polling).
  *
- * TODO: Register your domain-specific skills in the handleTasksSend method.
+ * <p>Auth model — three layers (since 1.12, fix):
+ * <ol>
+ *   <li><b>Class-level scope.</b> {@code @RequireScope("public")} on
+ *       {@link #handle} blocks anonymous callers entirely. The
+ *       {@link ScopeEnforcer} bridge means the gate works under both
+ *       API-key and JWT auth modes.</li>
+ *   <li><b>Method-level scope (declarative).</b> Each JSON-RPC method
+ *       is registered in {@link #METHOD_SCOPE} with its required tier
+ *       — adding a method without registering it falls through to
+ *       {@code -32601 Unknown method}, never silently open. Per-skill
+ *       tighter checks (e.g., {@code partner} for write-side methods)
+ *       can call {@code ScopeEnforcer.requireScope("partner", caller)}
+ *       inside the case.</li>
+ *   <li><b>Per-task ownership.</b> {@link TaskManager#getTaskForOwner}
+ *       Returns {@link java.util.Optional#empty} when either the task
+ *       doesn't exist or the caller didn't submit it — closing the
+ *       BOLA hole where any caller could poll any task UUID.</li>
+ * </ol>
+ *
+ * <p>TODO: Register your domain-specific skills in {@link #handleTasksSend}.
+ * For each new method that isn't a skill (i.e., a sibling of
+ * {@code tasks/send}), also add an entry to {@link #METHOD_SCOPE}.
  */
 @RestController
 public class A2AController {
 
+    /**
+     * Declarative method-scope policy. Adding a JSON-RPC method
+     * without an entry here makes the dispatcher reject the request
+     * with {@code -32601 Unknown method} — the fail-closed default.
+     * Tighter-than-baseline scopes (e.g., {@code partner} for
+     * destructive methods) can also be set here.
+     */
+    private static final Map<String, String> METHOD_SCOPE = Map.of(
+        "tasks/send", "public",
+        "tasks/chat", "public",
+        "tasks/get",  "public"
+    );
+
     private final TaskManager taskManager;
     private final RateLimiter rateLimiter;
+
+    /**
+     * typed parameter parsing. {@link JsonRpcRequest#params}
+     * is a {@code Map<String, Object>} at the JSON-RPC envelope level
+     * (per the spec — params are method-defined). The previous
+     * implementation cast inside each handler ({@code (String) params.get("skill")},
+     * {@code (Map) params.get("input")}) — which silently ClassCastExceptions
+     * on a hostile payload, has no length cap, and accepts arbitrary
+     * nested types. This {@link ObjectMapper} converts the params Map
+     * into the typed records below ({@link AskQuestionParams},
+     * {@link ChatParams}, {@link TaskGetParams}). Each record's compact
+     * canonical constructor enforces {@code @NotBlank} and {@code @Size}
+     * caps so a malformed payload fails fast with
+     * {@code -32602 Invalid params}.
+     */
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired(required = false)
     private {{.GroupID}}.aiagent.agent.PrimaryAgent primaryAgent;
@@ -41,6 +93,7 @@ public class A2AController {
     }
 
     @PostMapping("/a2a")
+    @RequireScope("public")
     public JsonRpcResponse handle(@RequestBody JsonRpcRequest body) {
         var caller = CallerContext.get();
         rateLimiter.checkRateLimit(caller);
@@ -51,39 +104,57 @@ public class A2AController {
             return JsonRpcResponse.error(rpcId, -32600, "Invalid JSON-RPC version. Expected 2.0");
         }
         String method = body.method();
-
         var params = body.params();
+
+        // Layer 2: declarative method-scope enforcement. Methods not
+        // in METHOD_SCOPE are rejected before any handler runs.
+        String requiredTier = METHOD_SCOPE.get(method);
+        if (requiredTier == null) {
+            return JsonRpcResponse.error(rpcId, -32601, "Unknown method: " + method);
+        }
+        ScopeEnforcer.requireScope(requiredTier, caller);
 
         return switch (method) {
             case "tasks/send" -> handleTasksSend(rpcId, params, caller);
             case "tasks/chat" -> handleTasksChat(rpcId, params, caller);
-            case "tasks/get" -> handleTasksGet(rpcId, params);
+            case "tasks/get" -> handleTasksGet(rpcId, params, caller);
             default -> JsonRpcResponse.error(rpcId, -32601, "Unknown method: " + method);
         };
     }
 
     private JsonRpcResponse handleTasksSend(String rpcId, Map<String, Object> params, CallerIdentity caller) {
-        String skill = (String) params.get("skill");
-        @SuppressWarnings("unchecked")
-        var input = (Map<String, Object>) params.getOrDefault("input", Map.of());
-
-        if (skill == null) {
-            return JsonRpcResponse.error(rpcId, -32602, "skill is required");
+        String skill;
+        Map<String, Object> input;
+        try {
+            skill = stringParam(params, "skill", true);
+            @SuppressWarnings("unchecked")
+            var raw = (Map<String, Object>) params.getOrDefault("input", Map.of());
+            input = raw;
+        } catch (IllegalArgumentException | ClassCastException e) {
+            return JsonRpcResponse.error(rpcId, -32602, "Invalid params: " + e.getMessage());
         }
 
         // TODO: Register your domain-specific skills here.
-        // Each case should validate scope, extract input, and submit a task.
+        // Baseline scope is enforced at dispatch (METHOD_SCOPE above).
+        // Inside a case, call ScopeEnforcer.requireScope("partner", caller)
+        // only when the skill demands a stricter scope than the baseline.
         // Example:
         //   case "list_items" -> {
-        //       ScopeEnforcer.requireScope("public", caller);
-        //       String taskId = taskManager.submitTask(() -> itemService.listAll());
+        //       String taskId = taskManager.submitTask(
+        //           () -> itemService.listAll(), caller.keyHash());
         //       yield JsonRpcResponse.success(rpcId, Map.of("task_id", taskId, "status", "submitted"));
         //   }
         return switch (skill) {
             case "ask_question" -> {
-                ScopeEnforcer.requireScope("public", caller);
-                String query = (String) input.get("query");
-                String taskId = taskManager.submitTask(() -> Map.of("answer", knowledgeTools.askQuestion(query)));
+                AskQuestionParams parsed;
+                try {
+                    parsed = objectMapper.convertValue(input, AskQuestionParams.class);
+                } catch (IllegalArgumentException e) {
+                    yield JsonRpcResponse.error(rpcId, -32602, "Invalid input: " + e.getMessage());
+                }
+                String taskId = taskManager.submitTask(
+                    () -> Map.of("answer", knowledgeTools.askQuestion(parsed.query())),
+                    caller.keyHash());
                 yield JsonRpcResponse.success(rpcId, Map.of("task_id", taskId, "status", "submitted"));
             }
             default -> JsonRpcResponse.error(rpcId, -32601, "Unknown skill: " + skill);
@@ -91,29 +162,37 @@ public class A2AController {
     }
 
     private JsonRpcResponse handleTasksChat(String rpcId, Map<String, Object> params, CallerIdentity caller) {
-        ScopeEnforcer.requireScope("public", caller);
-        @SuppressWarnings("unchecked")
-        var input = (Map<String, Object>) params.getOrDefault("input", Map.of());
-        String message = (String) input.get("message");
-        if (message == null || message.isBlank()) {
-            return JsonRpcResponse.error(rpcId, -32602, "message is required in input");
+        ChatParams parsed;
+        try {
+            @SuppressWarnings("unchecked")
+            var input = (Map<String, Object>) params.getOrDefault("input", Map.of());
+            parsed = objectMapper.convertValue(input, ChatParams.class);
+        } catch (IllegalArgumentException | ClassCastException e) {
+            return JsonRpcResponse.error(rpcId, -32602, "Invalid params: " + e.getMessage());
         }
         if (primaryAgent == null) {
             return JsonRpcResponse.error(rpcId, -32603, "Agent brain requires ANTHROPIC_API_KEY");
         }
         String taskId = taskManager.submitTask(() -> {
-            String response = primaryAgent.chat(message);
+            String response = primaryAgent.chat(parsed.message());
             return Map.of("response", response);
-        });
+        }, caller.keyHash());
         return JsonRpcResponse.success(rpcId, Map.of("task_id", taskId, "status", "submitted"));
     }
 
-    private JsonRpcResponse handleTasksGet(String rpcId, Map<String, Object> params) {
-        String taskId = (String) params.get("task_id");
-        if (taskId == null) {
-            return JsonRpcResponse.error(rpcId, -32602, "task_id required");
+    private JsonRpcResponse handleTasksGet(String rpcId, Map<String, Object> params, CallerIdentity caller) {
+        TaskGetParams parsed;
+        try {
+            parsed = objectMapper.convertValue(params, TaskGetParams.class);
+        } catch (IllegalArgumentException e) {
+            return JsonRpcResponse.error(rpcId, -32602, "Invalid params: " + e.getMessage());
         }
-        var task = taskManager.getTask(taskId);
+        String taskId = parsed.taskId();
+        // Layer 3: ownership check. getTaskForOwner returns Optional.empty()
+        // for both "doesn't exist" and "exists but not yours" — same
+        // shape, so an attacker enumerating UUIDs can't distinguish.
+        var task = taskManager.getTaskForOwner(taskId, caller.keyHash())
+            .orElse(null);
         if (task == null) {
             return JsonRpcResponse.error(rpcId, -32602, "Task not found: " + taskId);
         }
@@ -123,5 +202,68 @@ public class A2AController {
             "result", task.getResult() != null ? task.getResult() : "",
             "error", task.getError() != null ? task.getError() : ""
         ));
+    }
+
+    /**
+     * Typed parameter records. Each handler accepts its own
+     * shape, with bounds enforced in the canonical constructor. Adding
+     * a new JSON-RPC method? Define a record here, register the method
+     * in {@link #METHOD_SCOPE}, and parse via
+     * {@code objectMapper.convertValue(input, YourParams.class)}.
+     */
+    public record AskQuestionParams(String query) {
+        public AskQuestionParams {
+            if (query == null || query.isBlank()) {
+                throw new IllegalArgumentException("query must not be blank");
+            }
+            if (query.length() > 8_192) {
+                throw new IllegalArgumentException("query exceeds 8 KB");
+            }
+        }
+    }
+
+    public record ChatParams(String message) {
+        public ChatParams {
+            if (message == null || message.isBlank()) {
+                throw new IllegalArgumentException("message must not be blank");
+            }
+            if (message.length() > 32_768) {
+                throw new IllegalArgumentException("message exceeds 32 KB");
+            }
+        }
+    }
+
+    public record TaskGetParams(@com.fasterxml.jackson.annotation.JsonProperty("task_id") String taskId) {
+        public TaskGetParams {
+            if (taskId == null || taskId.isBlank()) {
+                throw new IllegalArgumentException("task_id must not be blank");
+            }
+            if (taskId.length() > 128) {
+                throw new IllegalArgumentException("task_id exceeds 128 chars");
+            }
+        }
+    }
+
+    /**
+     * Bounded string-from-Map extractor. Throws
+     * {@link IllegalArgumentException} when the key is missing
+     * (and required), the value isn't a String, or the value
+     * exceeds the implicit cap.
+     */
+    private static String stringParam(Map<String, Object> params, String key, boolean required) {
+        Object v = params.get(key);
+        if (v == null) {
+            if (required) {
+                throw new IllegalArgumentException(key + " is required");
+            }
+            return null;
+        }
+        if (!(v instanceof String s)) {
+            throw new IllegalArgumentException(key + " must be a string");
+        }
+        if (s.length() > 1024) {
+            throw new IllegalArgumentException(key + " exceeds 1 KB");
+        }
+        return s;
     }
 }

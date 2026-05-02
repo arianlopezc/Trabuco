@@ -16,8 +16,14 @@ spring:
       # Connection settings - override in environment or main application.yml
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      # Optional password (uncomment if needed)
-      # password: ${REDIS_PASSWORD:}
+      # REDIS_PASSWORD is required for any non-loopback host.
+      # An empty default works for local docker-compose Redis on
+      # 127.0.0.1; production deployments must set a password and TLS
+      # via REDIS_USE_SSL=true. Wired live by Spring; commented-out
+      # property would be silently ignored.
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_USE_SSL:false}
       # Connection timeout
       timeout: 2000ms
       # Lettuce connection pool settings

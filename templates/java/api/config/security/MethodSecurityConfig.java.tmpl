@@ -1,0 +1,36 @@
+package {{.GroupID}}.api.config.security;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+
+/**
+ * Activates Spring Security's method-security AOP — the machinery that
+ * makes {@code @PreAuthorize} / {@code @PostAuthorize} annotations
+ * actually enforce authorization. Only registered when
+ * {@code trabuco.auth.enabled=true}.
+ *
+ * <p>Why conditional: when auth is off (local-dev opt-out), the open
+ * chain permits every request through the filter layer, but
+ * {@code @PreAuthorize} annotations on controllers would still reject
+ * the request (anonymous principal has no authorities). Without this
+ * conditional, every controller would 403 in local-dev — hostile UX.
+ *
+ * <p>Splitting the {@code @EnableMethodSecurity} declaration onto its
+ * own configuration class lets the AOP wrapping be installed only when
+ * there's a real auth chain to evaluate against. With auth off, the
+ * AOP isn't registered and the annotations are inert — controllers
+ * answer requests directly. With auth on, every annotated method is
+ * gated.
+ *
+ * <p>This is a deliberate trade-off: developers writing controllers
+ * for the API module always include {@code @PreAuthorize} (it's the
+ * canonical pattern; see {@code PlaceholderController}), and the
+ * annotations document intent regardless of whether they enforce in a
+ * given run.
+ */
+@Configuration
+@EnableMethodSecurity
+@ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "true")
+public class MethodSecurityConfig {
+}

@@ -1,0 +1,62 @@
+package {{.GroupID}}.aiagent.security;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.util.Collections;
+import java.util.Map;
+
+/**
+ * Externalized configuration for the legacy API-key auth path.
+ * Bound from {@code agent.auth.*} (typically defined in
+ * {@code application.yml} or a profile-specific override).
+ *
+ * <p>Replaces the hardcoded {@code Map.of(...)} that earlier releases
+ * baked directly into {@code ApiKeyAuthFilter}. Keys must now be
+ * supplied through configuration — env vars, profile YAML, Spring
+ * Cloud Config, K8s Secret-mounted properties, etc. The
+ * {@link ApiKeyAuthFilter#validateKeysConfigured()} hook refuses to
+ * boot when the filter is active and the keys map is empty, which
+ * stops the class of bug where a service ships with the well-known
+ * Trabuco placeholder keys.
+ *
+ * <p>For local development, the {@code local-dev} profile (see
+ * {@code application-local-dev.yml}) populates a demo set; activate
+ * with {@code SPRING_PROFILES_ACTIVE=local-dev} and watch for the
+ * startup WARN that names the loaded demo keys.
+ *
+ * <p>YAML shape:
+ * <pre>{@code
+ * agent:
+ *   Auth:
+ *     keys:
+ *       <key-value>:
+ *         tier: <public|partner>
+ *         label: <human-friendly identifier for logs/metrics>
+ * }</pre>
+ *
+ * <p>Each map entry's key is the literal bearer-token value (or, in a
+ * future hardening pass tracked by the token's SHA-256
+ * hash). The {@code tier} drives the {@code ScopeEnforcer} ladder;
+ * the {@code label} is opaque to the filter and only used for
+ * {@code CallerIdentity} bookkeeping.
+ */
+@ConfigurationProperties("agent.auth")
+public record AgentAuthProperties(
+    Map<String, KeyConfig> keys
+) {
+
+    public AgentAuthProperties {
+        // Defensive: the YAML binding may yield null when the section
+        // is omitted entirely. Normalize to an empty map so callers
+        // can use {@code keys()} without null-check.
+        keys = (keys == null) ? Collections.emptyMap() : Map.copyOf(keys);
+    }
+
+    /**
+     * Per-key entry. {@code tier} is one of {@code public} /
+     * {@code partner} (matched against {@code ScopeEnforcer}'s ladder).
+     * {@code label} is a human-readable identifier surfaced in
+     * {@code CallerIdentity#keyLabel} for log correlation.
+     */
+    public record KeyConfig(String tier, String label) {}
+}

@@ -16,23 +16,73 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${cors.allowed-origins:http://localhost:3000,http://localhost:8080}")
     private String allowedOrigins;
 
+    @Value("${cors.allowed-methods:GET,POST,PUT,DELETE,OPTIONS}")
+    private String allowedMethods;
+
+    @Value("${cors.allowed-headers:Content-Type,Authorization,X-Correlation-ID}")
+    private String allowedHeaders;
+
+    // CORS_ALLOW_CREDENTIALS is now actually wired. Earlier
+    // versions hardcoded {@code allowCredentials(false)}, which made
+    // the operator-facing yaml property silently dead.
+    @Value("${cors.allow-credentials:false}")
+    private boolean allowCredentials;
+
+    @Value("${cors.max-age:3600}")
+    private long maxAge;
+
     public WebConfig(ScopeInterceptor scopeInterceptor) {
         this.scopeInterceptor = scopeInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(scopeInterceptor);
+        // Scope only the application paths the interceptor
+        // is meant for. Without {@code addPathPatterns}, the
+        // interceptor runs on every request — including unmapped
+        // 404s, OPTIONS preflight, actuator endpoints, and the
+        // {@code .well-known/agent.json} discovery payload — wasting
+        // cycles and (worse) potentially returning 403 from
+        // {@code ScopeEnforcer} before Spring MVC can decide that
+        // the path doesn't exist (404). Excluding unmapped paths
+        // keeps 404s 404s.
+        registry.addInterceptor(scopeInterceptor)
+            .addPathPatterns("/**")
+            .excludePathPatterns(
+                "/actuator/**",
+                "/.well-known/**",
+                "/capabilities",
+                "/swagger-ui/**",
+                "/v3/api-docs/**",
+                "/api-docs/**",
+                "/error");
     }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-                .allowedOrigins(allowedOrigins.split(","))
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("Content-Type", "Authorization", "X-Correlation-ID")
-                .allowCredentials(false)
-                .maxAge(3600);
+                .allowedOrigins(splitTrim(allowedOrigins))
+                .allowedMethods(splitTrim(allowedMethods))
+                .allowedHeaders(splitTrim(allowedHeaders))
+                .allowCredentials(allowCredentials)
+                .maxAge(maxAge);
+    }
+
+    /**
+     * Splits a comma-separated list and trims whitespace from each
+     * entry. {@code String.split(",")} alone leaves spaces from
+     * {@code "a, b, c"} in the parsed values, which then fail to
+     * match the actual Origin header.
+     */
+    private static String[] splitTrim(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return new String[0];
+        }
+        String[] parts = csv.split(",");
+        for (int i = 0; i < parts.length; i++) {
+            parts[i] = parts[i].trim();
+        }
+        return parts;
     }
 
     @Override

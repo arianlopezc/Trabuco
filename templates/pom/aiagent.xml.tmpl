@@ -240,6 +240,15 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- ArchUnit — drives the AgentArchitectureTest guard
+             that enforces every protocol controller endpoint declares
+             an explicit authorization decision (recognises both
+             @PreAuthorize and the legacy @RequireScope marker). -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
 {{- if .AuthEnabled}}
         <!-- spring-security-test: post-processors and test utilities for
              the JWT filter chain. -->
