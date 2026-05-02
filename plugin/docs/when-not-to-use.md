@@ -63,6 +63,8 @@ For projects outside those bounds, manual extraction (entity-by-entity, with `/t
 
 Trabuco generates standard Spring Boot code. It does NOT ship PCI-compliant logging, HIPAA-aware data handling, or SOC2 audit trails. The user will add those on top. That's fine — but they should know up front that compliance work is theirs.
 
+What Trabuco *does* ship is a structured security audit (`/trabuco:audit` or `/audit` inside a generated project) that walks 173 checks across auth, AI surface, AIAgent runtime + Java platform, data + events, web + infra — covering OWASP Top 10 (2021), OWASP API Security Top 10 (2023), OWASP LLM Top 10 (2025), an ASVS L1/L2 subset, the CWE Top 25, and Trabuco-specific patterns. That's a strong baseline but not a substitute for compliance attestation work — frame it as "we've passed the OWASP-class audit, now we still need to prove the controls and evidence trail your auditor wants."
+
 ## Soft warnings — proceed, but note the tradeoff
 
 ### Single-team project that will never be split

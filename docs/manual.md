@@ -37,6 +37,7 @@ For migrating an existing Spring Boot project, see
   - [Architecture tests](#architecture-tests)
   - [AI task prompts](#ai-task-prompts)
   - [Code review workflow](#code-review-workflow)
+  - [Security audit](#security-audit)
 - [CI/CD](#cicd)
 - [Observability](#observability)
 - [Configuration options](#configuration-options)
@@ -147,8 +148,8 @@ If you use Claude Code, install the Trabuco plugin to drive the CLI conversation
 
 | Layer | Contents |
 |---|---|
-| **Skills** (8) | `/trabuco:new-project`, `/trabuco:design-system`, `/trabuco:add-module`, `/trabuco:extend`, `/trabuco:migrate`, `/trabuco:doctor`, `/trabuco:suggest`, `/trabuco:sync` |
-| **Specialist subagents** (17) | `trabuco-architect`, `trabuco-ai-agent-expert`, `trabuco-migration-orchestrator`, and 14 migration phase specialists |
+| **Skills** (9) | `/trabuco:new-project`, `/trabuco:design-system`, `/trabuco:add-module`, `/trabuco:extend`, `/trabuco:migrate`, `/trabuco:doctor`, `/trabuco:suggest`, `/trabuco:sync`, `/trabuco:audit` (security review) |
+| **Specialist subagents** (23) | `trabuco-architect`, `trabuco-ai-agent-expert`, `trabuco-migration-orchestrator` and 14 migration phase specialists, plus the 6-subagent security-audit suite (orchestrator + auth, ai-surface, aiagent-java, data-events, web-infra) |
 | **Grounding docs** | Trabuco philosophy, module catalog interpretation, pattern recipes, limitations, when-not-to-use — so the assistant won't recommend what Trabuco can't deliver |
 | **Hooks** | Session-start binary detection, post-tool-use next-steps printers for `init_project` and `generate_workspace` |
 | **MCP server** | All 25 CLI tools + 4 expert prompts + 3 reference resources available natively inside Claude Code |
@@ -964,6 +965,52 @@ The generated project includes AI task prompts and quality specifications that s
 3. The AI reviews code against relevant rules and reports findings by severity
 
 **Review categories:** code-quality, modern-java, architecture, security, testing
+
+### Security audit
+
+A separate, deeper review for security alone. Walks a structured 173-check
+checklist across five domains (auth, AI surface, AIAgent runtime + Java
+platform, data + events, web + infra) and produces a severity-sorted
+findings report with PASS/FAIL verdict.
+
+**How to invoke:**
+
+- **Claude Code (in a generated project):** `/audit` — runs the orchestrator
+  + 5 domain specialists in parallel, typically under 2 minutes.
+- **Claude Code (with the Trabuco plugin, anywhere):** `/trabuco:audit` — same
+  audit, plugin form. Both work; use whichever is more discoverable in
+  your session.
+- **Cursor / Copilot / Codex:** ask the agent to "run the security audit".
+  Each format ships a guidance file (`.cursor/rules/security-audit.mdc`,
+  `.github/instructions/security-audit.instructions.md`,
+  `.codex/security-audit.md`) that tells the agent how to walk the
+  checklist sequentially.
+- **CI (every PR):** the deterministic OWASP Top 10 basics (12 regex
+  rules tagged `owasp.<id>`) run via `.github/scripts/review-checks.sh`
+  in the `review-checks` workflow job. The full LLM-driven audit stays
+  manual (no LLM in CI).
+
+**Output:**
+`.ai/security-audit/findings.md` (gitignored — paste into PR descriptions,
+not git history). Suppress false positives via `// trabuco-allow: <rule-id>`
+on the offending line.
+
+**When to invoke:**
+- Before merging a PR that touches a security boundary (auth changes,
+  persistence credentials, broker config, AI tools/guardrails, new
+  controller endpoints).
+- Periodic deep audits (pre-release, quarterly).
+- Whenever the user says "run the security review" / "OWASP audit" /
+  "pre-merge security gate".
+
+The per-turn `/review` covers the OWASP basics inline; `/audit` is the
+deliberate deep sweep with broader scope. Project-specific rules go in
+`.ai/security-audit/checklist-local.md` (operator-owned, never overwritten
+by `trabuco sync`).
+
+**Reference:** `docs/security-audit.md` in this repo for the full guide
+(checklist source-of-truth, contribution workflow, severity rubric,
+extension contract, future MCP path).
 
 ## CI/CD
 

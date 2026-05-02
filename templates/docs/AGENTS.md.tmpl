@@ -69,6 +69,16 @@ After any code modification, review against project standards before completing 
 {{- if .HasModule "AIAgent"}}
 - `/review-prompts` — prompt/guardrail review (spec: `.ai/prompts/add-guardrail-rule.md`)
 {{- end}}
+- `/audit` — full security audit. Walks the canonical checklist at
+  `.ai/security-audit/checklist.md` (~173 checks across 5 domains:
+  auth, AI surface, AIAgent + Java platform, data + events, web +
+  infra). Writes findings to `.ai/security-audit/findings.md` and
+  returns a PASS/FAIL verdict. Trigger when a security boundary
+  changes (auth, persistence credentials, broker config, AI tools/
+  guardrails, new controller endpoints) or when the user asks for
+  "a security review" / "OWASP audit" / "pre-merge security gate".
+  Per-turn `/review` already covers the OWASP basics inline; `/audit`
+  is the deliberate deep sweep. Full guide: `docs/security-audit.md`.
 
 Run the review, address findings, repeat — up to 3 cycles. If unresolved findings remain, surface them to the user rather than iterating indefinitely.
 
