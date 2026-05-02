@@ -15,7 +15,7 @@ Expose an Agent-to-Agent (A2A) protocol skill: JSON-RPC handler + async task man
 ## Project conventions you must follow
 
 - **JSON-RPC 2.0 envelope** — `{"jsonrpc":"2.0","method":"...","params":{...},"id":...}`. Errors follow the spec's `{"code","message"}` shape.
-- **Async for anything >5s**: block the connection only for quick ops.
+- **Async for anything >5s**: block the connection only for quick ops. Use `taskManager.submitTask(work, caller.keyHash())` — it captures `CallerContext` on the request thread and re-sets it inside the worker lambda, so vector retrieval, audit logs, and downstream tool calls see the original caller despite running on a virtual worker thread. If `work` itself spawns nested async (`CompletableFuture.runAsync`), repeat the capture+set inside that inner lambda or the inner work falls back to anonymous identity.
 - **Scope + auth (legacy API-key path)**: the `CallerIdentity` + `ScopeEnforcer` chain applies to A2A calls same as tools, governed by `app.aiagent.api-key.enabled` (default `true`).
 - **Scope + auth (JWT path)**: when `trabuco.auth.enabled=true`, the OIDC chain validates incoming JWT bearer tokens at the `agentOauth2FilterChain` and sets `RequestContextHolder`. Use `@PreAuthorize("hasAuthority('SCOPE_*')")` on tool methods invoked from A2A handlers — `ScopeEnforcer` is the API-key path; `@PreAuthorize` is the JWT path. Don't try to bridge the two semantics.
 - **Agent card discoverability**: every skill is listed in `/.well-known/agent.json`.

@@ -5,17 +5,20 @@ Add a derived query or `@Query` method to a Spring Data repository. Performance-
 ## Key steps (summary)
 
 1. **Derived method naming** (preferred): `findByOwnerIdAndStatus(Long ownerId, Status status)` — Spring Data synthesizes the query.
-2. **`@Query`** (when derived isn't expressive enough): JPQL for SQL; write parameterized queries — NO string concatenation (rule `perf.sql-concat`).
+2. **`@Query`** (when derived isn't expressive enough): for SQL repositories this is **Spring Data JDBC**, so the query body is **native SQL** (not JPQL — there is no `@Entity` graph here). For Mongo repositories it's a JSON query string. Always parameterize with `:name` placeholders + `@Param` — NO string concatenation (rule `perf.sql-concat`).
 3. **Batch reads**: for N-by-id lookups, add `findAllByIdIn(List<ID> ids)` — chunked at 1000 in the service. Never loop `findById` (rule `perf.n-plus-one`).
-4. **Pagination**: use keyset — `findPage(Long afterId, int limit)` with a `@Query("... WHERE id > :afterId ORDER BY id LIMIT :limit")`. NOT `Pageable` (rule `perf.offset-pagination`).
-5. **Bulk writes**: `@Modifying @Query("UPDATE ... WHERE ... LIMIT :n")` — always include a bound (rule `perf.unbounded-dml`).
+4. **Pagination**: use keyset — `findPage(Long afterId, int limit)` with a `@Query("SELECT * FROM ... WHERE id > :afterId ORDER BY id ASC LIMIT :limit")`. NOT `Pageable` (rule `perf.offset-pagination`).
+5. **Bulk writes**: `@Modifying @Query("UPDATE ... WHERE ... LIMIT :n")` — always include a bound (rule `perf.unbounded-dml`). When called repeatedly inside a drain loop, the calling **service method** must be `@Transactional` so partial failure rolls back; `@Modifying` alone auto-commits per call.
+6. **DTO projections**: avoid `SELECT *` on wide rows. When callers don't need every column (especially heavy `TEXT`/`BYTEA` columns), define a `record EntitySummary(...)` and return it from a projection `@Query("SELECT id, name FROM ... ")`. Spring Data JDBC maps columns into the record constructor by name.
 
 ## Project conventions you must follow
 
+- **Spring Data JDBC, not JPA.** Repositories extend `CrudRepository<Record, Id>`, not `JpaRepository`. Records are annotated with `@Table("table_name")` from `org.springframework.data.relational.core.mapping`, not `@Entity`.
 - **No `findAll()`** on growing tables. Use keyset drain loops (see `PlaceholderService.processAllBatched`).
 - **No `Pageable` / offset pagination**. Keyset only.
 - **Chunked `findByIds`** at ≤1000 IDs per call.
 - **Parameterized `@Query`** — no `"..." + param + "..."`.
+- **Drain loops need `@Transactional` on the service.** Without it, a mid-loop exception leaves earlier batches committed and the cursor lost.
 
 ## Tests for this method
 

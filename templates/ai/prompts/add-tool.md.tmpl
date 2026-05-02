@@ -218,6 +218,17 @@ same way you treat any external API:
   tenant-scoped data, derive the tenant from the
   authenticated `CallerContext`, not from a tool parameter — the LLM
   can be tricked into passing any tenant ID via prompt injection.
+- **Async work needs explicit `CallerContext` propagation.** The LLM
+  may invoke the tool while the agent is running on the
+  `TaskManager.submitTask` worker thread. `TaskManager` re-establishes
+  `CallerContext` for you, so synchronous tool bodies see the right
+  caller automatically. **But** if your tool itself spawns work onto a
+  new executor (`executor.submit(...)`, `CompletableFuture.runAsync`,
+  another `submitTask` call), you must capture `CallerContext.get()`
+  before the submit and `CallerContext.set(...)` inside the lambda — or
+  the inner work falls back to anonymous and `VectorKnowledgeRetriever`
+  reads cross-tenant. See `JAVA_CODE_QUALITY.md` §6.1.1 for the canonical
+  shape.
 - **Output sanitization.** What the tool returns goes back into the
   LLM's context and may be repeated to the user. Strip PII, secrets,
   and internal architecture details from tool responses.

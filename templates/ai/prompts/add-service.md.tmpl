@@ -232,6 +232,22 @@ public int processAllBatched(Consumer<Immutable{EntityName}> action) {
 ```
 
 **Bulk UPDATE/DELETE** — call the repo's `LIMIT`-bounded method in a loop until it returns 0 (see `add-repository-method.md`).
+
+**Drain loops need `@Transactional` on the *service* method.** `@Modifying` on the repository method auto-commits per call, so a mid-loop exception leaves earlier batches committed and the cursor lost. Wrap multi-call drains (and any drain that pairs the bulk write with extra writes per batch) so the whole loop is one logical transaction:
+
+```java
+@Transactional
+public int reassignAllByStatus(String oldStatus, String newStatus) {
+    int total = 0;
+    int updated;
+    while ((updated = repository.updateStatusBatchWithLimit(oldStatus, newStatus, 500)) > 0) {
+        total += updated;
+    }
+    return total;
+}
+```
+
+The keyset *read* drain above doesn't strictly need `@Transactional` because reads are idempotent — but the bulk write drain does.
 {{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
 
 **MongoDB bulk writes** — inject `MongoTemplate` and use `bulkOps`:

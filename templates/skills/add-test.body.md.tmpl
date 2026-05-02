@@ -5,7 +5,8 @@ Write tests for an existing or newly-added Java class, following this project's 
 ## Decision tree
 
 - **Pure unit test** — class has no datastore / no Spring context / no broker. Use `@ExtendWith(MockitoExtension.class)` + `@Mock` + `@BeforeEach` for instantiation.
-- **Testcontainers integration** — repository / DAO / anything that hits the database. Extend `AbstractContainerIntegrationTest` (or equivalent) to reuse the shared container.
+- **Repository / DAO** — hits the database. Use `@DataJdbcTest` (slice, much faster than `@SpringBootTest`) + `@Testcontainers(disabledWithoutDocker = true)` + `@ServiceConnection` on the `PostgreSQLContainer` / `MySQLContainer`. For Mongo, `@DataMongoTest` with `MongoDBContainer`.
+- **AIAgent integration / auth chain / vector RAG** — needs a `pgvector/pgvector:pg16` container (so `VectorStore` auto-config doesn't fail), `@SpringBootTest` for the full security chain, and `mockJwt()` from `spring-security-test` to authenticate. Mirror the shipped `AuthChainIntegrationTest` shape.
 - **`@SpringBootTest`** — full-context behavior (security filter chain, event listeners). Use sparingly — heavy startup; slow suites.
 
 ## Project conventions (the ones the review subagent enforces)

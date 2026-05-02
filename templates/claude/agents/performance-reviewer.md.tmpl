@@ -103,6 +103,15 @@ grep -nE '@Query\([^)]*"[^"]*"\s*\+' $CHANGED
 grep -nE 'jdbcTemplate\.\w+\([^)]*"[^"]*"\s*\+' $CHANGED
 ```
 
+### 10. `SELECT *` on wide rows
+`SELECT *` returns every column, including heavy `TEXT` / `BYTEA` / `JSONB` ones the caller doesn't need. As soon as a wide column is added (a `payload`, an `embedding`, an audit blob), every consumer of the row pulls the heavy data — silently doubling page reads, blowing up the wire payload, and stressing the JDBC fetch buffer.
+```bash
+# Surface @Query bodies (and JdbcTemplate calls) that select *.
+grep -nE '@Query\([^)]*"[^"]*\bSELECT\s+\*' $CHANGED
+grep -nE 'jdbcTemplate\.\w+\([^)]*"[^"]*\bSELECT\s+\*' $CHANGED
+```
+Flag each hit unless the entity has only a handful of small columns. The fix is a record DTO projection: `record EntitySummary(Long id, String name) {}` + `@Query("SELECT id, name FROM ... ")`. Spring Data JDBC binds the projected columns into the constructor by name. Keep the full-row method when callers genuinely need every column; add the projection alongside it for the slim path.
+
 ## Semantic checks
 
 ### Indexing & composite order

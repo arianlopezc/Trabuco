@@ -1,21 +1,35 @@
 # Add a knowledge-base entry
 
-Add a keyword-matched FAQ answer that short-circuits the LLM for well-known questions. Saves tokens + latency on canned answers.
+Add a canned answer that short-circuits the LLM for well-known questions. Trabuco AIAgent ships two retrieval paths and you should know which one you're extending before editing.
+
+## Two paths — pick the right one
+
+| Path | Where it lives | Use when |
+|---|---|---|
+| **Keyword (`KeywordKnowledgeRetriever`)** | `AIAgent/src/main/java/{{.PackagePath}}/aiagent/knowledge/KnowledgeBase.java` (a Java class with a `List<Map<String, String>> ENTRIES` field) | Cheap, deterministic, no infra. Default when no `VectorStore` is wired. Suited for a small finite set of FAQ topics. |
+| **Vector (`VectorKnowledgeRetriever`)** | Documents ingested via `DocumentIngestionService.ingest(...)` into the configured `VectorStore` (PGVector / Qdrant / MongoDB Atlas) | Semantic similarity over a larger corpus, multi-tenant content. `@Primary` when a `VectorStore` bean is present, so it takes precedence over the keyword retriever automatically. |
+
+Both paths feed the same `@Tool askQuestion` surface and share the same security checklist.
 
 ## Key steps (summary)
 
-1. **Location**: `AIAgent/src/main/resources/knowledge/` — one JSON or YAML entry per topic.
-2. **Entry format**: each entry has `keywords` (match triggers), `answer` (the canned response), and optional `confidence_threshold` (how many keywords must match).
-3. **Matching logic**: the `KnowledgeRetriever` scores incoming queries against entries; if score ≥ threshold, returns the canned answer without calling the LLM.
-4. **Tests**: add a fixture to `KnowledgeRetrieverTest` with the query + expected answer.
+### Keyword path
+1. **Edit `KnowledgeBase.java`** — add a `Map.of("topic", "<keyword>", "content", "<answer>")` entry to the `ENTRIES` list. NOT a JSON or YAML file.
+2. **Topic** is the primary match key (3x scoring boost). **Content** is the full canned answer that gets returned verbatim.
+3. **Test** by hitting `/ask` with the expected question — entry should appear in the response without an LLM call.
+
+### Vector path
+1. **Ingest** documents through `DocumentIngestionService.ingest(text, metadata)` — chunks are auto-split via `TokenTextSplitter`, embedded, and written with `metadata.tenant_id` stamped from `CallerContext.get().tenantId()` (server-side; caller-supplied `tenant_id` is stripped).
+2. **Retrieval** runs `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` on every search — cross-tenant reads are impossible by construction.
+3. **Provenance** is wrapped by `FencingDocumentRetriever`. Do not bypass the fences when adding new ingestion paths.
 
 ## Project conventions you must follow
 
-- **Keyword-based, not semantic** — this module deliberately ships without a vector DB. Keywords keep it cheap and deterministic.
-- **Short canned answers** (1–3 sentences). Link out for long content.
-- **Evergreen content only** — don't put time-sensitive facts here (rates, prices, dates) that'll rot.
-- **Audit log**: every canned answer is logged with the match score for later tuning.
+- **Short canned answers** (1–3 sentences for keyword path). Long content belongs in the vector store, not in `KnowledgeBase.ENTRIES`.
+- **Evergreen content only** — don't put time-sensitive facts (rates, prices, dates) into committed knowledge; they rot.
+- **Tenant isolation on the vector path is enforced server-side.** Never trust a request-supplied `tenant_id`. The retriever and ingestion service both derive it from `CallerContext.get().tenantId()`.
+- **No PII, no secrets, no internal architecture details** in either path — both surfaces flow into the LLM context window where prompt injection can exfiltrate them.
 
 ## Full step-by-step
 
-See `.ai/prompts/add-knowledge-entry.md`.
+See `.ai/prompts/add-knowledge-entry.md` (covers both keyword + vector paths, scoring details, ingestion contract, and the full security checklist).

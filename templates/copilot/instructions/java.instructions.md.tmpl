@@ -119,6 +119,31 @@ Scope is HTTP-only. Event listeners, JobRunr handlers, and `@Scheduled` jobs mus
 {{- end}}
 - Cover: happy path, not-found/empty, validation failures, error conditions
 - Full spec: `.ai/prompts/JAVA_CODE_QUALITY.md` (Section 7) | Guide: `.ai/prompts/testing-guide.md`
+{{- if .HasModule "AIAgent"}}
+
+## Vector RAG (shipped when AIAgent is enabled)
+
+Three vector stores are wired and selected by classpath dependency: PGVector (default), Qdrant, MongoDB Atlas Vector Search. Don't suggest "add a vector store" — extend the existing path.
+
+- Retrieval: `VectorKnowledgeRetriever` (`@Primary` when a `VectorStore` bean is present); falls back to `KeywordKnowledgeRetriever` over `KnowledgeBase.ENTRIES` otherwise.
+- Ingestion: `DocumentIngestionService.ingest(text, metadata)` — stamps `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped.
+- Tenant isolation is enforced at every read via `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())`. Cross-tenant reads are impossible by construction.
+- Retrieved chunks pass through `FencingDocumentRetriever`. Don't bypass the fences.
+
+## Async context propagation (AIAgent)
+
+`TaskManager.submitTask` captures `CallerContext` on the HTTP thread and re-sets it inside the worker lambda — virtual threads don't inherit ThreadLocals. Any new `executor.submit(...)` in AIAgent must follow this shape:
+
+```java
+final CallerIdentity capturedCaller = CallerContext.get();
+executor.submit(() -> {
+    CallerContext.set(capturedCaller);
+    try { /* ... */ } finally { CallerContext.clear(); }
+});
+```
+
+Skip this and `VectorKnowledgeRetriever`'s tenant filter falls back to anonymous identity — cross-tenant data leak.
+{{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}
 
 ## Authentication (shipped, dormant by default)

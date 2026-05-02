@@ -1,25 +1,41 @@
 # Add an event type
 
-Add a new async event: contract in Events module, publisher, consumer/listener in EventConsumer.
+Add a new async event: sealed contract in the Model module, publisher, consumer/listener in EventConsumer with idempotency, ack semantics, and DLT/DLQ handling.
 
 ## Key steps (summary)
 
-1. **Events module** (`Events/src/main/java/.../events/`): immutable event class with Jackson annotations. Version the schema — adding fields only, never renaming or removing (forward-compat for replay).
-2. **Publisher**: inject `EventPublisher` into the service emitting the event; call `publisher.publish(event)`. For {{- if .UsesKafka }} Kafka, the topic is derived from the event class name.
-{{- else if .UsesRabbitMQ }} RabbitMQ, the exchange/queue are configured in `application.yml`.
-{{- else if .UsesSQS }} SQS, the queue ARN is in `application.yml`.
-{{- else if .UsesPubSub }} GCP Pub/Sub, the topic is in `application.yml`.
-{{- else }} the broker, the destination is configured in `application.yml`.
+1. **Model module** (`Model/src/main/java/.../model/events/`): add a new permitted subtype to the sealed `PlaceholderEvent` interface (or its successor). Each event must carry a stable `eventId()` — that's the dedup key.
+2. **Publisher**: inject the broker template, call `publish(event)`. {{- if .UsesKafka }} Kafka publishes to `${app.kafka.topics.placeholder-events}`; the retry/DLT chain wraps the listener.
+{{- else if .UsesRabbitMQ }} RabbitMQ binds via the configured exchange/queue and a parallel `.dlq` queue.
+{{- else if .UsesSQS }} SQS publishes to `${app.sqs.queue.placeholder-events}`; configure a DLQ via `maxReceiveCount` in the AWS console.
+{{- else if .UsesPubSub }} Pub/Sub publishes to the configured topic; configure a Dead Letter Topic via max delivery attempts.
+{{- else }} configured in `application.yml`.
 {{- end }}
-3. **Consumer** (`EventConsumer/src/main/java/.../eventconsumer/listener/`): `@{{if .UsesKafka}}KafkaListener{{else if .UsesRabbitMQ}}RabbitListener{{else if .UsesSQS}}SqsListener{{else if .UsesPubSub}}ServiceActivator{{else}}Listener{{end}}` method. **Catch-log-rethrow** is REQUIRED here — rethrowing triggers retry/DLQ wiring.
-4. **Tests**: consumer test with embedded broker ({{if .UsesKafka}}spring-kafka-test{{else if .UsesRabbitMQ}}spring-rabbit-test{{else if .UsesSQS}}testcontainers localstack{{else if .UsesPubSub}}spring-integration-test{{else}}embedded test support{{end}}).
+3. **Consumer** (`EventConsumer/src/main/java/.../eventconsumer/listener/`): add a `case <YourEvent>` branch to the `switch (event)` block in `PlaceholderEventListener`. **Do not** add a new listener method per subtype — the sealed-switch is the canonical shape.
+4. **Idempotency is mandatory**: every listener calls `idempotencyTracker.checkAndMark(event.eventId())` before processing. Returns `false` → skip (and ack on broker paths so the broker doesn't replay).
+5. **Sealed switch must have `default -> throw`**: when a new permitted subtype is added but the listener isn't updated, the throw surfaces the gap rather than silently acking. Never replace it with a fall-through.
+6. **Ack semantics differ per broker** — see the prompt for the per-broker contract.
+7. **Tests**: consumer test with embedded broker ({{if .UsesKafka}}`spring-kafka-test`{{else if .UsesRabbitMQ}}`spring-rabbit-test`{{else if .UsesSQS}}Testcontainers localstack{{else if .UsesPubSub}}`spring-integration-test`{{else}}embedded test support{{end}}); mock or reset `IdempotencyTracker` between tests so the LRU set doesn't bleed.
 
 ## Project conventions you must follow
 
-- **Listeners catch-log-rethrow**; don't swallow. GlobalExceptionHandler doesn't cover non-HTTP paths.
-- **Event classes are immutable** and additive-only across versions.
-- **Publisher is injected, never `new`'d** — so tests can mock it.
-- **Correlation ID propagation**: read `X-Correlation-Id` header from the event envelope, set in MDC.
+- **Always idempotency-gate.** Brokers replay on transient failure / slow ack / consumer rebalance. Without `checkAndMark`, side-effects double-fire.
+- **Default in-memory `IdempotencyTracker` is dev-grade.** It logs a startup WARN reminding you to override with a DB-backed / Redis / broker-native dedup before scaling beyond one instance. Override by providing your own `@Bean IdempotencyTracker` in any `@Configuration` — `IdempotencyConfig` is gated by `@ConditionalOnMissingBean`, so a user bean wins automatically.
+- **Sealed-event default arm throws** — never silent default. Add `default -> throw new IllegalStateException("Unhandled <X> subtype: ...")` exactly as the existing branches do.
+- **Per-broker ack contract:**
+{{- if .UsesKafka}}
+  - Kafka uses `@RetryableTopic` for retry and `@DltHandler` for the terminal DLT branch. Exceptions thrown by the main listener trigger the retry chain automatically. `autoCreateTopics="false"` in the production template — operator must pre-create `<topic>-retry-0..2` and `<topic>-dlt`. See `KafkaConfig#retryDltKafkaTemplate`.
+{{- else if .UsesRabbitMQ}}
+  - RabbitMQ rejects on exception → DLX. A parallel `@RabbitListener` on `<queue>.dlq` ACKs DLQ messages after logging (replace the log with persistence for manual review).
+{{- else if .UsesSQS}}
+  - SQS uses manual `Acknowledgement` from `io.awspring.cloud.sqs.listener.acknowledgement`. ACK only after success. On a duplicate, ACK the message before returning. On a failure, **rethrow** so the message returns to the queue after visibility timeout (and lands in the DLQ after `maxReceiveCount`).
+{{- else if .UsesPubSub}}
+  - Pub/Sub uses manual `BasicAcknowledgeablePubsubMessage`. ACK on success, NACK on failure, **then rethrow** so Spring Integration's error channel sees the failure (otherwise the broker sees nack but the application observes a successful handler — silent failure).
+{{- else}}
+  - Manual ack on success; rethrow on failure so retries/DLQ engage.
+{{- end}}
+- **Event classes are immutable**, sealed, and additive-only across versions (forward-compat for replay).
+- **Publisher is injected, never `new`'d.**
 
 ## Full step-by-step
 

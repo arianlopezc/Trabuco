@@ -101,7 +101,7 @@ public record {EntityName}Record(
 **File**: `SQLDatastore/src/main/resources/db/migration/V{next_version}__{description}.sql`
 
 ```sql
-CREATE TABLE IF NOT EXISTS {entity_name_snake} (
+CREATE TABLE {entity_name_snake} (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -112,14 +112,14 @@ CREATE TABLE IF NOT EXISTS {entity_name_snake} (
 - Find the next version number by checking existing migrations
 - Never modify existing migration files
 - Use snake_case for table and column names
-- Use `CREATE TABLE IF NOT EXISTS` so manual bootstrap paths don't fatally fail on re-run. Operators should still prefer `mvn flyway:baseline` for existing-DB bootstrap.
+- Plain DDL (no `IF NOT EXISTS`). Flyway tracks applied versions in `flyway_schema_history` — `CREATE INDEX IF NOT EXISTS` is PostgreSQL-only on MySQL until 8.0.29, so the baseline (and your new migrations) stick to portable bare DDL. Use `mvn flyway:repair` for partial-failure recovery, not `IF NOT EXISTS` guards.
 
 #### Child Tables (Relationships)
 
 When an entity belongs to another entity (e.g., `OrderItem` belongs to `Order`), **never use foreign keys**. Store the parent ID as a regular indexed column:
 
 ```sql
-CREATE TABLE IF NOT EXISTS order_item (
+CREATE TABLE order_item (
     id BIGSERIAL PRIMARY KEY,
     order_id BIGINT NOT NULL,
     product_name VARCHAR(255) NOT NULL,
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS order_item (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_order_item_order_id ON order_item (order_id);
+CREATE INDEX idx_order_item_order_id ON order_item (order_id);
 ```
 
 **Rules:**

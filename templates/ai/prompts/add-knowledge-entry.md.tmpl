@@ -2,7 +2,12 @@
 
 ## Overview
 
-Add a new entry to the keyword-based knowledge base. Entries answer FAQ-style questions without calling the LLM — saving tokens on high-volume, low-complexity queries. The agent's @Tool method `askQuestion` scores entries by keyword overlap with the user's question and returns the top 3 matches.
+Add a new entry to the agent's knowledge surface so canned answers short-circuit the LLM for well-known questions. Two retrieval paths ship out of the box and you must pick the right one before editing:
+
+- **Keyword path (`KeywordKnowledgeRetriever`)** — entries live in `KnowledgeBase.java` as a Java `List<Map<String,String>>`. Scoring is keyword overlap with a 3x boost for topic matches. Active when **no** `VectorStore` bean is wired. Cheap, deterministic, ideal for a small finite FAQ set.
+- **Vector path (`VectorKnowledgeRetriever`)** — documents are ingested through `DocumentIngestionService.ingest(...)` into the configured `VectorStore` (PGVector / Qdrant / MongoDB Atlas). Tenant-isolated by construction. `@Primary` when a `VectorStore` is present, so it takes precedence over the keyword retriever automatically. Use this for larger or multi-tenant corpora.
+
+Both paths back the same `@Tool askQuestion` surface and share the same security checklist below.
 
 ## Architecture
 
@@ -18,7 +23,7 @@ KnowledgeTools.askQuestion("What are your hours?")
 Returns top 3 entries (no LLM call, no tokens spent)
 ```
 
-## Steps
+## Steps — Keyword path
 
 ### 1. Add Entry to KnowledgeBase
 
@@ -75,6 +80,35 @@ curl -X POST http://localhost:8080/ask \
 ```
 
 Verify your entry appears in the response.
+
+## Steps — Vector path
+
+Use this path when a `VectorStore` is wired (`spring.ai.vectorstore.*` configured for pgvector / Qdrant / MongoDB Atlas). `VectorKnowledgeRetriever` is `@Primary` and replaces the keyword retriever automatically.
+
+### 1. Ingest from a service or one-off bootstrap
+
+```java
+// In any @Service that has access to DocumentIngestionService.
+documentIngestionService.ingest(
+    text,                                    // raw document text; auto-chunked via TokenTextSplitter
+    Map.of("source", "support-handbook"));   // arbitrary user-controlled metadata
+```
+
+The service stamps `metadata.tenant_id = CallerContext.get().tenantId()` on every chunk **server-side**. Any `tenant_id` field a caller tries to inject through the metadata map is stripped before storage — partner-A cannot claim partner-B's tenant.
+
+### 2. Tenant-scoped retrieval is automatic
+
+`VectorKnowledgeRetriever.retrieve(query, topK)` reads `CallerContext.get().tenantId()` and applies `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` to every `SearchRequest`. Cross-tenant similarity matches are filtered out at the vector store, not in application code.
+
+The same `tenant_id` field has a b-tree expression index on `(metadata->>'tenant_id')` (declared by `V1__create_vector_schema.sql`), so per-tenant filtering stays fast at scale.
+
+### 3. Provenance fences
+
+Retrieved chunks are wrapped by `FencingDocumentRetriever` before they hit the LLM. The fences mark the boundary between trusted prompt and untrusted document content so prompt injection from ingested documents is harder to weaponize. **Do not bypass the fence wrapper when extending the retrieval pipeline.**
+
+### 4. Tests
+
+The shipped `VectorTenantIsolationTest` exercises the cross-tenant filter; mirror its shape (set `CallerContext`, ingest under tenant A, retrieve under tenant B, expect no matches) for any new ingestion code.
 
 ## Checklist
 

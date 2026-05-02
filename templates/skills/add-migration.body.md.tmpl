@@ -5,10 +5,11 @@ Create a new versioned SQL migration under `SQLDatastore/src/main/resources/db/m
 ## Key steps (summary)
 
 1. **File name**: `V<next>__<summary>.sql` — e.g., `V3__add_orders_index.sql`. Versions are monotonic integers; don't skip, don't renumber existing.
-2. **Idempotence where possible**: `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` — so a partial migration can be resumed.
+2. **DDL is plain — Flyway tracks history**, not the SQL itself. The canonical `V1__baseline.sql` uses bare `CREATE TABLE` / `CREATE INDEX`; rely on Flyway's `flyway_schema_history` to skip applied migrations rather than `IF NOT EXISTS` guards. (`CREATE INDEX IF NOT EXISTS` only landed in MySQL 8.0.29; older 8.0.x patches still in production / Testcontainers parse-fail on it.)
 3. **Index EVERY FK-like column**: any column used in a `WHERE x = ?` or join-style lookup gets an index. This replaces the FK constraint we deliberately don't declare.
 4. **No `FOREIGN KEY` / `REFERENCES`** — this project enforces FK-like invariants at the application layer. The review subagent + `review-checks.sh` flag migrations that declare FKs.
 5. **Bounded DML**: every `UPDATE` or `DELETE` in a migration must have a `LIMIT` (or explicit rationale). Unbounded DML during deploy = lock-table-and-pray.
+6. **`updated_at` semantics are asymmetric across DBs**: MySQL has `ON UPDATE CURRENT_TIMESTAMP` baked into the column (the baseline uses it). PostgreSQL has no equivalent, so app code must set `updated_at = Instant.now()` on every write. If you add a new table with an `updated_at` column on Postgres, document this contract in the entity Javadoc.
 
 ## Project conventions you must follow
 

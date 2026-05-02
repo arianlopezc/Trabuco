@@ -49,6 +49,16 @@ case "{skill_name}" -> {
 with its baseline scope. Methods not in the map are rejected at
 dispatch with `-32601 Unknown method` — fail-closed by design.
 
+**Async tenant isolation.** `TaskManager.submitTask` captures `CallerContext`
+on the request thread and re-sets it inside the worker lambda — so the
+tool body, vector retrieval, and audit logs all see the original caller
+even though they run on a virtual worker thread. If your `toolClass.{method}`
+itself fans out to another executor (`CompletableFuture.runAsync`, a
+nested `submitTask` for parallel sub-skills), you have to repeat the
+capture+set inside that inner lambda or the inner work falls back to
+anonymous identity. See `JAVA_CODE_QUALITY.md` §6.1.1 for the canonical
+shape.
+
 **Scope options (legacy API-key path, governed by `app.aiagent.api-key.enabled`):**
 - `"public"` — requires a `public`-tier key (see `agent.auth.keys.*` in your config)
 - `"partner"` — requires a `partner`-tier key (see `agent.auth.keys.*` in your config)

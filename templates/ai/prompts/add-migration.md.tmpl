@@ -101,6 +101,24 @@ UPDATE {entity_table} SET {column_name} = 'default_value' WHERE {column_name} IS
 ALTER TABLE {entity_table} ALTER COLUMN {column_name} SET NOT NULL;
 ```
 
+#### Plain DDL — no `IF NOT EXISTS` guards
+
+Flyway tracks applied migrations in `flyway_schema_history`; it skips any version that was already run. The canonical `V1__baseline.sql` deliberately uses bare `CREATE TABLE` and `CREATE INDEX` for two reasons:
+
+- **Portability.** `CREATE INDEX IF NOT EXISTS` is PostgreSQL-only on MySQL until 8.0.29; older 8.0.x patches still in production / Testcontainers parse-fail on it. Bare `CREATE INDEX` works on every supported database.
+- **Drift visibility.** A `CREATE TABLE IF NOT EXISTS` against an existing table with different columns silently succeeds — the migration "passes" but the schema is wrong. Bare DDL fails loudly when state diverges, which is what you want during deploys.
+
+If you have a manual-bootstrap edge case (DBA running a single SQL file directly, partial-failure recovery), use `flyway:repair` rather than reaching for `IF NOT EXISTS`.
+
+#### `updated_at` semantics differ across databases
+
+The baseline migration sets `updated_at DEFAULT CURRENT_TIMESTAMP` in both branches, but only the MySQL branch adds `ON UPDATE CURRENT_TIMESTAMP` — Postgres has no equivalent column-level shortcut. Implications when adding new tables:
+
+- **MySQL**: `ON UPDATE CURRENT_TIMESTAMP` makes `updated_at` self-maintaining for any UPDATE — application code, raw DBA SQL, bulk corrections all advance the column.
+- **PostgreSQL**: only the INSERT default fires. Application code that uses Spring Data JDBC's `withUpdatedAt(Instant.now())` pattern is fine, but raw SQL `UPDATE` statements (DBA fixes, ad-hoc corrections) leave `updated_at` stale.
+
+If your domain depends on `updated_at` being authoritative on Postgres, document the contract in the entity's Javadoc, or adopt a per-table `BEFORE UPDATE` trigger that mirrors MySQL's behavior. The baseline does NOT ship such a trigger.
+
 ### 4. Update the Record Class (If Needed)
 
 If you added a column, update the corresponding record in `Model/`:
