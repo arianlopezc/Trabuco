@@ -6,7 +6,7 @@ Create a new domain object: immutable entity + request DTO + datastore record + 
 
 1. **Model**: add `ImmutableEntity` + `ImmutablePlaceholderRequest`-style DTO under `Model/src/main/java/{{.GroupID | packagePath}}/model/`.
 2. {{- if .HasModule "SQLDatastore" }}
-**SQLDatastore**: add `EntityRecord` (JPA) + repository interface extending `CrudRepository` / `JpaRepository`. Derived or `@Query` methods — use keyset pagination (`findPage(afterId, limit)`), NOT `Pageable`.
+**SQLDatastore** (Spring Data JDBC, NOT JPA): add `EntityRecord` annotated with `@Table("entity_table")` (Spring Data Relational, not `@Entity`) + repository interface extending `CrudRepository<EntityRecord, Long>`. `@Query` methods take **native SQL**, not JPQL. Use keyset pagination (`findPage(afterId, limit)`), NOT `Pageable`.
 {{- else if .HasModule "NoSQLDatastore" }}
 **NoSQLDatastore**: add `EntityDocument` + repository extending `MongoRepository` / similar. Use cursor or keyset drain for bulk reads.
 {{- else }}

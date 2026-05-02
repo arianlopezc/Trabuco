@@ -79,12 +79,33 @@ grep -rnE 'class\s+\w*Agent\s|class\s+\w*Brain' AIAgent/src/main/java
 
 ### 5. Knowledge base entries
 
+`KnowledgeBase.java` (the keyword path) and the vector store (the RAG path) are both LLM-trusted by default. Treat them like any data plane:
+
 ```bash
-grep -rn AIAgent/src/main/resources 2>/dev/null
+# Keyword entries live as Map.of(...) in a Java class, not JSON/YAML.
+grep -rn 'aiagent/knowledge/KnowledgeBase' AIAgent/src/main/java
+# Vector ingestion call sites:
+grep -rnE 'documentIngestionService\.ingest|vectorStore\.add' AIAgent/src/main/java
 ```
+
 - Entries are scoped (a FAQ, not an essay).
 - No PII, no secrets, no hardcoded credentials.
 - Freshness documented — stale knowledge is worse than no knowledge.
+
+### 5b. Vector RAG tenant isolation
+
+The shipped `VectorKnowledgeRetriever` and `DocumentIngestionService` enforce tenant isolation server-side via `CallerContext.get().tenantId()`. Any new code path that touches the `VectorStore` must keep the contract:
+
+```bash
+# Find every retriever + ingestion site that mentions tenant_id.
+grep -rnE '"tenant_id"|tenantId\(\)' AIAgent/src/main/java
+# Find ingest call sites that DO NOT route through DocumentIngestionService.
+grep -rnE 'vectorStore\.add\(|VectorStore.*\.add\(' AIAgent/src/main/java
+```
+
+- **Ingestion paths must derive `tenant_id` from `CallerContext.get().tenantId()` only.** Caller-supplied `tenant_id` in metadata maps must be stripped (see `DocumentIngestionService.stampTenantId`). Flag any new ingest path that accepts a tenant-id-shaped field from a user-controlled payload without stripping.
+- **Retrieval paths must apply a `tenant_id` filter to every `SearchRequest`.** A vector similarity search without `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` is a cross-tenant data leak. Flag any custom retriever that omits it.
+- **Don't bypass `FencingDocumentRetriever`.** It marks the trust boundary between prompt and document content; bypassing it makes prompt injection from ingested documents harder to detect.
 
 ### 6. MCP tools exposed
 

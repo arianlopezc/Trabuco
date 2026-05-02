@@ -60,6 +60,25 @@ Run each grep across the changed files. Every match is a finding unless explicit
 {{- if .HasModule "API"}}
 - **Redundant try/catch in `@RestController`** — `GlobalExceptionHandler` already maps exceptions. Any `try/catch` in a controller whose only effect is to rethrow or build a `ResponseEntity` error is dead code. **Exception:** event listeners, `@Scheduled` jobs, and JobRunr handlers MUST catch-log-rethrow for retry/DLQ — do not flag those.
 {{- end}}
+{{- if .HasModule "EventConsumer"}}
+- **Missing idempotency on event listeners** — every `@KafkaListener` / `@RabbitListener` / `@SqsListener` / `@ServiceActivator` body must call `idempotencyTracker.checkAndMark(event.eventId())` before processing. Brokers replay on transient failure / slow ack / consumer rebalance; without dedup the side-effect double-fires.
+  ```bash
+  # Find listener methods that DON'T mention checkAndMark
+  rg -lP '@(?:Kafka|Rabbit|Sqs)Listener|@ServiceActivator' $CHANGED | \
+    xargs -I{} sh -c 'rg -L "checkAndMark" {} && echo "MISSING in {}"'
+  ```
+- **Missing `default -> throw` on sealed-event switch** — listener `switch (event)` blocks must include `default -> throw new IllegalStateException(...)`. A silent default lets a newly-permitted subtype get acked without being handled. Flag any `switch` over a sealed event type that omits the throwing default.
+- **Missing rethrow on SQS / Pub/Sub failure paths** — manual-ack listeners that catch an exception, log it, and *don't* rethrow turn broker-observable failure into application-observable success. `Acknowledgement.acknowledge()` / `message.ack()` only on success; `throw e` (after `message.nack()` for Pub/Sub) on failure.
+{{- end}}
+{{- if .HasModule "AIAgent"}}
+- **`executor.submit(...)` without `CallerContext` capture** — async work in AIAgent must capture `CallerContext.get()` before the submit and `CallerContext.set(captured)` inside the lambda with `try/finally CallerContext.clear()`. ThreadLocals don't propagate to virtual threads. Without the capture+set, downstream code on the worker thread sees `CallerIdentity.anonymous()` — `VectorKnowledgeRetriever`'s tenant filter falls back to anonymous, audit logs lose attribution. The shipped `TaskManager.submitTask` is the canonical shape.
+  ```bash
+  # Surface async submits in AIAgent that don't reference CallerContext.set
+  rg -lP 'executor\.submit|CompletableFuture\.(?:run|supply)Async' AIAgent/ | \
+    xargs -I{} sh -c 'rg -L "CallerContext\.set" {} && echo "MISSING in {}"'
+  ```
+- **Caller-supplied `tenant_id` reaching the vector store** — `DocumentIngestionService.stampTenantId` strips `tenant_id` from caller-supplied metadata so partner-A can't claim partner-B's tenant. Any new code path that ingests into the `VectorStore` must derive `tenant_id` from `CallerContext.get().tenantId()` only.
+{{- end}}
 
 ### Secrets & injection
 - **Hardcoded secrets** — obvious high-entropy strings:

@@ -79,36 +79,63 @@ Java 24+ disables dynamic agent attachment by default, and Java 25's stricter `j
 
 ## 4. Testcontainers integration template
 
+For a Spring Data JDBC repository test, use `@DataJdbcTest` (slice) over `@SpringBootTest` (full context). The slice loads only the JDBC infrastructure — ~10× faster — and `@ServiceConnection` wires the container without manual `@DynamicPropertySource`. `disabledWithoutDocker = true` skips locally when Docker isn't running instead of failing.
+
 ```java
 package {{.GroupID}}.sqldatastore.repository;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers
-@SpringBootTest
+@Testcontainers(disabledWithoutDocker = true)
+@DataJdbcTest
 class ThingRepositoryIntegrationTest {
 
   @Container
+  @ServiceConnection
   static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15");
 
-  @DynamicPropertySource
-  static void jdbcProps(DynamicPropertyRegistry r) {
-    r.add("spring.datasource.url", postgres::getJdbcUrl);
-    r.add("spring.datasource.username", postgres::getUsername);
-    r.add("spring.datasource.password", postgres::getPassword);
-  }
-
-  // ... tests
+  // ... tests — repositories are autowired via @DataJdbcTest's slice
 }
 ```
 
 **Prefer extending a shared container base class** (if present) so the container is reused across tests — not re-spun per test class.
+
+For Mongo repositories, use `@DataMongoTest` with the same `@ServiceConnection` + `MongoDBContainer` shape. For full controller wiring, fall back to `@SpringBootTest` (much heavier — see anti-pattern below).
+
+## 4b. AIAgent integration tests — pgvector + mockJwt
+
+AIAgent integration tests that exercise the full security chain follow a specific shape: a Testcontainers `pgvector/pgvector:pg16` container, a vector-store-aware Spring profile, and `mockJwt()` from `spring-security-test` so the OAuth2 chain treats the request as authenticated. The shipped `AuthChainIntegrationTest` is the canonical example. Mirror its structure when adding new auth-chain or vector-RAG tests:
+
+```java
+@Testcontainers(disabledWithoutDocker = true)
+@SpringBootTest(properties = "spring.ai.vectorstore.pgvector.initialize-schema=true")
+@AutoConfigureMockMvc
+class MyAgentTest {
+
+  @Container
+  @ServiceConnection
+  static PostgreSQLContainer<?> pgvector =
+      new PostgreSQLContainer<>("pgvector/pgvector:pg16");
+
+  @Autowired MockMvc mvc;
+
+  @Test
+  void authedRequestReachesAgent() throws Exception {
+    mvc.perform(post("/agent/ask")
+            .with(jwt().jwt(j -> j.subject("user-1").claim("scope", "agent.invoke")))
+            .contentType("application/json")
+            .content("""{"question":"hi"}"""))
+       .andExpect(status().isOk());
+  }
+}
+```
+
+The `pgvector` image is required because the AIAgent context auto-configures `VectorStore`, which fails if the database doesn't have the `vector` extension.
 
 ## 5. MockMvc controller test template
 

@@ -103,16 +103,31 @@ int updateStatusBatchWithLimit(@Param("oldStatus") String oldStatus,
                                @Param("limit") int limit);
 ```
 
-Service-layer drain loop:
+Service-layer drain loop. **The service method must be `@Transactional`** when the loop composes more than one repository call, or pairs the bulk UPDATE with extra writes inside the same logical unit. `@Modifying` alone causes Spring Data JDBC to auto-commit per call — without an outer `@Transactional`, an exception mid-loop leaves earlier batches committed and the cursor lost:
 
 ```java
-int total = 0;
-while (true) {
-    int updated = repository.updateStatusBatchWithLimit(oldStatus, newStatus, 500);
-    total += updated;
-    if (updated < 500) break;   // no more rows to update
+@Service
+public class {EntityName}MaintenanceService {
+
+    private final {EntityName}Repository repository;
+
+    public {EntityName}MaintenanceService({EntityName}Repository repository) {
+        this.repository = repository;
+    }
+
+    @Transactional
+    public int reassignAllByStatus(String oldStatus, String newStatus) {
+        int total = 0;
+        int updated;
+        while ((updated = repository.updateStatusBatchWithLimit(oldStatus, newStatus, 500)) > 0) {
+            total += updated;
+        }
+        return total;
+    }
 }
 ```
+
+For a *single* bounded UPDATE (no drain, no co-writes), `@Transactional` is optional — the auto-commit is fine. The wrapper is only required when you need partial-failure rollback semantics across the whole loop.
 
 #### Keyset Drain Loop — process large result sets with bounded memory
 

@@ -21,8 +21,10 @@ Expose a new capability to the LLM. Spring AI `@Tool` method in `PlaceholderTool
 ## Project conventions you must follow
 
 - **Small, composable tools** — one verb per tool, not kitchen sinks.
-- **Serializable return types** (records, Maps, simple DTOs). Don't return JPA entities directly.
+- **Serializable return types** (records, Maps, simple DTOs). The persistence layer is Spring Data JDBC — don't return database records directly; convert to a DTO/record first.
 - **No unbounded scans inside tools** — apply the same `/review-performance` rules as service code.
+- **Tenant isolation flows from `CallerContext`, never tool parameters.** Tools that touch tenant-scoped data (vector retrieval, per-tenant tables, audit logs) must derive `tenant_id` from `CallerContext.get().tenantId()` — NOT from a `@ToolParam`. The LLM can be tricked into passing any tenant ID via prompt injection.
+- **Async fan-out preserves identity.** `TaskManager.submitTask` re-establishes `CallerContext` for synchronous tool bodies automatically. If your tool itself spawns nested async work (`executor.submit`, `CompletableFuture.runAsync`), capture `CallerContext.get()` before the submit and `CallerContext.set(...)` inside the lambda or the inner work falls back to anonymous identity → cross-tenant data leak.
 - **Tool tests** call the method directly with known inputs; no LLM in the loop.
 
 ## Review before shipping

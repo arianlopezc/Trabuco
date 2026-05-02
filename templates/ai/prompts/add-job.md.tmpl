@@ -294,11 +294,13 @@ mvn test
 
 ## Recurring Jobs
 
-For scheduled/recurring jobs, add to `RecurringJobsConfig`:
+For scheduled/recurring jobs, add to `RecurringJobsConfig`. The shipped scaffold uses `@EventListener(ApplicationReadyEvent.class)` (NOT `@PostConstruct`) and wraps the registration in try/catch + rethrow — both choices are load-bearing:
 
 ```java
 @Configuration
 public class RecurringJobsConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(RecurringJobsConfig.class);
 
     private final JobScheduler jobScheduler;
 
@@ -306,13 +308,32 @@ public class RecurringJobsConfig {
         this.jobScheduler = jobScheduler;
     }
 
-    @PostConstruct
-    public void scheduleRecurringJobs() {
-        jobScheduler.scheduleRecurrently(
-            "daily-cleanup",
-            Cron.daily(2),  // 2 AM daily
-            new CleanupJobRequest()
-        );
+    @EventListener(ApplicationReadyEvent.class)
+    public void registerRecurringJobs() {
+        // try/catch is required: this listener fires AFTER ApplicationReadyEvent,
+        // so /actuator/health already reports UP. A failure inside scheduleRecurrently
+        // (DB lock, malformed cron, JobScheduler misconfigured) is otherwise logged
+        // by Spring's ApplicationEventMulticaster and quietly swallowed — operators
+        // see a healthy app while no recurring jobs run. Catching here makes the
+        // failure prominent in the application log; rethrowing keeps it surfaced
+        // through the multicaster too.
+        try {
+            jobScheduler.scheduleRecurrently(
+                "daily-cleanup",
+                Cron.daily(2),  // 2 AM daily
+                () -> BackgroundJobRequest.enqueue(new CleanupJobRequest())
+            );
+            log.info("Recurring jobs registered successfully");
+        } catch (RuntimeException e) {
+            log.error(
+                "Failed to register recurring jobs — application is RUNNING but no "
+                + "recurring schedules are active. Investigate immediately.", e);
+            throw e;
+        }
     }
 }
 ```
+
+**Why not `@PostConstruct`?** It runs before the application context is fully wired and before `ApplicationReadyEvent`, which means a registration failure can mask the bean-creation order rather than signaling a real configuration problem. `@EventListener(ApplicationReadyEvent.class)` runs once everything is up — failures there are unambiguous.
+
+**Security — never accept caller-supplied CRON expressions.** JobRunr validates syntax but does not bound frequency: `* * * * * *` registers every-second jobs that pin a worker thread. Schedules must come from operator-controlled config or static code only.

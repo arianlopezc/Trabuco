@@ -6,14 +6,16 @@ Create a JobRunr job: request class in Jobs module, handler in Worker module.
 
 1. **Jobs module** (`Jobs/src/main/java/.../jobs/`): a `JobRequest` implementation. Immutable payload; Jackson-serializable.
 2. **Worker module** (`Worker/src/main/java/.../worker/handler/`): a `JobRequestHandler<YourJobRequest>` with the `run(JobRequest req)` implementation. Constructor-inject domain services.
-3. **Scheduling**: enqueue via `jobScheduler.enqueue(new YourJobRequest(...))` from a controller or service.
-4. **Retry config**: default retry (10 attempts, exponential backoff) is set in `application.yml`. Override per handler via `@Retry(maxAttempts = N)` when the job is non-idempotent.
+3. **Scheduling**: enqueue via `jobScheduler.enqueue(new YourJobRequest(...))` from a controller or service. For recurring jobs, register from `RecurringJobsConfig` using `@EventListener(ApplicationReadyEvent.class)` (NOT `@PostConstruct` — see the prompt for why), wrapped in try/catch + rethrow so registration failures don't get swallowed by Spring's `ApplicationEventMulticaster`.
+4. **Retry config**: JobRunr's own retry/backoff is configured in `application.yml`. JobRunr does the retrying — you don't need a separate `@Retry` annotation in the handler.
 5. **Tests**: handler unit test with `@Mock` services; no Testcontainers needed for the handler itself.
 
 ## Project conventions you must follow
 
 - **Idempotent by default**: handlers should tolerate being re-run. JobRunr retries on failure.
-- **Catch-log-rethrow** inside the handler — rethrow triggers retry, swallowing doesn't.
+- **Let exceptions propagate.** JobRunr's worker wraps `run(...)` and triggers retries automatically when an exception escapes. The shipped `ProcessPlaceholderJobRequestHandler` does NOT add a defensive `try/catch` around its body — only add one if you need to attach context to the exception (then rethrow). Bare swallowing breaks retry.
+- **Identity-on-the-payload, not in ThreadLocal.** JobRunr handlers run on background threads with no inherited request context. If your job needs the original caller's identity, add an `IdentityClaims` field to the job request record and re-establish it inside the handler with `try (var scope = AuthScope.set(request.caller())) { ... }` (the canonical pattern is documented in `ProcessPlaceholderJobRequestHandler`).
+- **Operator-controlled CRON only.** Never accept caller-supplied CRON strings for recurring jobs — JobRunr validates syntax but doesn't bound frequency, so `* * * * * *` (every second) silently registers and pins worker threads.
 - **Keep payloads small** — jobs are persisted to the job store (JDBC table). Large blobs should be references (IDs), not data.
 - **Observability**: every job emits `job.started`/`job.completed`/`job.failed` Micrometer events.
 

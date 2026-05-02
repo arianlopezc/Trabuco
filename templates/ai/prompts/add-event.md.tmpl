@@ -158,7 +158,20 @@ public void publish({Entity}{Action}Event event) {
 
 ### 4. Create Event Listener
 
-**Error-handling scope:** event listeners run OUTSIDE `GlobalExceptionHandler`. The `try { … } catch (Exception e) { log.error(…); throw e; }` pattern below is required — catching to add context and rethrowing is what triggers broker retry / DLQ routing. Do not remove it citing `JAVA_CODE_QUALITY.md` §4.1.1; that section's no-redundant-try/catch rule applies only to HTTP paths.
+> **Choosing between "extend the existing listener" and "create a new one":** if your event extends an existing sealed interface (e.g., adding `PlaceholderUpdatedEvent` to the existing `PlaceholderEvent`), do **not** create a brand-new listener. Add a `case` arm to the existing `PlaceholderEventListener.handle*` switch — you inherit idempotency wiring, ack semantics, and the DLT/DLQ handlers for free. The shape below applies when you've just declared a *new* sealed event interface (Step 1) for a brand-new event domain that has no existing listener.
+>
+> **Mandatory shape** (every variation below preserves these):
+> 1. Inject `IdempotencyTracker` via constructor and gate every handler with `idempotencyTracker.checkAndMark(event.eventId())` — broker replay otherwise double-fires side effects.
+> 2. Branch on the sealed type with `switch (event)` and an explicit `default -> throw new IllegalStateException(...)` arm so a future subtype that hasn't been wired surfaces as an exception, not a silent ack.
+> 3. Per-broker ack semantics — see each block.
+> 4. The default `IdempotencyTracker` is in-memory (single-instance dev only). Override with a DB / Redis / broker-native bean for multi-instance production. `IdempotencyConfig` declares the default with `@ConditionalOnMissingBean`, so a user-provided `@Bean IdempotencyTracker` wins automatically.
+
+**Error-handling scope:** event listeners run OUTSIDE `GlobalExceptionHandler`.
+
+- For **Kafka** and **RabbitMQ**, the broker integration handles failures automatically: an uncaught exception triggers `@RetryableTopic` / DLX routing. The example below does **not** wrap the switch in `try/catch` — let the exception propagate.
+- For **SQS** and **Pub/Sub**, you control the ack manually via `Acknowledgement` / `BasicAcknowledgeablePubsubMessage`. The example below wraps the switch in `try/catch` and **rethrows** after logging (and after `nack()` on Pub/Sub) so visibility-timeout retries / error channels engage. Removing the rethrow turns broker-observable failure into application-observable success — the canonical silent-failure pattern.
+
+Do not invoke `JAVA_CODE_QUALITY.md` §4.1.1's no-redundant-try/catch rule against the SQS/Pub/Sub branches; that rule applies only to HTTP paths.
 
 **File**: `EventConsumer/src/main/java/{{.PackagePath}}/eventconsumer/listener/{Entity}EventListener.java`
 
@@ -166,13 +179,16 @@ public void publish({Entity}{Action}Event event) {
 ```java
 package {{.GroupID}}.eventconsumer.listener;
 
+import {{.GroupID}}.model.events.{Entity}Event;
 import {{.GroupID}}.model.events.{Entity}{Action}Event;
-import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.retrytopic.DltStrategy;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 
@@ -181,31 +197,62 @@ public class {Entity}EventListener {
 
     private static final Logger log = LoggerFactory.getLogger({Entity}EventListener.class);
 
+    private final IdempotencyTracker idempotencyTracker;
+
+    public {Entity}EventListener(IdempotencyTracker idempotencyTracker) {
+        this.idempotencyTracker = idempotencyTracker;
+    }
+
+    /**
+     * Pre-flight (autoCreateTopics=false): operator must pre-create
+     * <topic>-retry-0..2 and <topic>-dlt on the broker before first
+     * deploy. See KafkaConfig#retryDltKafkaTemplate for the topic list.
+     * For non-prod where you trust auto-creation, flip to "true".
+     */
     @RetryableTopic(
-        attempts = "3",
-        backoff = @Backoff(delay = 1000, multiplier = 2),
+        attempts = "4",
+        backoff = @Backoff(delay = 1000, multiplier = 2.0),
         dltStrategy = DltStrategy.FAIL_ON_ERROR,
-        dltTopicSuffix = "-dlt"
+        autoCreateTopics = "false"
     )
     @KafkaListener(
         topics = "${app.kafka.topics.{entity}-events}",
         groupId = "${spring.kafka.consumer.group-id}"
     )
-    public void handle{Action}(Immutable{Entity}{Action}Event event) {
-        log.info("Received {}: eventId={}, entityId={}",
-            event.getClass().getSimpleName(), event.eventId(), event.entityId());
+    public void handle{Entity}Event({Entity}Event event) {
+        log.info("Received {}: eventId={}",
+            event.getClass().getSimpleName(), event.eventId());
 
-        try {
-            // TODO: Process the event
-            // - Update read models
-            // - Trigger side effects
-            // - Send notifications
-
-            log.info("Processed event: eventId={}", event.eventId());
-        } catch (Exception e) {
-            log.error("Failed to process event: eventId={}", event.eventId(), e);
-            throw e;  // Will trigger retry
+        // Skip duplicate deliveries (broker replays).
+        if (!idempotencyTracker.checkAndMark(event.eventId())) {
+            return;
         }
+
+        switch (event) {
+            case {Entity}{Action}Event specific -> handle{Action}(specific);
+            // Explicit default that fails loudly. When a new permitted
+            // subtype is added to the sealed {Entity}Event interface,
+            // this default fires until the new branch is wired —
+            // surfacing the gap rather than silently committing the offset.
+            default -> throw new IllegalStateException(
+                "Unhandled {Entity}Event subtype: " + event.getClass().getName()
+                + ". Add a case for it in {Entity}EventListener.");
+        }
+    }
+
+    /** Dead Letter Topic handler — fires after retries are exhausted. */
+    @DltHandler
+    public void handleDlt({Entity}Event event, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
+        log.error("Event sent to DLT: topic={}, eventId={}, type={}",
+            topic, event.eventId(), event.getClass().getSimpleName());
+        // TODO: alerting, persist for manual review, etc.
+    }
+
+    private void handle{Action}({Entity}{Action}Event event) {
+        // TODO: Process the event — update read models, trigger side
+        // effects, send notifications. Throw on failure so the retry
+        // chain (and ultimately the DLT) engages.
+        log.info("Processed event: eventId={}", event.eventId());
     }
 }
 ```
@@ -213,8 +260,8 @@ public class {Entity}EventListener {
 ```java
 package {{.GroupID}}.eventconsumer.listener;
 
+import {{.GroupID}}.model.events.{Entity}Event;
 import {{.GroupID}}.model.events.{Entity}{Action}Event;
-import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -225,19 +272,51 @@ public class {Entity}EventListener {
 
     private static final Logger log = LoggerFactory.getLogger({Entity}EventListener.class);
 
+    private final IdempotencyTracker idempotencyTracker;
+
+    public {Entity}EventListener(IdempotencyTracker idempotencyTracker) {
+        this.idempotencyTracker = idempotencyTracker;
+    }
+
     @RabbitListener(queues = "${app.rabbitmq.queues.{entity}-events}")
-    public void handle{Action}(Immutable{Entity}{Action}Event event) {
-        log.info("Received {}: eventId={}, entityId={}",
-            event.getClass().getSimpleName(), event.eventId(), event.entityId());
+    public void handle{Entity}Event({Entity}Event event) {
+        log.info("Received {}: eventId={}",
+            event.getClass().getSimpleName(), event.eventId());
 
-        try {
-            // TODO: Process the event
-
-            log.info("Processed event: eventId={}", event.eventId());
-        } catch (Exception e) {
-            log.error("Failed to process event: eventId={}", event.eventId(), e);
-            throw e;  // Will trigger DLQ routing
+        // Skip duplicate deliveries (broker replays).
+        if (!idempotencyTracker.checkAndMark(event.eventId())) {
+            return;
         }
+
+        switch (event) {
+            case {Entity}{Action}Event specific -> handle{Action}(specific);
+            // Explicit default that fails loudly. When a new permitted
+            // subtype is added but the listener isn't, this default fires
+            // until the new branch is wired — surfacing the gap rather
+            // than silently acking RabbitMQ.
+            default -> throw new IllegalStateException(
+                "Unhandled {Entity}Event subtype: " + event.getClass().getName()
+                + ". Add a case for it in {Entity}EventListener.");
+        }
+    }
+
+    /**
+     * Dead Letter Queue handler — fires when the main listener rejected
+     * a message (max-attempts exhausted, malformed payload, deserialization
+     * failure). Without it, DLQ depth grows silently and operators only
+     * notice via RabbitMQ dashboards.
+     */
+    @RabbitListener(queues = "${app.rabbitmq.queues.{entity}-events}.dlq")
+    public void handleDlq({Entity}Event event) {
+        log.error("Event sent to DLQ: eventId={}, type={}",
+            event.eventId(), event.getClass().getSimpleName());
+        // TODO: alerting, persist for manual review, etc.
+    }
+
+    private void handle{Action}({Entity}{Action}Event event) {
+        // TODO: Process the event. Throw on failure so the message is
+        // rejected and the DLX/DLQ chain engages.
+        log.info("Processed event: eventId={}", event.eventId());
     }
 }
 ```
@@ -245,9 +324,10 @@ public class {Entity}EventListener {
 ```java
 package {{.GroupID}}.eventconsumer.listener;
 
+import {{.GroupID}}.model.events.{Entity}Event;
 import {{.GroupID}}.model.events.{Entity}{Action}Event;
-import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
 import io.awspring.cloud.sqs.annotation.SqsListener;
+import io.awspring.cloud.sqs.listener.acknowledgement.Acknowledgement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -257,19 +337,47 @@ public class {Entity}EventListener {
 
     private static final Logger log = LoggerFactory.getLogger({Entity}EventListener.class);
 
+    private final IdempotencyTracker idempotencyTracker;
+
+    public {Entity}EventListener(IdempotencyTracker idempotencyTracker) {
+        this.idempotencyTracker = idempotencyTracker;
+    }
+
     @SqsListener("${app.sqs.queue.{entity}-events}")
-    public void handle{Action}(Immutable{Entity}{Action}Event event) {
-        log.info("Received {}: eventId={}, entityId={}",
-            event.getClass().getSimpleName(), event.eventId(), event.entityId());
+    public void handle{Entity}Event({Entity}Event event, Acknowledgement acknowledgement) {
+        log.info("Received {}: eventId={}",
+            event.getClass().getSimpleName(), event.eventId());
+
+        // Skip duplicate deliveries (SQS at-least-once redelivers on
+        // visibility-timeout expiry or consumer crash).
+        if (!idempotencyTracker.checkAndMark(event.eventId())) {
+            acknowledgement.acknowledge();
+            return;
+        }
 
         try {
-            // TODO: Process the event
-
-            log.info("Processed event: eventId={}", event.eventId());
+            switch (event) {
+                case {Entity}{Action}Event specific -> handle{Action}(specific);
+                // Explicit default that fails loudly so unhandled subtypes
+                // surface as failures rather than silent acks/deletes.
+                default -> throw new IllegalStateException(
+                    "Unhandled {Entity}Event subtype: " + event.getClass().getName()
+                    + ". Add a case for it in {Entity}EventListener.");
+            }
+            acknowledgement.acknowledge();
         } catch (Exception e) {
-            log.error("Failed to process event: eventId={}", event.eventId(), e);
+            log.error("Failed to process event: eventId={}, error={}",
+                event.eventId(), e.getMessage());
+            // Rethrow: message returns to queue after visibility timeout;
+            // DLQ engages after maxReceiveCount (configure in AWS console).
             throw e;
         }
+    }
+
+    private void handle{Action}({Entity}{Action}Event event) {
+        // TODO: Process the event. Throw on failure so the visibility-
+        // timeout / DLQ chain engages.
+        log.info("Processed event: eventId={}", event.eventId());
     }
 }
 ```
@@ -277,42 +385,67 @@ public class {Entity}EventListener {
 ```java
 package {{.GroupID}}.eventconsumer.listener;
 
+import {{.GroupID}}.model.events.{Entity}Event;
+import {{.GroupID}}.model.events.{Entity}{Action}Event;
 import com.google.cloud.spring.pubsub.support.BasicAcknowledgeablePubsubMessage;
-import {{.GroupID}}.model.events.Immutable{Entity}{Action}Event;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.cloud.spring.pubsub.support.GcpPubSubHeaders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.integration.annotation.ServiceActivator;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 @Component
 public class {Entity}EventListener {
 
     private static final Logger log = LoggerFactory.getLogger({Entity}EventListener.class);
-    private final ObjectMapper objectMapper;
 
-    public {Entity}EventListener(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    private final IdempotencyTracker idempotencyTracker;
+
+    public {Entity}EventListener(IdempotencyTracker idempotencyTracker) {
+        this.idempotencyTracker = idempotencyTracker;
     }
 
     @ServiceActivator(inputChannel = "{entity}EventsInputChannel")
-    public void handle{Action}(BasicAcknowledgeablePubsubMessage message) {
-        try {
-            String payload = message.getPubsubMessage().getData().toStringUtf8();
-            Immutable{Entity}{Action}Event event = objectMapper.readValue(
-                payload, Immutable{Entity}{Action}Event.class);
+    public void handle{Entity}Event(
+            {Entity}Event event,
+            @Header(GcpPubSubHeaders.ORIGINAL_MESSAGE) BasicAcknowledgeablePubsubMessage message) {
+        log.info("Received {}: eventId={}",
+            event.getClass().getSimpleName(), event.eventId());
 
-            log.info("Received {}: eventId={}, entityId={}",
-                event.getClass().getSimpleName(), event.eventId(), event.entityId());
-
-            // TODO: Process the event
-
+        // Skip duplicate deliveries (Pub/Sub at-least-once redelivers on
+        // ack-deadline expiry or subscriber crash).
+        if (!idempotencyTracker.checkAndMark(event.eventId())) {
             message.ack();
-            log.info("Processed event: eventId={}", event.eventId());
-        } catch (Exception e) {
-            log.error("Failed to process event", e);
-            message.nack();
+            return;
         }
+
+        try {
+            switch (event) {
+                case {Entity}{Action}Event specific -> handle{Action}(specific);
+                // Explicit default that fails loudly so unhandled subtypes
+                // surface as failures rather than silent acks.
+                default -> throw new IllegalStateException(
+                    "Unhandled {Entity}Event subtype: " + event.getClass().getName()
+                    + ". Add a case for it in {Entity}EventListener.");
+            }
+            message.ack();
+        } catch (Exception e) {
+            log.error("Failed to process event: eventId={}, error={}",
+                event.eventId(), e.getMessage());
+            message.nack();
+            // Rethrow so Spring Integration's error channel sees the
+            // failure, metric counters increment, and OTel error spans
+            // are recorded. Without rethrow the broker sees nack but the
+            // application observes a successful handler — silent failure.
+            throw e;
+        }
+    }
+
+    private void handle{Action}({Entity}{Action}Event event) {
+        // TODO: Process the event. Throw on failure so the nack + retry
+        // chain engages.
+        log.info("Processed event: eventId={}", event.eventId());
     }
 }
 ```

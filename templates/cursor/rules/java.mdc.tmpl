@@ -183,6 +183,35 @@ A `try/catch` in a controller or HTTP-facing service that only rethrows or retur
 {{- end}}
 - Cover: happy path, not-found/empty, validation failures, error conditions
 - Full spec: `.ai/prompts/JAVA_CODE_QUALITY.md` (Section 7) | Guide: `.ai/prompts/testing-guide.md`
+{{- if .HasModule "AIAgent"}}
+
+## Vector RAG (shipped when AIAgent is enabled)
+
+Don't suggest "add a vector store" — three are wired and selected by classpath dependency:
+
+- **PGVector** (default in `aiagent-rag` archetype), **Qdrant**, **MongoDB Atlas Vector Search**.
+- Retrieval goes through `VectorKnowledgeRetriever` (`@Primary` when a `VectorStore` bean is present).
+- Ingestion goes through `DocumentIngestionService.ingest(text, metadata)`. Both stamp `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped before storage.
+- Cross-tenant reads are impossible by construction — the retriever applies `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` to every `SearchRequest`.
+- A keyword fallback (`KeywordKnowledgeRetriever` over `KnowledgeBase.ENTRIES`) is selected automatically when no `VectorStore` is wired. Don't reinvent either path.
+- Retrieved chunks pass through `FencingDocumentRetriever`, which marks the trust boundary between prompt and document content. Don't bypass.
+
+## Async context propagation in AIAgent
+
+The shipped `TaskManager.submitTask` captures `CallerContext` on the request thread, re-sets it inside the worker lambda, and clears in `finally`. ThreadLocals do not propagate to virtual threads — any new `executor.submit(...)` you add must follow the same shape, or downstream code (`VectorKnowledgeRetriever` tenant filter, audit logging, `KnowledgeTools`) will see the anonymous fallback identity.
+
+```java
+final CallerIdentity capturedCaller = CallerContext.get();
+executor.submit(() -> {
+    CallerContext.set(capturedCaller);
+    try {
+        // ... work
+    } finally {
+        CallerContext.clear();
+    }
+});
+```
+{{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}
 
 ## Authentication (shipped, dormant by default)

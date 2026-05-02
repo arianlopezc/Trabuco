@@ -954,8 +954,26 @@ Trabuco ships OAuth2 Resource Server scaffolding. Code reviewers should know wha
 - **AIAgent's `@RequireScope`.** The AIAgent module ships an annotation + `ScopeInterceptor` that bridges the legacy API-key path with the JWT path: `@RequireScope("partner")` on a controller method passes if EITHER the API-key tier OR the JWT scope satisfies the requirement (`ScopeEnforcer.effectiveCaller` takes the higher tier). Reviewers should ensure new AIAgent endpoints declare `@RequireScope` (the `controllerHandlersMustDeclareAuthorization` ArchUnit guard catches missing ones).
 - **Tenant isolation via `CallerIdentity.tenantId()`.** Default partitions per-credential. The vector RAG path filters retrieval by `tenant_id`; caller-supplied tenant in document metadata is server-side stripped. Code touching the vector store must respect this contract.
 {{- end}}
-- **Identity propagation.** `RequestContextHolder` is populated by `JwtAuthenticationConverter`{{- if .HasModule "AIAgent"}} and `CallerContext` by `ApiKeyAuthFilter` / converter (AIAgent){{- end}}. Both have `RequestContextClearingFilter` to clear on request-end (defends virtual-thread carrier reuse). Async paths (JobRunr handlers, event listeners) must capture identity at enqueue time and re-establish in the worker thread (see `TaskManager.submitTask` for the canonical pattern).
-- **RFC 7807 problem-details on auth failures.** `AuthProblemDetailHandler` is wired as both `authenticationEntryPoint` and `accessDeniedHandler` so 401/403 responses emit `application/problem+json` (not Spring's whitelabel JSON).
+- **Identity propagation.** `RequestContextHolder` is populated by `JwtAuthenticationConverter`{{- if .HasModule "AIAgent"}} and `CallerContext` by `ApiKeyAuthFilter` / converter (AIAgent){{- end}}. Both have `RequestContextClearingFilter` to clear on request-end (defends virtual-thread carrier reuse). Async paths (JobRunr handlers, event listeners{{- if .HasModule "AIAgent"}}, AIAgent task executors, AIAgent tool invocations on background threads{{- end}}) must capture identity at enqueue/submit time and re-establish in the worker thread.{{- if .HasModule "AIAgent"}} The shipped `TaskManager.submitTask` is the canonical shape — copy it whenever you add a new async path:
+
+```java
+// On the request thread.
+final CallerIdentity capturedCaller = CallerContext.get();
+
+executor.submit(() -> {
+    // On the worker (virtual) thread — ThreadLocals don't propagate.
+    CallerContext.set(capturedCaller);
+    try {
+        // ... work that touches VectorKnowledgeRetriever, KnowledgeTools,
+        // audit logging, or anything else that reads CallerContext.
+    } finally {
+        CallerContext.clear();   // never leak across thread reuse
+    }
+});
+```
+
+Without the capture+set, downstream code on the worker thread sees `CallerIdentity.anonymous()` — the vector retriever's tenant filter falls back to anonymous, audit logs lose attribution, and `KnowledgeTools` behaves as if there were no caller. That's a tenant-isolation regression class.{{- else}} For JobRunr handlers, the equivalent pattern is to carry an `IdentityClaims` field inside the job request payload and re-establish it via `AuthScope` at the start of the handler — see the comments inside `ProcessPlaceholderJobRequestHandler`.{{- end}}
+- **RFC 7807 problem-details on auth failures.** `AuthProblemDetailHandler` is wired as both `authenticationEntryPoint` and `accessDeniedHandler` so 401/403 responses emit `application/problem+json` (not Spring's whitelabel JSON). The problem `type` URIs are `urn:problem-type:unauthorized` (401) and `urn:problem-type:forbidden` (403){{- if .HasModule "AIAgent"}}; the API and AIAgent modules use the same naming so cross-module clients can match a stable URI{{- end}}.
 {{- end}}
 
 ### 6.2 Transaction Management

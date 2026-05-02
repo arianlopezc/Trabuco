@@ -42,9 +42,23 @@ For each: single specialty, explicit hand-off paths, no circular delegation.
 
 ### 5. Knowledge base
 ```bash
-grep -l . AIAgent/src/main/resources/ | xargs grep -nE '.' 2>/dev/null
+# Keyword entries are a Java class, not JSON/YAML.
+grep -nE 'aiagent/knowledge/KnowledgeBase' $CHANGED
+# Vector ingestion call sites:
+grep -nE 'documentIngestionService\.ingest|vectorStore\.add' $CHANGED
 ```
 Scoped, no PII/secrets, freshness documented.
+
+### 5b. Vector RAG tenant isolation
+```bash
+# Ingest call sites that DON'T route through DocumentIngestionService:
+grep -nE 'vectorStore\.add\(' $CHANGED
+# Retrievers / SearchRequest builders that omit a tenant filter:
+grep -nE 'SearchRequest\.builder|similaritySearch' $CHANGED
+```
+- Ingestion paths must stamp `metadata.tenant_id` from `CallerContext.get().tenantId()` (not from request payload). `DocumentIngestionService.stampTenantId` is the canonical strip.
+- Retrieval `SearchRequest`s must include `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())`. Missing filter → cross-tenant data leak.
+- `FencingDocumentRetriever` must wrap retrieved chunks before they hit the LLM.
 
 ### 6. MCP tools exposed
 ```bash
