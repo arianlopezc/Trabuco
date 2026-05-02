@@ -335,7 +335,11 @@ if [ -n "${SQL_FILES// /}" ]; then
       { line=$0; sub(/--.*/, "", line) }
       line ~ /^[[:space:]]*$/ { next }
       # Match any DELETE or UPDATE statement not followed by LIMIT.
-      line ~ /[Dd][Ee][Ll][Ee][Tt][Ee]|[Uu][Pp][Dd][Aa][Tt][Ee]/ \
+      # Word-boundary guards (`(^|[^_A-Za-z])` and `([^_A-Za-z]|$)`)
+      # keep this from firing on column/table identifiers that happen
+      # to contain "update" as a substring (e.g., `updated_at`,
+      # `last_update_id`).
+      line ~ /(^|[^_A-Za-z])([Dd][Ee][Ll][Ee][Tt][Ee]|[Uu][Pp][Dd][Aa][Tt][Ee])([^_A-Za-z]|$)/ \
         && line !~ /[Ll][Ii][Mm][Ii][Tt]/ { print NR ":" line }
     ' "$f")
   done
