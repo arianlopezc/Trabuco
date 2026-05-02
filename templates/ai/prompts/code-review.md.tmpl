@@ -115,7 +115,7 @@ EventConsumer   → Model, Shared, Events
 
 | Check | Correct | Wrong |
 |-------|---------|-------|
-| Injection | `@RequiredArgsConstructor` + `private final` fields | `@Autowired` on fields |
+| Injection | Explicit constructor + `private final` fields (no Lombok) | `@Autowired` on fields |
 | Transactions | `@Transactional` on public service methods | `@Transactional` on private methods |
 | Circuit breaker | `@CircuitBreaker(name = "default")` on external calls | No resilience on external calls |
 | Validation | Bean Validation on DTOs (`@NotNull`, `@Valid`) | Manual null checks in controller |

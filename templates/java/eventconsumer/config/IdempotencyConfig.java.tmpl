@@ -1,0 +1,45 @@
+package {{.GroupID}}.eventconsumer.config;
+
+import {{.GroupID}}.eventconsumer.listener.IdempotencyTracker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * Wires the default {@link IdempotencyTracker}.
+ *
+ * <p>The default is the in-memory LRU tracker — a sane scaffold for
+ * single-instance development and dev-tier deployments. In multi-
+ * instance production (k8s replicas &gt;= 2 is the typical case),
+ * consumer A's "seen" set is invisible to consumer B → at-least-once-
+ * times-N semantics on broker rebalance or redelivery.
+ *
+ * <p>Override by providing your own {@link IdempotencyTracker}
+ * {@code @Bean} in any {@code @Configuration}: this default is
+ * gated by {@code @ConditionalOnMissingBean}, so a user-provided
+ * bean wins automatically. Recommended replacements (see
+ * {@link IdempotencyTracker} javadoc for full pattern code):
+ * DB-backed table with {@code ON CONFLICT DO NOTHING}, Redis
+ * {@code SET NX EX <ttl>}, or broker-native exactly-once semantics.
+ */
+@Configuration
+public class IdempotencyConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(IdempotencyConfig.class);
+
+    @Bean
+    @ConditionalOnMissingBean(IdempotencyTracker.class)
+    public IdempotencyTracker idempotencyTracker() {
+        log.warn(
+            "Using the default in-memory IdempotencyTracker. "
+            + "This provides reliable dedup for SINGLE-INSTANCE deployments only. "
+            + "In multi-instance production (k8s replicas >= 2), consumer A's "
+            + "'seen' state is invisible to consumer B, leading to at-least-once-"
+            + "times-N processing on broker rebalance or redelivery. "
+            + "Replace with a shared-store implementation (DB / Redis / broker-native) "
+            + "before scaling out — see IdempotencyTracker javadoc for canonical patterns.");
+        return new IdempotencyTracker();
+    }
+}

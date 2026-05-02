@@ -1,11 +1,15 @@
 package {{.GroupID}}.aiagent.task;
 
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -97,5 +101,45 @@ class TaskManagerTest {
     void taskRecordCarriesOwnerKeyHash() {
         String id = manager.submitTask(() -> Map.of("k", "v"), OWNER_A);
         assertThat(manager.getTask(id).getOwnerKeyHash()).isEqualTo(OWNER_A);
+    }
+
+    // ─── CallerContext propagation regression test ───────────
+    //
+    // submitTask runs work on a virtual-thread executor; ThreadLocal
+    // does not propagate. Without explicit capture/replay inside
+    // submitTask, downstream code (VectorKnowledgeRetriever tenant
+    // filter, KnowledgeTools, audit logs) would see CallerIdentity.
+    // anonymous() instead of the real caller — silently bypassing
+    // tenant isolation on the most common A2A async path.
+
+    @Test
+    void submitTask_propagatesCallerContextToWorkerThread() throws Exception {
+        CallerIdentity caller = ImmutableCallerIdentity.builder()
+            .tier("public")
+            .keyHash("test-key-hash")
+            .keyLabel("test-key")
+            .build();
+        AtomicReference<CallerIdentity> seenInsideWork = new AtomicReference<>();
+        var done = new CountDownLatch(1);
+
+        CallerContext.set(caller);
+        try {
+            manager.submitTask(() -> {
+                seenInsideWork.set(CallerContext.get());
+                done.countDown();
+                return Map.of();
+            }, caller.keyHash());
+        } finally {
+            CallerContext.clear();
+        }
+
+        assertThat(done.await(2, TimeUnit.SECONDS))
+            .as("worker thread must complete the captured-caller assertion")
+            .isTrue();
+        assertThat(seenInsideWork.get())
+            .as("worker thread must see the submitter's caller, not anonymous")
+            .isNotNull();
+        assertThat(seenInsideWork.get().keyHash()).isEqualTo("test-key-hash");
+        assertThat(seenInsideWork.get().tier()).isEqualTo("public");
     }
 }

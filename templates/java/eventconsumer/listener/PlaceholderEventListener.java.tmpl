@@ -70,6 +70,15 @@ public class PlaceholderEventListener {
    *   <li>Failed events go to DLT after exhausting retries</li>
    * </ul>
    * </p>
+   *
+   * <p><b>Pre-flight (autoCreateTopics=false):</b> the operator must
+   * pre-create {@code <topic>-retry-0..2} and {@code <topic>-dlt} on
+   * the broker before first deploy. Missing topics cause silent
+   * publish failures from {@code @RetryableTopic}'s internal
+   * {@code KafkaTemplate}. See {@code KafkaConfig#retryDltKafkaTemplate}
+   * for the full topic list. For non-prod environments where you
+   * trust the cluster to auto-create topics, set
+   * {@code autoCreateTopics="true"} below.
    */
   @RetryableTopic(
     attempts = "4",
@@ -145,6 +154,24 @@ public class PlaceholderEventListener {
         + ". Add a case for it in PlaceholderEventListener.");
     }
   }
+
+  /**
+   * Dead Letter Queue handler for events that the main listener
+   * rejected (max-attempts exhausted, malformed payload, deserialization
+   * failure). Symmetric with the Kafka {@code handleDlt} above —
+   * without it, DLQ depth grows silently and operators only notice via
+   * RabbitMQ dashboards.
+   *
+   * <p>This handler ACK's the DLQ message after logging. To preserve
+   * messages for manual review, replace the log with persistence to a
+   * database table or external store before the method returns.
+   */
+  @RabbitListener(queues = "${app.rabbitmq.queues.placeholder-events}.dlq")
+  public void handleDlq(PlaceholderEvent event) {
+    logger.error("Event sent to DLQ: eventId={}, type={}",
+      event.eventId(), event.getClass().getSimpleName());
+    // TODO: Add alerting, store for manual review, etc.
+  }
 {{else if .UsesSQS}}
   /**
    * Main event handler for SQS messages.
@@ -161,16 +188,30 @@ public class PlaceholderEventListener {
     logger.info("Received event: eventId={}, type={}",
       event.eventId(), event.getClass().getSimpleName());
 
+    // Skip duplicate deliveries (SQS at-least-once redelivers on
+    // visibility-timeout expiry or consumer crash). Symmetric with the
+    // Kafka and Rabbit branches above.
+    if (!idempotencyTracker.checkAndMark(event.eventId())) {
+      acknowledgement.acknowledge();
+      return;
+    }
+
     try {
       switch (event) {
         case PlaceholderCreatedEvent created -> handleCreated(created);
-        // Add more cases as event types grow
+        // Explicit default that fails loudly. When a new permitted
+        // subtype is added to the sealed PlaceholderEvent interface,
+        // this default fires until the new branch is wired — surfacing
+        // the gap rather than silently ack'ing and deleting the message.
+        default -> throw new IllegalStateException(
+          "Unhandled PlaceholderEvent subtype: " + event.getClass().getName()
+          + ". Add a case for it in PlaceholderEventListener.");
       }
       acknowledgement.acknowledge();
     } catch (Exception e) {
       logger.error("Failed to process event: eventId={}, error={}",
         event.eventId(), e.getMessage());
-      throw e; // Message returns to queue after visibility timeout
+      throw e; // Message returns to queue after visibility timeout; DLQ after maxReceiveCount.
     }
   }
 {{else if .UsesPubSub}}
@@ -191,16 +232,35 @@ public class PlaceholderEventListener {
     logger.info("Received event: eventId={}, type={}",
       event.eventId(), event.getClass().getSimpleName());
 
+    // Skip duplicate deliveries (Pub/Sub at-least-once redelivers on
+    // ack-deadline expiry or subscriber crash). Symmetric with the
+    // Kafka and Rabbit branches above.
+    if (!idempotencyTracker.checkAndMark(event.eventId())) {
+      message.ack();
+      return;
+    }
+
     try {
       switch (event) {
         case PlaceholderCreatedEvent created -> handleCreated(created);
-        // Add more cases as event types grow
+        // Explicit default that fails loudly. When a new permitted
+        // subtype is added to the sealed PlaceholderEvent interface,
+        // this default fires until the new branch is wired — surfacing
+        // the gap rather than silently ack'ing and deleting the message.
+        default -> throw new IllegalStateException(
+          "Unhandled PlaceholderEvent subtype: " + event.getClass().getName()
+          + ". Add a case for it in PlaceholderEventListener.");
       }
       message.ack();
     } catch (Exception e) {
       logger.error("Failed to process event: eventId={}, error={}",
         event.eventId(), e.getMessage());
       message.nack();
+      // Rethrow so Spring Integration's error channel sees the failure,
+      // metric counters increment, and OTel error spans are recorded.
+      // Without the rethrow, the broker would receive nack but the
+      // application observes a successful handler — silent failure.
+      throw e;
     }
   }
 {{end}}

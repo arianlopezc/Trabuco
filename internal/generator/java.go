@@ -794,6 +794,17 @@ func (g *Generator) generateEventConsumerModule() error {
 		return fmt.Errorf("failed to generate IdempotencyTracker.java: %w", err)
 	}
 
+	// IdempotencyConfig: registers the default in-memory tracker as
+	// @ConditionalOnMissingBean so users can override with a DB-backed
+	// or Redis-backed implementation. Emits a startup WARN when the
+	// default is in use, surfacing the multi-instance limitation.
+	if err := g.writeTemplate(
+		"java/eventconsumer/config/IdempotencyConfig.java.tmpl",
+		g.javaPath("EventConsumer", filepath.Join("config", "IdempotencyConfig.java")),
+	); err != nil {
+		return fmt.Errorf("failed to generate IdempotencyConfig.java: %w", err)
+	}
+
 	// application.yml
 	if err := g.writeTemplate(
 		"java/eventconsumer/resources/application.yml.tmpl",
@@ -853,6 +864,12 @@ func (g *Generator) generateAIAgentModuleAuthFiles() error {
 		{"java/aiagent/config/security/MethodSecurityConfig.java.tmpl", "MethodSecurityConfig.java"},
 		{"java/aiagent/config/security/JwtAuthenticationConverter.java.tmpl", "JwtAuthenticationConverter.java"},
 		{"java/aiagent/config/security/AuthProblemDetailHandler.java.tmpl", "AuthProblemDetailHandler.java"},
+		// RequestContextClearingFilter: mirrors the API module's
+		// equivalent. AIAgent's JwtAuthenticationConverter populates
+		// RequestContextHolder via convert(); without a finally-clear
+		// filter, identity ThreadLocal leaks across virtual-thread
+		// carrier reuse.
+		{"java/aiagent/config/security/RequestContextClearingFilter.java.tmpl", "RequestContextClearingFilter.java"},
 	}
 	for _, f := range files {
 		out := filepath.Join("config", "security", f.out)
@@ -1182,6 +1199,15 @@ func (g *Generator) generateAIAgentModule() error {
 			// integration tests — needs the pgvector Testcontainer
 			// image and the V1 vector schema migration.
 			struct{ tmpl, out string }{"java/aiagent/test/VectorTenantIsolationTest.java.tmpl", filepath.Join("knowledge", "VectorTenantIsolationTest.java")},
+			// AuthChainIntegrationTest boots with trabuco.auth.enabled=true
+			// so the OAuth2 resource-server filter chain is exercised
+			// end-to-end (no-JWT → 401, mockJwt with public scope →
+			// 200, mockJwt with insufficient scope on /ingest → 403).
+			// Same gating as the other AIAgent integration tests so it
+			// shares the pgvector Testcontainer image; the auth chain
+			// itself does not require pgvector, but the AIAgent
+			// application context boot does.
+			struct{ tmpl, out string }{"java/aiagent/test/AuthChainIntegrationTest.java.tmpl", filepath.Join("config", "security", "AuthChainIntegrationTest.java")},
 		)
 	}
 	for _, f := range testFiles {

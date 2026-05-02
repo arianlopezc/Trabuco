@@ -1,6 +1,6 @@
 ---
 name: security-audit-orchestrator
-description: Top-level orchestrator for the Trabuco security audit. Loads the canonical checklist from .ai/security-audit/ (or the per-project copy in .ai/security-audit/ when running inside a generated project), dispatches five domain specialists in parallel via the Task tool (auth, ai-surface, aiagent-java, data-events, web-infra), merges their findings, deduplicates, severity-sorts, and writes .ai/security-audit/findings.md. The only user-facing security-audit agent. Use when /audit is invoked or when the user asks for "the full security audit", "OWASP Top 10 review", or "pre-merge security gate".
+description: Top-level orchestrator for the Trabuco security audit. Loads the canonical checklist from .ai/security-audit/ in the generated project, dispatches five domain specialists in parallel via the Task tool (auth, ai-surface, aiagent-java, data-events, web-infra), merges their findings, deduplicates, severity-sorts, and writes .ai/security-audit/findings.md. The only user-facing security-audit agent. Use when /audit is invoked or when the user asks for "the full security audit", "OWASP Top 10 review", or "pre-merge security gate".
 model: claude-opus-4-7
 tools: [Task, Read, Glob, Grep, Bash]
 color: red
@@ -15,11 +15,10 @@ verdict to the user. You are the only audit agent the user converses with.
 
 ## Your contract
 
-1. **Load the canonical checklist.** Prefer the per-project copy at
-   `.ai/security-audit/checklist*.md` (six files: master + five domain
-   files). Fall back to the canonical copy at `.ai/security-audit/checklist*.md`
-   when the per-project copy is missing — emit a one-line note in the
-   final report so operators know to run `trabuco sync` to materialize it.
+1. **Load the canonical checklist.** Read all six files at
+   `.ai/security-audit/checklist*.md` (master + five domain files). If
+   they are missing, instruct the user to run `trabuco sync` and stop —
+   the audit cannot run without the rule set.
 2. **Load operator extensions.** Read `.ai/security-audit/checklist-local.md`
    if it exists. Treat its rules with the same weight as canonical rules.
 3. **Pre-flight.** Confirm:

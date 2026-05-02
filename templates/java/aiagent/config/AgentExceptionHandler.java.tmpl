@@ -1,7 +1,9 @@
 package {{.GroupID}}.aiagent.config;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,15 +72,27 @@ public class AgentExceptionHandler extends ResponseEntityExceptionHandler {
      * with {@code HttpStatus.FORBIDDEN} when a caller lacks the required
      * tier; without this handler it surfaces as a plain JSON envelope
      * via Spring's default error path.
+     *
+     * <p>SECURITY: the original {@code reason} string is logged
+     * server-side but NOT echoed in the response body. This handler is
+     * the catch-all for any {@code ResponseStatusException} thrown
+     * inside the AIAgent module (application code, library code, or
+     * Spring internals); reason strings can contain caller-controlled
+     * data (e.g., {@code "User " + email + " not found"}), and echoing
+     * them verbatim is a reflected information-leak surface. Aligns
+     * with the {@link IllegalArgumentException}, {@code AccessDeniedException},
+     * and {@code AuthenticationException} handlers below — all log
+     * server-side, return a fixed sanitized detail.
      */
     @ExceptionHandler(ResponseStatusException.class)
     public ProblemDetail handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
         HttpStatusCode status = ex.getStatusCode();
-        logger.warn("ResponseStatusException {}: {}", status.value(), ex.getReason());
+        logger.warn("ResponseStatusException at {}: status={} reason={}",
+            request.getRequestURI(), status.value(), ex.getReason());
 
         ProblemDetail problem = ProblemDetail.forStatus(status);
         problem.setTitle(HttpStatus.valueOf(status.value()).getReasonPhrase());
-        problem.setDetail(ex.getReason() != null ? ex.getReason() : "Request rejected");
+        problem.setDetail("The request was rejected. See server logs for details.");
         problem.setType(URI.create("urn:problem-type:request-rejected"));
         problem.setInstance(URI.create(request.getRequestURI()));
         return problem;
@@ -129,6 +143,35 @@ public class AgentExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * Handle constraint violations from {@code @Validated} on path /
+     * query parameters. Spring's {@link ResponseEntityExceptionHandler}
+     * does not cover this case (it handles {@link MethodArgumentNotValidException}
+     * for body validation only). Without this handler, a
+     * {@code @Validated} parameter rejection in any AIAgent controller
+     * surfaces as a generic 500. Mirrors the API module's equivalent.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest request) {
+        Map<String, String> violations = new HashMap<>();
+        ex.getConstraintViolations().forEach(v -> {
+            String path = v.getPropertyPath().toString();
+            String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+            violations.put(field, v.getMessage());
+        });
+
+        logger.warn("Constraint violations at {}: {}", request.getRequestURI(), violations);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            "One or more constraints were violated");
+        problem.setTitle("Validation Failed");
+        problem.setType(URI.create("urn:problem-type:constraint-violation"));
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("violations", violations);
+        return problem;
+    }
+
+    /**
      * See GlobalExceptionHandler in the API module — exception
      * message is logged server-side but not echoed in the response.
      */
@@ -153,7 +196,7 @@ public class AgentExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         problem.setTitle("Forbidden");
         problem.setDetail("Access denied: insufficient privileges for this operation.");
-        problem.setType(URI.create("urn:problem-type:access-denied"));
+        problem.setType(URI.create("urn:problem-type:forbidden"));
         problem.setInstance(URI.create(request.getRequestURI()));
         return problem;
     }
@@ -165,7 +208,7 @@ public class AgentExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
         problem.setTitle("Unauthorized");
         problem.setDetail("Authentication is required to access this resource.");
-        problem.setType(URI.create("urn:problem-type:authentication-required"));
+        problem.setType(URI.create("urn:problem-type:unauthorized"));
         problem.setInstance(URI.create(request.getRequestURI()));
         return problem;
     }

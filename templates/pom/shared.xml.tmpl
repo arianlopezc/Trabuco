@@ -15,9 +15,9 @@
     <name>{{.ProjectNamePascal}} Shared</name>
     <description>Business services, circuit breaker, and shared utilities</description>
 
-    <properties>
-        <resilience4j.version>2.2.0</resilience4j.version>
-    </properties>
+    <!-- resilience4j.version is inherited from the parent POM
+         (declared centrally so all consumers stay aligned). -->
+
 
     <dependencies>
         <!-- Model module dependency -->

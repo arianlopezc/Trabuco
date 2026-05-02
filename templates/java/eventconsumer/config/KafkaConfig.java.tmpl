@@ -12,6 +12,8 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 
 /**
@@ -75,5 +77,48 @@ public class KafkaConfig {
     factory.setConsumerFactory(consumerFactory);
     factory.setConcurrency(3);
     return factory;
+  }
+
+  /**
+   * Explicit {@link KafkaTemplate} bean for {@code @RetryableTopic}
+   * publishing.
+   *
+   * <p>Although this is the EventConsumer module, {@code @RetryableTopic}
+   * on {@code PlaceholderEventListener} publishes failed events to
+   * retry topics ({@code <topic>-retry-0}, {@code -retry-1}, ...) and
+   * ultimately to the DLT ({@code <topic>-dlt}). Those publishes need
+   * a {@code KafkaTemplate}, which in turn needs a {@link ProducerFactory},
+   * which Spring Boot auto-configures only when
+   * {@code spring.kafka.producer.*} is set in application.yml. Removing
+   * that yml block would silently break retry/DLT routing — Spring Kafka
+   * logs the publish failure but does not fail-fast.
+   *
+   * <p>Declaring the template explicitly here does two things:
+   * <ul>
+   *   <li>Makes the dependency visible in code — an operator reading
+   *       {@code KafkaConfig} immediately sees that producer config in
+   *       yml is REQUIRED, not optional.</li>
+   *   <li>If the yml is misconfigured (no {@code producer:} block),
+   *       startup fails fast at bean creation rather than silently
+   *       failing at retry-publish time in production.</li>
+   * </ul>
+   *
+   * <p><b>Operator pre-flight checklist
+   * ({@code autoCreateTopics=false}):</b> Trabuco does not auto-create
+   * topics in production. Before first deploy, ensure these topics
+   * exist on the broker (or set {@code autoCreateTopics="true"} in
+   * the listener's {@code @RetryableTopic} — non-prod environments
+   * only):
+   * <ul>
+   *   <li>{@code <event-topic>} (e.g., {@code placeholder-events})</li>
+   *   <li>{@code <event-topic>-retry-0}</li>
+   *   <li>{@code <event-topic>-retry-1}</li>
+   *   <li>{@code <event-topic>-retry-2}</li>
+   *   <li>{@code <event-topic>-dlt}</li>
+   * </ul>
+   */
+  @Bean
+  public KafkaTemplate<String, Object> retryDltKafkaTemplate(ProducerFactory<String, Object> producerFactory) {
+    return new KafkaTemplate<>(producerFactory);
   }
 }

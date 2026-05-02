@@ -708,8 +708,8 @@ func TestSQLDatastoreTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Migration template failed: %v", err)
 	}
-	if !strings.Contains(result, "CREATE TABLE placeholders") {
-		t.Error("Migration should create placeholders table")
+	if !strings.Contains(result, "CREATE TABLE IF NOT EXISTS placeholders") {
+		t.Error("Migration should create placeholders table with IF NOT EXISTS guard")
 	}
 }
 

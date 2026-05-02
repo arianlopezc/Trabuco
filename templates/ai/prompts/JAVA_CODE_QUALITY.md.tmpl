@@ -545,6 +545,12 @@ On HTTP paths, **throw; do not catch to translate status codes**. The handler ma
 
 **Counter-case:** listeners, job handlers, and scheduled jobs run outside this scope. Catching `Exception` there to log context and rethrow is **expected** (the broker / JobRunr uses the rethrow to trigger retry or DLQ).
 {{- end}}
+{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}
+
+#### Spring Data JDBC: `DbActionExecutionException` unwrap
+
+Spring Data JDBC wraps repository-layer exceptions (`DuplicateKeyException`, `DataIntegrityViolationException`, `OptimisticLockingFailureException`, etc.) in `DbActionExecutionException`. Without unwrapping, the table above wouldn't fire — the generic 500 catch-all would instead. `GlobalExceptionHandler.handleDbActionExecution` unwraps the cause and re-routes to the matching typed handler so the right RFC 7807 problem-detail is emitted (409 / 404 etc., not 500). When adding new persistence-layer exception handlers, follow the same unwrap-then-rethrow pattern.
+{{- end}}
 
 ### 4.2 Validation
 
@@ -911,12 +917,18 @@ Without this compound index, the query scans every order matching `status`.
 ### 6.1 Dependency Injection
 
 ```java
-// CORRECT: Constructor injection with final fields
+// CORRECT: explicit constructor with final fields. Trabuco does not
+// use Lombok — write the constructor by hand. (Immutables is reserved
+// for DTOs and entities; services use plain constructors.)
 @Service
-@RequiredArgsConstructor
 public class UserService {
     private final UserRepository userRepository;
     private final EmailService emailService;
+
+    public UserService(UserRepository userRepository, EmailService emailService) {
+        this.userRepository = userRepository;
+        this.emailService = emailService;
+    }
 }
 
 // WRONG: Field injection
@@ -925,7 +937,26 @@ public class UserService {
     @Autowired
     private UserRepository userRepository;  // Not final, not testable
 }
+
+// ALSO WRONG: Lombok @RequiredArgsConstructor — Trabuco's parent POM
+// does not include the lombok dependency, so this would fail to compile.
 ```
+
+{{- if or (.HasModule "API") (.HasModule "AIAgent")}}
+### 6.1.1 Authentication & Authorization (shipped, dormant by default)
+
+Trabuco ships OAuth2 Resource Server scaffolding. Code reviewers should know what's expected:
+
+- **Dual `SecurityFilterChain` pattern.** `SecurityConfig` declares two beans: `oauth2FilterChain` (`@ConditionalOnProperty("trabuco.auth.enabled","true")`) and `permitAllFilterChain` (`@ConditionalOnProperty("trabuco.auth.enabled","false")`). Exactly one is active at runtime. App refuses to boot if `trabuco.auth.enabled` is unset (`validateAuthDecisionMade` `@PostConstruct` guard) — a deliberate forcing function so no project ever ships without an explicit auth decision.
+- **OIDC required when enabled.** `trabuco.auth.enabled=true` requires both `OIDC_ISSUER_URI` (or `jwk-set-uri`) and `OIDC_AUDIENCE`. Missing audience would otherwise admit cross-tenant tokens (token-confusion class).
+- **Scope authorities are `SCOPE_*`-prefixed.** `JwtAuthenticationConverter` maps the JWT `scope` claim to `GrantedAuthority` with `SCOPE_` prefix. Use `@PreAuthorize("hasAuthority('SCOPE_<name>')")` on controllers and service methods.
+{{- if .HasModule "AIAgent"}}
+- **AIAgent's `@RequireScope`.** The AIAgent module ships an annotation + `ScopeInterceptor` that bridges the legacy API-key path with the JWT path: `@RequireScope("partner")` on a controller method passes if EITHER the API-key tier OR the JWT scope satisfies the requirement (`ScopeEnforcer.effectiveCaller` takes the higher tier). Reviewers should ensure new AIAgent endpoints declare `@RequireScope` (the `controllerHandlersMustDeclareAuthorization` ArchUnit guard catches missing ones).
+- **Tenant isolation via `CallerIdentity.tenantId()`.** Default partitions per-credential. The vector RAG path filters retrieval by `tenant_id`; caller-supplied tenant in document metadata is server-side stripped. Code touching the vector store must respect this contract.
+{{- end}}
+- **Identity propagation.** `RequestContextHolder` is populated by `JwtAuthenticationConverter`{{- if .HasModule "AIAgent"}} and `CallerContext` by `ApiKeyAuthFilter` / converter (AIAgent){{- end}}. Both have `RequestContextClearingFilter` to clear on request-end (defends virtual-thread carrier reuse). Async paths (JobRunr handlers, event listeners) must capture identity at enqueue time and re-establish in the worker thread (see `TaskManager.submitTask` for the canonical pattern).
+- **RFC 7807 problem-details on auth failures.** `AuthProblemDetailHandler` is wired as both `authenticationEntryPoint` and `accessDeniedHandler` so 401/403 responses emit `application/problem+json` (not Spring's whitelabel JSON).
+{{- end}}
 
 ### 6.2 Transaction Management
 

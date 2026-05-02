@@ -7,8 +7,16 @@ spring:
     mongodb:
       # Connection settings - override in environment or main application.yml
       uri: ${MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
-      # Auto-index creation (disable in production for performance)
-      auto-index-creation: true
+      # Auto-index creation: gated by env var so production deploys
+      # don't rebuild indexes on every boot. With Spring Data MongoDB
+      # 4.x, foreground index builds block reads and writes on the
+      # collection for the build's duration — ranges from milliseconds
+      # for small collections to minutes for tens-of-millions of docs.
+      # Default OFF for safety; flip on locally with MONGODB_AUTO_INDEX=true
+      # for first-run / dev. For production, manage indexes via a
+      # one-time bootstrap script or a CommandLineRunner that emits
+      # CREATE INDEX with explicit names and uses background:true.
+      auto-index-creation: ${MONGODB_AUTO_INDEX:false}
 {{- else if eq .NoSQLDatabase "redis"}}
 spring:
   data:

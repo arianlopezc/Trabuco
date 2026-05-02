@@ -193,11 +193,37 @@ The generated code includes working `Placeholder*` classes as reference implemen
 
 **Do not delete placeholder classes until you have at least one real implementation** — they serve as compilation-verified examples.
 
+{{- if or (.HasModule "API") (.HasModule "AIAgent")}}
+
+## Authentication (shipped, dormant by default)
+
+OAuth2 Resource Server scaffolding ships with this project — Spring Security 6, JWT validation, scope → `SCOPE_*` authority mapping, RFC 7807 problem+json error envelopes. It is **dormant** until `trabuco.auth.enabled` is set explicitly:
+
+- `trabuco.auth.enabled=false` — local dev / API-key-only deployments. Default-deny chain skipped, `permitAll` chain active.
+- `trabuco.auth.enabled=true` — production. Requires `OIDC_ISSUER_URI` and `OIDC_AUDIENCE`; the app refuses to boot when those are missing.
+
+The app refuses to boot if the property itself is unset — a deliberate guardrail so no project ever ships with neither chain wired.
+
+Use `@PreAuthorize("hasAuthority('SCOPE_<name>')")` for fine-grained access control on controllers and service methods.{{- if .HasModule "AIAgent" }} The AIAgent module additionally ships a legacy API-key path (`app.aiagent.api-key.enabled`, default `true`) that coexists with the JWT chain — operators populate `agent.auth.keys.*` or activate the `local-dev` profile. Use `@RequireScope("public" | "partner")` on AIAgent controllers — the interceptor reads both API-key and JWT identity.{{- end }}
+
+Per-provider recipes (Keycloak / Auth0 / Okta / Cognito / generic OIDC) live in `docs/auth.md`.
+{{- end}}
+{{- if .HasModule "AIAgent"}}
+
+## Vector RAG (shipped, store-configurable)
+
+The AIAgent module ships vector-RAG knowledge retrieval (Spring AI 1.0.5). Do not reinvent it — extend the existing surface:
+
+- `KnowledgeRetriever` interface; `VectorKnowledgeRetriever` (pgvector / Qdrant / MongoDB Atlas) wins autowiring when `agent.knowledge.vector-store` selects one. `KeywordKnowledgeRetriever` is the always-emitted baseline / fallback.
+- `DocumentIngestionService` + `IngestionController` (POST `/ingest`, partner-scope, default-disabled via `agent.ingest.enabled=true` to enable).
+- Tenant isolation: `CallerIdentity.tenantId()` is enforced at the retriever boundary; caller-supplied `tenant_id` in metadata is server-side stripped before storage.
+- See `docs/vector-rag.md` for store-specific recipes and `.ai/prompts/add-knowledge-entry.md` for per-task guidance.
+{{- end}}
+
 ## What This Project Does NOT Include
 
 This project was scaffolded by Trabuco. It includes production-ready infrastructure but NOT:
 
-- **Authentication/Authorization** — Add Spring Security (OAuth2, JWT, or session-based)
 - **Custom business logic** — Implement in `Shared/src/main/java/.../shared/service/`
 - **Production database schema** — Only placeholder migration exists; add your tables
 - **Pagination/filtering** — Add to repository queries and controller parameters
