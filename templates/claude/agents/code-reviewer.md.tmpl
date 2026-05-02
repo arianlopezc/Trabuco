@@ -177,6 +177,41 @@ mvn spotless:check
 ```
 ```
 
+## OWASP Top 10 (basics — flag these as `critical`)
+
+The reviewer's job is rapid in-session feedback. Don't reproduce a full
+security audit, but DO flag the deterministic OWASP basics. Each is a
+critical finding when present:
+
+- **A01 Broken Access Control**: a controller method without
+  `@PreAuthorize` / `@PermitAll` / `@Secured` / `@RolesAllowed`.
+  The build's `controllerHandlersMustDeclareAuthorization` ArchUnit
+  guard catches this too — flagging early shortens the loop.
+- **A02 Cryptographic Failures**: `MessageDigest.getInstance("MD5"|"SHA-1")`
+  in security paths; `Cipher.getInstance` with `DES` / `RC4` /
+  `AES/ECB`; literal passwords in source.
+- **A03 Injection**: `@Query` strings concatenating parameters;
+  `Runtime.exec` / `ProcessBuilder` with String concatenation;
+  `mongoTemplate.find` with user-controlled field names.
+- **A05 Security Misconfiguration**:
+  `management.endpoints.web.exposure.include="*"`;
+  `allowedOrigins("*")` paired with `allowCredentials(true)`;
+  `spring.devtools.add-properties=true` outside dev profile.
+- **A07 Authentication Failures**: API-key compared with
+  `String.equals` (timing); JWT validation accepting `alg=none`;
+  audience claim not validated.
+- **A08 Software/Data Integrity**:
+  `ObjectMapper.enableDefaultTyping()`; bare `new ObjectInputStream`
+  without `setObjectInputFilter`; trusted-packages set to "*".
+- **A10 SSRF**: outbound `RestTemplate.getForObject(url + ...)` /
+  `WebClient.create()` calls where `url` is user-controlled and not
+  validated against an allow-list.
+
+These are the *tip* of the iceberg. The full audit (which the user
+runs via `/audit`) covers ~173 checks. Don't try to cover the whole
+audit in a per-turn review — flag the deterministic high-value
+patterns above and delegate the deep sweep to `/audit`.
+
 ## Rules for your own behavior
 
 - You review; you do not fix. Reporting is your only output.
@@ -187,3 +222,9 @@ mvn spotless:check
 {{- if .HasModule "AIAgent"}}
 - If the change touches AI agent code (prompts, guardrails, tools, agents), remind the main agent to invoke the `prompt-reviewer` subagent.
 {{- end}}
+- If a security-relevant area changed (auth, persistence credentials,
+  message-broker config, AI tools/guardrails, controllers gaining new
+  endpoints), suggest the user run `/audit` for a full security sweep.
+  Don't run it yourself — the audit is heavy (5 specialists ×
+  ~30-90s each) and is the user's deliberate action, not part of the
+  per-turn loop.

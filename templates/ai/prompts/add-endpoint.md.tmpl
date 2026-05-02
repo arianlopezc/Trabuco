@@ -396,3 +396,28 @@ void should_ReturnPageOfEntities_When_AfterIdProvided() throws Exception {
 ### Why Keyset
 
 Keyset pagination uses an index seek, so performance stays constant regardless of how deep the client paginates. The cursor (`afterId`) is immutable, so concurrent inserts do not cause skipped or duplicated rows across pages.
+
+## Security checklist (before opening a PR)
+
+Every new endpoint is a security boundary. Confirm before merging:
+
+- **Authorization decision is explicit.** Annotate the controller method
+  with `@PreAuthorize`, `@PermitAll`, `@Secured`, or `@RolesAllowed` —
+  the `controllerHandlersMustDeclareAuthorization` ArchUnit guard fails
+  the build otherwise. For intentionally public endpoints, `@PermitAll`
+  is the right answer (deliberate, source-visible, reviewable).
+- **Request body is a typed DTO with `@Valid` and per-field constraints.**
+  Never accept `Map<String, ?>` or raw String — typed input lets the
+  framework enforce length, format, and required-field invariants and
+  surfaces field-level errors via `MethodArgumentNotValidException`.
+- **Errors surface as RFC 7807 ProblemDetail.** Throw exceptions that
+  `GlobalExceptionHandler` already maps. Do not catch and rebuild
+  `ResponseEntity` ad-hoc — it bypasses the project's error contract.
+- **No raw `ex.getMessage()` echo.** Exception messages go to logs;
+  client responses get the sanitized RFC 7807 body. Internal SQL,
+  stack frames, and filesystem paths must not leak.
+
+> Run `/audit` (or walk `.ai/security-audit/checklist-web-infra.md`)
+> before merging — it catches CORS misconfig, missing security headers,
+> SSRF on outbound calls, mass-assignment, and the OWASP Top 10
+> patterns this endpoint could introduce.

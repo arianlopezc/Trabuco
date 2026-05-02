@@ -292,8 +292,21 @@ func TestSkills_ReviewOff_EmitsNothing(t *testing.T) {
 		Review:      config.ReviewConfig{Mode: config.ReviewModeOff},
 	}
 	dir := generateWithSkills(t, cfg)
-	// No .claude/skills/ directory at all.
-	if _, err := os.Stat(filepath.Join(dir, ".claude/skills")); err == nil {
-		t.Error("skills should not emit when review is off")
+	// None of the review-family skills should emit. The security-audit
+	// skill is intentionally independent of review.mode (it's a
+	// security gate, not a turn-scoped review automation), so its
+	// directory is allowed.
+	reviewSkills := []string{
+		"review", "review-performance", "review-prompts",
+		"add-entity", "add-endpoint", "add-service",
+		"add-migration", "add-repository-method", "add-test",
+		"add-tool", "add-event", "add-job", "add-knowledge-entry",
+		"add-guardrail-rule", "add-a2a-skill", "pr", "commit",
+	}
+	for _, name := range reviewSkills {
+		p := filepath.Join(dir, ".claude/skills", name, "SKILL.md")
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("review skill %q should not emit when review is off (found: %s)", name, p)
+		}
 	}
 }

@@ -90,3 +90,35 @@ Verify your entry appears in the response.
 - **Redirect content**: "See our website" — defeats the purpose. Include the actual answer.
 - **Missing keyword coverage**: If users ask "delivery" but content only says "shipping", add both terms to the content
 - **Too many entries on same topic**: Split or merge. Overlapping entries dilute scoring.
+
+## Security checklist (before merging entries)
+
+Knowledge content lands in the LLM context window via RAG. Both
+knowledge files and ingested documents are LLM-trusted by default, so
+treat them like any other data plane:
+
+- **No PII.** Customer names, account IDs, emails, support tickets,
+  and other personal data must not appear in committed knowledge —
+  they will be repeated verbatim by the LLM in answers.
+- **No secrets.** API keys, internal endpoints, vendor credentials,
+  customer data lakes — none of these belong in knowledge entries.
+  An attacker who finds a prompt-injection that exfiltrates the
+  knowledge base then has them.
+- **Tenant isolation when ingesting.** When using
+  `DocumentIngestionService` or vector ingestion, every chunk must
+  carry a `tenantId` (or equivalent authority-scope) in the metadata
+  so RAG retrieval filters tenant-by-tenant. Cross-tenant retrieval
+  = data leak.
+- **Prompt-injection content.** Untrusted document content (anything
+  ingested from a customer-facing source) can contain instructions
+  that would alter the LLM's behavior. The
+  `FencingDocumentRetriever` and `RetrievalAugmentationAdvisor` wrap
+  retrieved content in provenance fences; do not bypass those.
+- **No internal architecture details.** "Our database is at
+  postgres.internal:5432" — this is reconnaissance for an attacker.
+  Keep operational details out of LLM-readable knowledge.
+
+> Run `/audit` (or walk `.ai/security-audit/checklist-aiagent-java.md`
+> and `.ai/security-audit/checklist-ai-surface.md`) before merging —
+> they cover RAG provenance, vector tenant isolation, and prompt
+> handling end-to-end.

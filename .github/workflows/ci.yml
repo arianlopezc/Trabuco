@@ -292,6 +292,36 @@ jobs:
         working-directory: test-minimal/minimal-project
         run: mvn clean compile test -B
 
+  audit-rules-check:
+    # Positive-control test for the deterministic OWASP rules in the
+    # generated review-checks.sh. Plants known-vulnerable Java + YAML
+    # fixtures into a freshly-generated project and asserts every
+    # `owasp.<id>` rule fires at least once.
+    #
+    # If a rule's regex regresses (or someone removes the planted
+    # antipattern from the fixtures without updating the EXPECTED_RULES
+    # list in verify-owasp-rules.sh), this job fails with a clear
+    # "rule X did NOT fire" message. False positives also fail it
+    # (the script's exit-code assertion confirms findings appear).
+    name: OWASP Rules Fixture (audit-rules-check)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trabuco-cli
+
+      - name: Make CLI executable
+        run: chmod +x ./trabuco
+
+      - name: Run OWASP fixture verification
+        env:
+          TRABUCO_BIN: ${{ github.workspace }}/trabuco
+        run: bash test/audit-fixtures/verify-owasp-rules.sh
+
   test-ai-agents:
     name: Test AI Agent Files Generation
     needs: build

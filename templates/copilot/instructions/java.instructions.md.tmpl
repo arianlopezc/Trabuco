@@ -120,6 +120,23 @@ Scope is HTTP-only. Event listeners, JobRunr handlers, and `@Scheduled` jobs mus
 - Cover: happy path, not-found/empty, validation failures, error conditions
 - Full spec: `.ai/prompts/JAVA_CODE_QUALITY.md` (Section 7) | Guide: `.ai/prompts/testing-guide.md`
 
+## Security baseline
+
+OWASP Top 10 patterns to flag inline (full audit via the
+security-audit instructions file):
+
+- **A01**: every controller method declares authorization
+  (`@PreAuthorize` / `@PermitAll` / `@Secured` / `@RolesAllowed`)
+- **A02**: no `MD5`/`SHA-1` in security paths; no literal passwords/keys
+- **A03**: no `@Query` parameter concatenation; no `Runtime.exec` with user input
+- **A05**: no `actuator.exposure.include="*"`; no CORS `*` + credentials
+- **A07**: API keys compared with `MessageDigest.isEqual`; JWT alg whitelist
+- **A08**: no `enableDefaultTyping()`; no raw `ObjectInputStream`; trusted-packages narrow
+- **A10**: outbound HTTP URLs validated against allow-list when user-controlled
+
+For the full 173-check audit, see
+`.ai/security-audit/checklist.md`.
+
 ## Quality
 
 - Run `mvn spotless:apply` to auto-format after changes

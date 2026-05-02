@@ -1,0 +1,15 @@
+# This file is INTENTIONALLY MISCONFIGURED. Each line plants one OWASP
+# A05-class antipattern. Do NOT use any of these patterns in real code.
+# CI's `audit-rules-check` job uses this file alongside
+# PlantedVulnerabilities.java as the positive-control set for the
+# deterministic OWASP review.
+#
+# Properties are in flat (dotted-key) form because review-checks.sh's
+# rules are regex-based and operate per-line — nested-yaml forms
+# wouldn't match a `management.endpoints.web.exposure.include` regex.
+
+# owasp.a05-mgmt-exposed-all
+management.endpoints.web.exposure.include: "*"
+
+# owasp.a05-debug-prod
+spring.devtools.add-properties: true

@@ -201,3 +201,31 @@ mvn test -pl AIAgent
 - **Too many tools**: Each tool adds token overhead. Consolidate related operations. Fewer, well-described tools > many narrow ones.
 - **Missing @Component**: Spring won't discover the tool, MCP won't expose it.
 - **Not registering in PrimaryAgent**: Tool exists but agent can't call it.
+
+## Security checklist (before merging a new tool)
+
+`@Tool` methods become callable by the LLM via natural language. The
+LLM is *not* a trusted caller — treat tool inputs and side-effects the
+same way you treat any external API:
+
+- **Bound every parameter.** Add `@Size`, `@NotBlank`, `Math.min` /
+  `Math.max` checks. The LLM happily passes 10 MB strings, negative
+  IDs, or path-traversal strings if the prompt suggests it.
+- **No raw side effects.** A tool that writes to disk, calls an
+  external HTTP endpoint, or runs a shell command must validate the
+  input *before* acting. URLs go through an SSRF allow-list.
+- **Per-tenant authorization.** If the tool reads or writes
+  tenant-scoped data, derive the tenant from the
+  authenticated `CallerContext`, not from a tool parameter — the LLM
+  can be tricked into passing any tenant ID via prompt injection.
+- **Output sanitization.** What the tool returns goes back into the
+  LLM's context and may be repeated to the user. Strip PII, secrets,
+  and internal architecture details from tool responses.
+- **Tool exposure surface.** Each `@Tool` is also exposed via MCP. If
+  the tool should only be callable internally (not from external
+  agents), gate it with `@Profile` or `@ConditionalOnProperty`.
+
+> Run `/audit` (or walk `.ai/security-audit/checklist-aiagent-java.md`)
+> before merging — it covers parameter bounding, SSRF, vector-store
+> tenant isolation, and the OWASP LLM Top 10 patterns this tool may
+> introduce.

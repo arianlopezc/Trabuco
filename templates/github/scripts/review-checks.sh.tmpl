@@ -79,6 +79,10 @@ JAVA_ALL_FILES=$(collect_files '*.java' | tr '\n' ' ')
 # state (e.g., scope=diff with only test changes). Mask the non-zero exit so
 # pipefail+set -e don't abort the whole script.
 JAVA_MAIN_FILES=$( { collect_files '*.java' | grep '/src/main/java/' || true; } | tr '\n' ' ')
+# YAML / properties files for the configuration-misconfiguration OWASP
+# rules (A05 actuator exposure, A05 devtools-on-prod). Same masking
+# logic as JAVA_MAIN_FILES so an empty match doesn't trip pipefail.
+YAML_FILES=$( { collect_files '*.yml'; collect_files '*.yaml'; collect_files '*.properties'; } 2>/dev/null | tr '\n' ' ')
 {{- if .HasModule "SQLDatastore"}}
 SQL_FILES=$(collect_files 'SQLDatastore/src/main/resources/db/migration/*.sql' | tr '\n' ' ')
 {{- end}}
@@ -363,6 +367,98 @@ if [ -n "${CONTROLLER_FILES// /}" ]; then
 fi
 {{- end}}
 
+# --- OWASP Top 10 basics (deterministic) -------------------------------------
+# A subset of the OWASP Top 10 (2021) catchable as deterministic regex
+# patterns. The full security audit (~173 checks across five domains) is
+# the `/audit` workflow — see `.ai/security-audit/checklist.md`. These
+# rules give CI a fast pre-merge gate for the deterministic basics.
+#
+# All rules tagged `owasp.<id>` and individually suppressible via
+# `// trabuco-allow: owasp.<id>` on the offending line or directly above.
+# Test files (src/test/) are excluded for `objectinputstream`-style rules
+# because mocks/fakes legitimately use them.
+
+# A02 — Cryptographic failures: weak hashes in security paths.
+# Tolerates string-literal explanations of why MD5 is unsafe (the
+# antipattern is the actual API call).
+run_grep_check "OWASP A02: weak hash (MD5/SHA-1) in security path" \
+  "owasp.a02-weak-hash" \
+  'MessageDigest\.getInstance\("(MD5|SHA-?1)"\)'
+
+# A02 — Cryptographic failures: weak block ciphers / weak modes.
+run_grep_check "OWASP A02: weak cipher (DES/RC4) or ECB mode" \
+  "owasp.a02-weak-cipher" \
+  'Cipher\.getInstance\("(DES|RC4|.*\/ECB\/.*)"'
+
+# A02 — Cryptographic failures: JWT alg=none acceptance.
+run_grep_check "OWASP A02: JWT alg=none accepted (forged-token bypass)" \
+  "owasp.a02-jwt-none" \
+  '(JWSAlgorithm\.NONE|"alg"[[:space:]]*:[[:space:]]*"none")'
+
+# A03 — Injection: shell injection via Runtime.exec / ProcessBuilder
+# with String concatenation. The pattern catches `+` as the
+# concat operator inside the call.
+run_grep_check "OWASP A03: Runtime.exec / ProcessBuilder with String concat (shell injection)" \
+  "owasp.a03-runtime-exec-concat" \
+  '(Runtime\.getRuntime\(\)\.exec|new[[:space:]]+ProcessBuilder)\([^)]*\+'
+
+# A03 — Injection: JNDI lookup with non-literal arg
+# (JNDI / Log4Shell-style class). Non-string-literal arg suggests
+# user input.
+run_grep_check "OWASP A03: InitialContext.lookup with non-literal arg (JNDI injection)" \
+  "owasp.a03-jndi-user-input" \
+  '\.lookup\([^"]*[a-zA-Z_]\w*\)'
+
+# A05 — Security misconfiguration: CORS allowedOrigins("*") in code
+# OR Access-Control-Allow-Origin: * in static config.
+run_grep_check "OWASP A05: CORS wildcard allowedOrigins (combined with credentials = catastrophic)" \
+  "owasp.a05-cors-wildcard" \
+  'allowedOrigins\(\s*"\*"\s*\)|Access-Control-Allow-Origin:\s*\*'
+
+# A05 — Security misconfiguration: actuator exposure="*". YAML/properties
+# rule — Java code rarely emits this directly.
+if [ -n "${YAML_FILES// /}" ]; then
+  run_grep_check "OWASP A05: actuator endpoints exposed as include=\"*\"" \
+    "owasp.a05-mgmt-exposed-all" \
+    'management\.endpoints\.web\.exposure\.include[[:space:]]*[:=].*\*' \
+    $YAML_FILES
+
+  # A05 — Security misconfiguration: spring devtools on prod classpath
+  # (or `add-properties=true` outside an explicit dev/test profile).
+  run_grep_check "OWASP A05: Spring devtools properties enabled (prod-leak risk)" \
+    "owasp.a05-debug-prod" \
+    'spring\.devtools\.add-properties[[:space:]]*[:=][[:space:]]*true' \
+    $YAML_FILES
+fi
+
+# A07 — Authentication failures: hardcoded admin/admin and similar
+# default credential pairs in committed source.
+run_grep_check "OWASP A07: hardcoded weak credential pair (admin/admin, root/root)" \
+  "owasp.a07-default-creds" \
+  '"(admin|root|test|guest)"[[:space:]]*,[[:space:]]*"(admin|root|test|guest|password|changeme)"'
+
+# A08 — Software and data integrity failures: Jackson default-typing.
+# Catches both legacy `enableDefaultTyping` and modern
+# `activateDefaultTyping(...)` API.
+run_grep_check "OWASP A08: Jackson default-typing enabled (deserialization gadget)" \
+  "owasp.a08-jackson-default-typing" \
+  '\.(enableDefaultTyping|activateDefaultTyping)\('
+
+# A08 — Software and data integrity failures: bare ObjectInputStream
+# without setObjectInputFilter. We restrict to main code (excludes
+# tests where mocks legitimately use ObjectInputStream).
+run_grep_check "OWASP A08: ObjectInputStream without setObjectInputFilter (deserialization)" \
+  "owasp.a08-objectinputstream" \
+  'new\s+ObjectInputStream\('
+
+# A10 — Server-Side Request Forgery: RestTemplate / WebClient call
+# with String concatenation in the URL argument. Catches the most
+# common SSRF pattern; allow-list-validated URLs typically use
+# UriComponentsBuilder, not raw concat.
+run_grep_check "OWASP A10: RestTemplate / WebClient URL built via String concat (SSRF)" \
+  "owasp.a10-resttemplate-user-url" \
+  '(restTemplate|webClient)\.[a-zA-Z]+\([^)]*\+[^)]*\)'
+
 # --- Module boundary checks (always) ------------------------------------------
 # Each module can only import from its declared dependencies. Flag violations.
 
@@ -409,9 +505,10 @@ if [ $FAIL -eq 0 ]; then
 fi
 echo "Review checks FAILED — $FINDINGS finding(s). See annotations above for each violation."
 echo
-echo "Rule reference:  .ai/prompts/JAVA_CODE_QUALITY.md (§5.5 for performance rules)."
+echo "Rule reference:  .ai/prompts/JAVA_CODE_QUALITY.md (§5.5 perf, §6 security basics)."
 echo "Subagent parity: these checks mirror the code-reviewer / performance-reviewer subagents."
+echo "Full security audit (~173 checks): run \`/audit\` or walk .ai/security-audit/"
 echo "Suppress a false positive with an inline comment on the offending line:"
-echo "    // trabuco-allow: <rule-id>       (e.g., perf.unbounded-scan)"
+echo "    // trabuco-allow: <rule-id>       (e.g., perf.unbounded-scan, owasp.a02-weak-hash)"
 echo "    // trabuco-allow: all             (disables all rules for that line)"
 exit 1
