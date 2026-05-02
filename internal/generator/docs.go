@@ -156,6 +156,17 @@ func (g *Generator) generateDocs() error {
 		return err
 	}
 
+	// Security-audit toolchain: shared canonical checklist under
+	// .ai/security-audit/ plus per-format entry points for any selected
+	// coding agent (Claude orchestrator + 5 specialists; Cursor rule;
+	// Copilot instructions; Codex guidance). The checklist itself is
+	// emitted unconditionally so a project with no AI agents selected
+	// can still be audited later — the checklist is data, not agent
+	// configuration.
+	if err := g.generateAuditArtifacts(); err != nil {
+		return err
+	}
+
 	return nil
 }
 

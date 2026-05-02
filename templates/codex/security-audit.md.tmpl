@@ -1,0 +1,65 @@
+# Trabuco Security Audit — Codex Guidance for {{.ProjectName}}
+
+When the user asks for a security audit, an OWASP review, or a
+pre-merge security gate on this project, follow the procedure below.
+Codex CLI runs as a single agent, so the audit walks the canonical
+checklist sequentially across all five domains.
+
+## Inputs
+
+- Master index: `.ai/security-audit/checklist.md`
+- Domain detail (load each when you reach that domain):
+  - `.ai/security-audit/checklist-auth.md` (28 checks)
+  - `.ai/security-audit/checklist-ai-surface.md` (17 checks)
+  - `.ai/security-audit/checklist-aiagent-java.md` (42 checks)
+  - `.ai/security-audit/checklist-data-events.md` (44 checks)
+  - `.ai/security-audit/checklist-web-infra.md` (42 checks)
+- Operator extensions (optional): `.ai/security-audit/checklist-local.md`
+
+## Procedure
+
+For each of the five domains, in order (auth → ai-surface →
+aiagent-java → data-events → web-infra):
+
+1. Open the domain checklist file.
+2. For each `## F-...` check entry:
+   1. Use the **Where to look** field to scope file globs.
+   2. Search for the **Evidence pattern** in those files.
+   3. Honor `// trabuco-allow: <check-id>` suppression comments on
+      the matching line or directly above it.
+   4. If the match holds in context, record a finding: check ID,
+      severity (use the floor, never downgrade), file path
+      (relative to project root), line range, 1-3 line evidence
+      snippet, and the **Suggested fix** from the checklist verbatim.
+3. Continue to the next domain.
+
+After all five domains, write `.ai/security-audit/findings.md` using
+the schema documented in the master checklist's "Findings report
+schema" section. Overwrite on each run; the file is gitignored —
+operators paste findings into PR descriptions, not git history.
+
+## Verdict
+
+- `PASS` if zero Critical and zero High findings.
+- `FAIL` otherwise.
+
+Surface the verdict, per-severity counts, and the report path.
+
+## Hard rules
+
+- **Read-only.** Do not modify project source. The audit is
+  observational; the user applies fixes.
+- **No invented findings.** Every finding must trace to a specific
+  check ID with file evidence.
+- **No skipping domains silently.** Record missing domain checklist
+  files in the report's metadata; continue with the rest.
+- **Use severity floors.** The checklist's severity is the *minimum*
+  for that check. Do not downgrade without an explicit
+  `[suppress: <reason>]` justification recorded in the finding.
+
+## Updates
+
+Canonical checklist updates ship via `trabuco sync`. Never hand-edit
+the canonical files — add project-specific rules to
+`.ai/security-audit/checklist-local.md` (operator-owned, untouched by
+sync).

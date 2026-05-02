@@ -1,0 +1,99 @@
+---
+description: Trabuco security audit — load this rule when the user asks to "run the security audit", "audit for OWASP issues", or "do a pre-merge security review" of {{.ProjectName}}.
+globs: ["**/*"]
+alwaysApply: false
+---
+
+# Trabuco Security Audit — Cursor Guidance
+
+When invoked for a security audit on this project, walk the canonical
+checklist sequentially. Cursor does not provide multi-agent dispatch,
+so the audit runs as a single agent doing one domain after another.
+
+## Inputs
+
+- Master index: `.ai/security-audit/checklist.md`
+- Domain detail (read each as you reach that domain):
+  - `.ai/security-audit/checklist-auth.md` (28 checks)
+  - `.ai/security-audit/checklist-ai-surface.md` (17 checks)
+  - `.ai/security-audit/checklist-aiagent-java.md` (42 checks)
+  - `.ai/security-audit/checklist-data-events.md` (44 checks)
+  - `.ai/security-audit/checklist-web-infra.md` (42 checks)
+- Operator extensions (optional): `.ai/security-audit/checklist-local.md`
+
+## Procedure
+
+For each domain, in order:
+
+1. Read the domain checklist file.
+2. For each `## F-...` check entry:
+   1. Use the **Where to look** field to scope the file walk.
+   2. Search for the **Evidence pattern** in those files.
+   3. Honor `// trabuco-allow: <check-id>` suppression comments on the
+      matching line or directly above it.
+   4. If a real match holds, record a finding with:
+      - check ID, severity (use the floor; do not downgrade)
+      - file path (relative to project root) + line range
+      - 1-3 line evidence snippet
+      - the **Suggested fix** from the checklist verbatim
+3. Move to the next domain.
+
+After all five domains are complete, write the consolidated report to
+`.ai/security-audit/findings.md` (overwrite if exists; the file is
+gitignored). Schema:
+
+```markdown
+# Trabuco Security Audit — Findings
+
+**Generated:** <ISO 8601 timestamp>
+**Verdict:** PASS | FAIL
+
+## Summary
+| Severity | Count |
+| Critical | N |
+| High | N |
+| Medium | N |
+| Low | N |
+| Informational | N |
+
+## Findings (severity-sorted)
+
+### F-AUTH-01 — <title>
+**Severity:** Critical
+**File:** `<path>:<line-range>`
+**Evidence:**
+```<lang>
+<snippet>
+```
+**Fix:** <fix prose from checklist>
+
+---
+(repeat per finding)
+```
+
+## Verdict
+
+- `PASS` if zero Critical and zero High findings.
+- `FAIL` otherwise.
+
+Tell the user the count by severity, the verdict, and the path to the
+report.
+
+## What you do NOT do
+
+- **No source modifications.** The audit is read-only. Surface fixes to
+  the user; do not apply them.
+- **No invented findings.** Every finding must trace to a specific
+  check ID with file evidence. Empty result = no findings = PASS.
+- **No prose summary in the report.** The report follows the schema
+  above strictly so re-runs produce diff-stable output.
+- **No skipping domains silently.** If a domain checklist file is
+  missing, record that in the report's metadata and continue.
+
+## References
+
+- Checklist source of truth: `.ai/security-audit/checklist.md` and the
+  five domain files in the same directory.
+- Updates flow through `trabuco sync` — never hand-edit the canonical
+  checklist files; add project-specific rules to
+  `.ai/security-audit/checklist-local.md` instead.

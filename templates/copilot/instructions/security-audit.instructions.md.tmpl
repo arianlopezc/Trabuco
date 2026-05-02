@@ -1,0 +1,70 @@
+---
+applyTo: "**/*"
+---
+
+# Trabuco Security Audit — Copilot Guidance for {{.ProjectName}}
+
+When the user asks for a security audit, an OWASP review, or a
+pre-merge security gate on this project, follow the procedure below.
+Copilot does not have multi-agent dispatch, so the audit walks the
+canonical checklist sequentially.
+
+## Inputs
+
+- Master index: `.ai/security-audit/checklist.md`
+- Domain detail (load each when you reach that domain):
+  - `.ai/security-audit/checklist-auth.md` (28 checks)
+  - `.ai/security-audit/checklist-ai-surface.md` (17 checks)
+  - `.ai/security-audit/checklist-aiagent-java.md` (42 checks)
+  - `.ai/security-audit/checklist-data-events.md` (44 checks)
+  - `.ai/security-audit/checklist-web-infra.md` (42 checks)
+- Operator extensions (optional): `.ai/security-audit/checklist-local.md`
+
+## Procedure
+
+Walk the five domains in order. For each domain:
+
+1. Open the domain checklist file.
+2. For each `## F-...` entry:
+   1. Use the **Where to look** field to scope your search to a
+      specific file glob.
+   2. Look for the **Evidence pattern** in those files.
+   3. Honor `// trabuco-allow: <check-id>` suppression comments on the
+      matching line or directly above it (same convention used by
+      `.github/scripts/review-checks.sh`).
+   4. If a match holds, build a finding record with check ID, severity
+      (use the floor; do not downgrade), file path (relative to
+      project root), line range, 1-3 line evidence snippet, and the
+      **Suggested fix** from the checklist.
+3. Move to the next domain.
+
+After all domains complete, write `.ai/security-audit/findings.md`
+using the schema in `.ai/security-audit/checklist.md` (the master
+index has the report shape). The file is gitignored — operators paste
+findings into PR descriptions, not into git history.
+
+## Verdict
+
+- `PASS` if zero Critical and zero High findings.
+- `FAIL` otherwise.
+
+Tell the user the per-severity count and the verdict, and link to the
+report path.
+
+## Hard rules
+
+- **Read-only.** Do not modify project source. Surface fixes to the
+  user as recommendations; the user applies them.
+- **No invented findings.** Every finding must trace to a specific
+  check ID with file evidence.
+- **No skipping domains silently.** If a domain checklist file is
+  missing, record that in the report's metadata and continue.
+- **Use severity floors.** The checklist's severity is the *minimum*
+  for that check. Do not downgrade.
+
+## Updates
+
+The canonical checklist updates ship through `trabuco sync`. Never
+hand-edit the canonical files — add project-specific rules to
+`.ai/security-audit/checklist-local.md` (operator-owned, never
+overwritten by sync).
