@@ -79,6 +79,10 @@ JAVA_ALL_FILES=$(collect_files '*.java' | tr '\n' ' ')
 # state (e.g., scope=diff with only test changes). Mask the non-zero exit so
 # pipefail+set -e don't abort the whole script.
 JAVA_MAIN_FILES=$( { collect_files '*.java' | grep '/src/main/java/' || true; } | tr '\n' ' ')
+# YAML / properties files for the configuration-misconfiguration OWASP
+# rules (A05 actuator exposure, A05 devtools-on-prod). Same masking
+# logic as JAVA_MAIN_FILES so an empty match doesn't trip pipefail.
+YAML_FILES=$( { collect_files '*.yml'; collect_files '*.yaml'; collect_files '*.properties'; } 2>/dev/null | tr '\n' ' ')
 {{- if .HasModule "SQLDatastore"}}
 SQL_FILES=$(collect_files 'SQLDatastore/src/main/resources/db/migration/*.sql' | tr '\n' ' ')
 {{- end}}
@@ -411,16 +415,21 @@ run_grep_check "OWASP A05: CORS wildcard allowedOrigins (combined with credentia
   "owasp.a05-cors-wildcard" \
   'allowedOrigins\(\s*"\*"\s*\)|Access-Control-Allow-Origin:\s*\*'
 
-# A05 — Security misconfiguration: actuator exposure="*"
-run_grep_check "OWASP A05: actuator endpoints exposed as include=\"*\"" \
-  "owasp.a05-mgmt-exposed-all" \
-  'management\.endpoints\.web\.exposure\.include[[:space:]]*[:=].*\*'
+# A05 — Security misconfiguration: actuator exposure="*". YAML/properties
+# rule — Java code rarely emits this directly.
+if [ -n "${YAML_FILES// /}" ]; then
+  run_grep_check "OWASP A05: actuator endpoints exposed as include=\"*\"" \
+    "owasp.a05-mgmt-exposed-all" \
+    'management\.endpoints\.web\.exposure\.include[[:space:]]*[:=].*\*' \
+    $YAML_FILES
 
-# A05 — Security misconfiguration: spring devtools on prod classpath
-# (or `add-properties=true` outside an explicit dev/test profile).
-run_grep_check "OWASP A05: Spring devtools properties enabled (prod-leak risk)" \
-  "owasp.a05-debug-prod" \
-  'spring\.devtools\.add-properties[[:space:]]*[:=][[:space:]]*true'
+  # A05 — Security misconfiguration: spring devtools on prod classpath
+  # (or `add-properties=true` outside an explicit dev/test profile).
+  run_grep_check "OWASP A05: Spring devtools properties enabled (prod-leak risk)" \
+    "owasp.a05-debug-prod" \
+    'spring\.devtools\.add-properties[[:space:]]*[:=][[:space:]]*true' \
+    $YAML_FILES
+fi
 
 # A07 — Authentication failures: hardcoded admin/admin and similar
 # default credential pairs in committed source.
