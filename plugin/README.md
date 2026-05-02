@@ -80,14 +80,14 @@ This clones the Trabuco repo and installs the plugin from
 ### From a downloaded release tarball
 
 ```bash
-curl -L https://github.com/arianlopezc/Trabuco/releases/latest/download/trabuco-plugin-v1.12.1.tar.gz \
+curl -L https://github.com/arianlopezc/Trabuco/releases/latest/download/trabuco-plugin-v1.12.2.tar.gz \
   | tar -xz -C ~
 ```
 
 Then in Claude Code:
 
 ```text
-/plugin marketplace add ~/trabuco-plugin-v1.12.1
+/plugin marketplace add ~/trabuco-plugin-v1.12.2
 /plugin install trabuco@trabuco-marketplace
 ```
 
@@ -105,7 +105,7 @@ Once installed, ask Claude Code things like:
 | | Required |
 | - | - |
 | Claude Code | latest (anything that supports the `/plugin` command) |
-| `trabuco` CLI | ≥ 1.8.0 (latest is 1.12.1) |
+| `trabuco` CLI | ≥ 1.8.0 (latest is 1.12.2) |
 | Java (for projects) | 21+ |
 | Maven (for migration) | 3.9+ |
 
