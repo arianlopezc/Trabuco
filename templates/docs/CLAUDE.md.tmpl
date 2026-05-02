@@ -66,14 +66,30 @@ Address findings and re-invoke until reviewers report clean — **up to 3 review
 A Stop hook (`.claude/hooks/require-review.sh`) enforces this by blocking turn completion if the `code-reviewer` subagent was not invoked when Java files changed. The hook is single-shot: once the reviewer has run in a session, subsequent Stops pass silently.
 
 **Manual alternative — skills:** run `/review` for general review{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, `/review-performance` for datastore-focused checks{{- end}}{{- if .HasModule "AIAgent"}}, `/review-prompts` for AI-agent code{{- end}}.
+
+**Security audit (deeper, on-demand):** run `/audit` for the full
+security review — orchestrator + 5 domain specialists walking the
+canonical checklist at `.ai/security-audit/checklist.md` (auth, AI
+surface, AIAgent runtime + Java platform, data + events, web + infra
+— ~173 checks). Produces a severity-sorted findings report at
+`.ai/security-audit/findings.md` and a PASS/FAIL verdict. Trigger it
+when a security boundary changes (auth, persistence credentials,
+broker config, AI tools/guardrails, new controller endpoints) or
+before merging a security-relevant PR. The per-turn `code-reviewer`
+covers the OWASP basics inline; `/audit` is the deliberate deep
+sweep. Full guide: `docs/security-audit.md`.
 {{- else if eq .Agent "cursor"}}
 
 Run the `/review` slash command after modifying code{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, plus `/review-performance` when datastore code changed{{- end}}{{- if .HasModule "AIAgent"}}, plus `/review-prompts` when AI-agent code changed{{- end}}. Address findings and re-run until clean — up to 3 cycles.
+
+For a deeper security review, ask Cursor to "run the security audit" — the rule at `.cursor/rules/security-audit.mdc` walks the full checklist at `.ai/security-audit/checklist.md` (~173 checks across 5 domains) and writes findings to `.ai/security-audit/findings.md`.
 
 If your Cursor version supports custom agents, `code-reviewer`{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, `performance-reviewer`{{- end}}{{- if .HasModule "AIAgent"}}, `prompt-reviewer`{{- end}} are defined under `.claude/agents/` — the prompts are portable.
 {{- else}}
 
 Run the `/review` command after modifying code{{- if or (.HasModule "SQLDatastore") (.HasModule "NoSQLDatastore")}}, plus `/review-performance` when datastore code changed{{- end}}{{- if .HasModule "AIAgent"}}, plus `/review-prompts` when AI-agent code changed{{- end}}. Address findings and re-run until clean — up to 3 cycles. The review prompts and patterns live under `.claude/skills/` and `.ai/prompts/`.
+
+For a deeper security review, ask the agent to "run the security audit" — it walks the full checklist at `.ai/security-audit/checklist.md` (~173 checks across 5 domains) and writes findings to `.ai/security-audit/findings.md`. Full guide: `docs/security-audit.md`.
 {{- end}}
 
 **Disable review**: `trabuco review disable` (persistent) or `export TRABUCO_REVIEW_HOOK=off` (session-only).

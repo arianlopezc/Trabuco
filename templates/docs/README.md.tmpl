@@ -445,6 +445,50 @@ return repository.findAll();
 Use `// trabuco-allow: all` to suppress every rule for that line.
 {{- end}}
 
+## Security Audit
+
+Beyond the per-turn code review above, this project ships a structured
+security audit with broader scope (~173 checks across 5 domains: auth,
+AI surface, AIAgent runtime + Java platform, data + events, web +
+infra).
+
+Trigger it before merging a PR that touches a security boundary
+(auth, persistence credentials, broker config, AI tools/guardrails,
+new controller endpoints) or as a periodic deep sweep.
+
+### How to invoke
+
+| Coding agent | Command |
+|--------------|---------|
+{{- if .HasAIAgent "claude"}}
+| Claude Code | `/audit` (orchestrator + 5 domain specialists in parallel; under 2 min) |
+{{- end}}
+{{- if .HasAIAgent "cursor"}}
+| Cursor | Ask Cursor to "run the security audit" — the rule at `.cursor/rules/security-audit.mdc` activates |
+{{- end}}
+{{- if .HasAIAgent "copilot"}}
+| Copilot | Ask Copilot to "audit this project for security issues" |
+{{- end}}
+{{- if .HasAIAgent "codex"}}
+| Codex CLI | Ask Codex to "run the security audit" with `.codex/security-audit.md` loaded |
+{{- end}}
+
+### Output
+
+`.ai/security-audit/findings.md` (gitignored — paste into PR
+descriptions, not git history). The report is severity-sorted with
+PASS/FAIL verdict (PASS = zero Critical and zero High findings).
+
+### Reference
+
+- Master checklist: `.ai/security-audit/checklist.md`
+- Per-domain detail: `.ai/security-audit/checklist-{auth,ai-surface,aiagent-java,data-events,web-infra}.md`
+- Operator extensions: `.ai/security-audit/checklist-local.md` (optional, never overwritten by `trabuco sync`)
+- Full guide: `docs/security-audit.md`
+{{- if .HasCIProvider "github"}}
+- CI deterministic basics: `.github/scripts/review-checks.sh` (12 OWASP rules tagged `owasp.<id>`, run on every PR via the `review-checks` workflow job)
+{{- end}}
+
 ---
 
 Generated with [Trabuco](https://github.com/arianlopezc/Trabuco)

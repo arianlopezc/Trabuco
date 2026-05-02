@@ -20,7 +20,7 @@ Every recipe below that includes API or AIAgent gets OIDC Resource Server scaffo
 1. `/add-entity` — replace placeholder entities with real domain objects.
 2. `/add-endpoint` — wire REST endpoints, with keyset pagination for list endpoints (not offset).
 3. `/add-migration` — write Flyway migrations. **No FK constraints** — enforce referential integrity in the service layer.
-4. Run `review-checks.sh` before committing.
+4. Run `review-checks.sh` before committing. For a deeper security pass before merging a security-relevant PR, run `/audit` (or `/trabuco:audit`) — full 173-check sweep across auth, AI surface, AIAgent + Java platform, data + events, web + infra.
 
 **Tradeoff:** No async work. If a request needs to kick off long-running processing, you'll later have to add Worker (via `/trabuco:add-module`).
 
