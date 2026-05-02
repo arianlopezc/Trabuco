@@ -118,3 +118,31 @@ curl -X POST http://localhost:8080/a2a \
 - **Forgetting scope enforcement**: Every skill MUST call `ScopeEnforcer.requireScope()` before executing
 - **Returning raw String**: Wrap in `Map.of("result", value)` — TaskManager expects `Callable<Map<String, Object>>`
 - **Mismatched skill name**: The name in A2AController switch must match the skill ID in agent.json
+
+## Security checklist (before opening a PR)
+
+A2A skills are an inter-agent trust boundary. Each skill is a callable
+endpoint exposed over JSON-RPC; the same security concerns as REST
+apply, plus a few specific to the A2A surface:
+
+- **Scope enforcement is mandatory.** `ScopeEnforcer.requireScope()`
+  must run *before* any business logic. Bypass = unauthorized callers
+  invoke privileged skills.
+- **Task ownership on `tasks/get`.** A2AController's `tasks/get` returns
+  task state; verify the caller is the same identity that submitted the
+  task. Otherwise task IDs (UUIDs but enumerable) become a BOLA vector.
+- **Parameter bounds.** Parse `params` into typed records with bounds in
+  the compact constructor (`@Size`, `@NotBlank`, `Math.min`). Never pass
+  unchecked `Map<String, Object>` straight into a Callable.
+- **Rate limit the skill** if it's expensive (LLM call, RAG retrieval,
+  vector-store write). The default `RateLimiter` keys per caller; add
+  the skill name to the rate-limit dimensions if a single caller may
+  invoke many distinct skills.
+- **Never echo `params` verbatim in errors.** Errors flow back through
+  the JSON-RPC envelope; sanitize them the same way RFC 7807 sanitizes
+  REST errors.
+
+> Run `/audit` (or walk `.ai/security-audit/checklist-aiagent-java.md`
+> and `.ai/security-audit/checklist-auth.md`) before merging — these
+> domains cover scope enforcement, A2A authorization, parameter
+> bounding, and tool-input handling.

@@ -1136,4 +1136,48 @@ Before submitting any code, verify:
 
 ---
 
+## §6. Security baseline
+
+This section names the OWASP-Top-10 antipatterns coding agents must
+flag inline. The full security review (~173 checks across five
+domains) is the `/audit` workflow — see
+`.ai/security-audit/checklist.md`. Per-turn review covers only the
+basics below:
+
+- **A01 Broken Access Control.** Every controller method carries an
+  explicit authorization annotation (`@PreAuthorize`, `@PermitAll`,
+  `@Secured`, or `@RolesAllowed`). The
+  `controllerHandlersMustDeclareAuthorization` ArchUnit guard fails
+  the build if missing.
+- **A02 Cryptographic Failures.** No `MD5` / `SHA-1` in security
+  paths. No `DES` / `RC4` / `AES/ECB`. No literal passwords or API
+  keys in source.
+- **A03 Injection.** No `@Query` with parameter concatenation. No
+  `Runtime.exec` / `ProcessBuilder` with user input. No
+  user-controlled field names passed to `mongoTemplate.find`.
+- **A05 Security Misconfiguration.** No
+  `management.endpoints.web.exposure.include="*"`. No CORS
+  `allowedOrigins("*")` paired with `allowCredentials(true)`. No
+  Spring devtools on prod classpath.
+- **A07 Authentication Failures.** API-key comparison uses
+  `MessageDigest.isEqual` (constant-time). JWT decoder restricts
+  signature algorithms via `jws-algorithms` allow-list. Audience
+  claim is validated.
+- **A08 Software / Data Integrity.** No
+  `ObjectMapper.enableDefaultTyping()`. No bare `ObjectInputStream`
+  without `setObjectInputFilter`. Spring Kafka / AMQP
+  `JsonDeserializer.TRUSTED_PACKAGES` is the narrow event package
+  only, never `"*"`.
+- **A10 SSRF.** Outbound HTTP calls (`RestTemplate`, `WebClient`,
+  JDK `HttpClient`) validate URLs against an allow-list when the
+  URL is user-controlled.
+
+The `/audit` skill walks the full 173-check matrix (auth, AI
+surface, AIAgent runtime, data + events, web + infra). Trigger it
+before merging any PR that touches a security boundary
+(authentication, persistence credentials, broker config, AI tools/
+guardrails, new controller endpoints).
+
+---
+
 _This specification is loaded by AI coding assistants. Violations should be fixed before code submission._
