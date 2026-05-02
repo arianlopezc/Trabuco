@@ -11,7 +11,7 @@
       "name": "trabuco",
       "source": "./plugin",
       "description": "Exposes Trabuco CLI functionality (architecture advice, module catalog, scaffolding, doctor, 14-phase legacy-project migration) as Claude Code skills + subagents, grounded in Trabuco's opinionated Java conventions.",
-      "version": "1.11.0",
+      "version": "1.12.0",
       "tags": ["java", "spring-boot", "ai-agent", "scaffolding"]
     }
   ]
