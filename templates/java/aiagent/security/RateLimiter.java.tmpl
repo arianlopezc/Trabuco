@@ -1,7 +1,10 @@
 package {{.GroupID}}.aiagent.security;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -52,6 +55,8 @@ public class RateLimiter {
      * triggers eviction of the oldest empty bucket.
      */
     private static final int MAX_BUCKETS = 100_000;
+
+    private static final Logger log = LoggerFactory.getLogger(RateLimiter.class);
 
     private final ConcurrentHashMap<String, Deque<Long>> store = new ConcurrentHashMap<>();
 
@@ -131,6 +136,38 @@ public class RateLimiter {
             // No request bound to current thread — non-HTTP entry path.
         }
         return "unknown";
+    }
+
+    /**
+     * Evicts buckets whose newest entry is older than the rate-limit
+     * window (60s). Without this reaper, unique source IPs (under the
+     * anonymous-bucket-by-IP partitioning) accumulate empty deques
+     * forever. Once {@link #MAX_BUCKETS} (100k) fills up, every new
+     * caller-key would receive a 429 from the cap check above —
+     * permanently. Reaping idle buckets recycles the registry so the
+     * cap is a soft ceiling, not a one-way trip.
+     *
+     * <p>Runs once per minute. Synchronised on the deque while reading
+     * its tail so a concurrent {@code addLast} can't race the eviction
+     * decision.
+     */
+    @Scheduled(fixedDelayString = "PT1M")
+    public void evictIdleBuckets() {
+        long cutoff = System.currentTimeMillis() - 5 * 60_000L; // 5 minutes
+        int removed = 0;
+        for (Map.Entry<String, Deque<Long>> e : store.entrySet()) {
+            Deque<Long> deque = e.getValue();
+            Long last = deque.peekLast();
+            if (last == null || last < cutoff) {
+                if (store.remove(e.getKey(), deque)) {
+                    removed++;
+                }
+            }
+        }
+        if (removed > 0) {
+            log.debug("Evicted {} idle rate-limit bucket(s); current size {}",
+                removed, store.size());
+        }
     }
 
     public void reset() {

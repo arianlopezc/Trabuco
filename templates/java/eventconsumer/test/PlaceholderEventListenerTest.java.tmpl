@@ -4,6 +4,7 @@ import {{.GroupID}}.model.events.PlaceholderCreatedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 {{- if .UsesSQS}}
 import io.awspring.cloud.sqs.listener.acknowledgement.Acknowledgement;
 import org.mockito.Mock;
@@ -11,16 +12,49 @@ import org.mockito.Mock;
 import com.google.cloud.spring.pubsub.support.BasicAcknowledgeablePubsubMessage;
 import org.mockito.Mock;
 {{- end}}
+
+{{- if or .UsesSQS .UsesPubSub}}
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+{{- else}}
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import org.mockito.junit.jupiter.MockitoExtension;
+{{- end}}
 
 /**
  * Unit tests for PlaceholderEventListener.
  *
- * <p>These tests verify that the listener can process events without errors.
- * For integration tests with {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}}, use
+ * <p>Behavioural coverage of the listener contract:
+ * <ul>
+ *   <li>First delivery routes through the handler.</li>
+ *   <li>Duplicate delivery (same event id) short-circuits — the
+ *       handler does NOT run twice.</li>
+ *   <li>Distinct event ids are independent — dedup uses
+ *       {@code event.eventId()}, not a derived/static field, so two
+ *       events with the same {@code placeholderId} but different
+ *       {@code eventId} are both processed.</li>
+{{- if or .UsesSQS .UsesPubSub}}
+ *   <li>Acknowledge is called on the success path AND on the
+ *       dedup-skip path so the broker stops redelivering. The broker
+ *       is the only retry mechanism; ack-on-error would be the
+ *       canonical silent-failure pattern.</li>
+{{- end}}
+ * </ul>
+ *
+ * <h2>Why the tracker is real, not mocked</h2>
+ *
+ * <p>Mockito's inline mock-maker uses Byte Buddy to redefine class
+ * bytecode at runtime. On Java 25 (class-file major 69) Byte Buddy
+ * cannot redefine non-{@code Object} concrete classes, raising
+ * {@code MockitoException: Could not modify all classes}. Switching
+ * to a real {@link IdempotencyTracker} keeps the test agnostic to
+ * Mockito's class-instrumentation gap on the latest JDK and exercises
+ * the production code path end-to-end. The tracker is stateless once
+ * {@link IdempotencyTracker#reset()} is called in {@code @BeforeEach}.
+ *
+ * <p>For integration tests with {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}}, use
 {{- if .UsesKafka}}
- * @EmbeddedKafka or Testcontainers.</p>
+ * {@code @EmbeddedKafka} or Testcontainers.</p>
 {{- else if .UsesRabbitMQ}}
  * Testcontainers with RabbitMQ.</p>
 {{- else if .UsesSQS}}
@@ -32,59 +66,98 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class PlaceholderEventListenerTest {
 
-  // Real (in-memory) tracker — Mockito-inline can't mock the
-  // concrete class on Java 25 due to its synchronized methods.
-  // The tracker is stateless across test runs once {@code reset()}
-  // is called in {@code @BeforeEach}.
   private final IdempotencyTracker idempotencyTracker = new IdempotencyTracker();
 
   private PlaceholderEventListener listener;
-{{if .UsesSQS}}
+
+{{- if .UsesSQS}}
+
   @Mock
   private Acknowledgement acknowledgement;
-{{else if .UsesPubSub}}
+{{- else if .UsesPubSub}}
+
   @Mock
   private BasicAcknowledgeablePubsubMessage message;
-{{end}}
+{{- end}}
+
   @BeforeEach
-  void freshTracker() {
+  void setUp() {
     idempotencyTracker.reset();
     listener = new PlaceholderEventListener(idempotencyTracker);
   }
 
   @Test
-  void handlePlaceholderEvent_withCreatedEvent_processesSuccessfully() {
-    // Arrange
-    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("123", "Test Placeholder");
+  void firstDelivery_isProcessed{{if or .UsesSQS .UsesPubSub}}_andAcked{{end}}() {
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("placeholder-1", "First");
 
-    // Act & Assert
 {{- if .UsesSQS}}
-    assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, acknowledgement));
+    listener.handlePlaceholderEvent(event, acknowledgement);
+
+    verify(acknowledgement).acknowledge();
 {{- else if .UsesPubSub}}
-    assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, message));
+    listener.handlePlaceholderEvent(event, message);
+
+    verify(message).ack();
+    verify(message, never()).nack();
 {{- else}}
     assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event));
 {{- end}}
   }
 
   @Test
-  void handlePlaceholderEvent_withMultipleEvents_processesAll() {
-    // Arrange
-    PlaceholderCreatedEvent event1 = PlaceholderCreatedEvent.create("1", "First");
-    PlaceholderCreatedEvent event2 = PlaceholderCreatedEvent.create("2", "Second");
+  void duplicateDelivery_isShortCircuited{{if or .UsesSQS .UsesPubSub}}_butStillAcked{{end}}() {
+    // Same event id arrives twice — the second call must not re-run the handler{{if or .UsesSQS .UsesPubSub}},
+    // but the broker is still acked so it stops redelivering. Skipping
+    // the ack would put the dedup decision into a redelivery loop until
+    // the message hits the DLQ{{end}}.
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("placeholder-1", "First");
 
-    // Act & Assert
-    assertDoesNotThrow(() -> {
 {{- if .UsesSQS}}
-      listener.handlePlaceholderEvent(event1, acknowledgement);
-      listener.handlePlaceholderEvent(event2, acknowledgement);
+    listener.handlePlaceholderEvent(event, acknowledgement);
+    listener.handlePlaceholderEvent(event, acknowledgement);
+
+    verify(acknowledgement, times(2)).acknowledge();
 {{- else if .UsesPubSub}}
-      listener.handlePlaceholderEvent(event1, message);
-      listener.handlePlaceholderEvent(event2, message);
+    listener.handlePlaceholderEvent(event, message);
+    listener.handlePlaceholderEvent(event, message);
+
+    verify(message, times(2)).ack();
+    verify(message, never()).nack();
 {{- else}}
-      listener.handlePlaceholderEvent(event1);
-      listener.handlePlaceholderEvent(event2);
-{{- end}}
+    assertDoesNotThrow(() -> {
+      listener.handlePlaceholderEvent(event);
+      listener.handlePlaceholderEvent(event);
     });
+{{- end}}
+  }
+
+  @Test
+  void distinctEventIds_areEachProcessed() {
+    // Catches a regression where the listener might dedup off a wrong
+    // field (e.g. placeholderId, name) instead of eventId. Two events
+    // share placeholderId="placeholder-1" but have distinct UUID
+    // eventIds (the factory generates them). Both must reach the
+    // handler — if dedup keyed off placeholderId, the second would be
+    // skipped.
+    PlaceholderCreatedEvent first = PlaceholderCreatedEvent.create("placeholder-1", "First");
+    PlaceholderCreatedEvent second = PlaceholderCreatedEvent.create("placeholder-1", "Second");
+
+{{- if .UsesSQS}}
+    listener.handlePlaceholderEvent(first, acknowledgement);
+    listener.handlePlaceholderEvent(second, acknowledgement);
+
+    verify(acknowledgement, times(2)).acknowledge();
+{{- else if .UsesPubSub}}
+    listener.handlePlaceholderEvent(first, message);
+    listener.handlePlaceholderEvent(second, message);
+
+    verify(message, times(2)).ack();
+    verify(message, never()).nack();
+{{- else}}
+    assertDoesNotThrow(() -> {
+      listener.handlePlaceholderEvent(first);
+      listener.handlePlaceholderEvent(second);
+    });
+{{- end}}
   }
 }

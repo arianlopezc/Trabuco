@@ -1,5 +1,6 @@
 package {{.GroupID}}.aiagent.config.security;
 
+import {{.GroupID}}.aiagent.security.AgentMcpAuthorizationFilter;
 import {{.GroupID}}.aiagent.security.ApiKeyAuthFilter;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.ObjectProvider;
@@ -180,6 +181,30 @@ public class AgentSecurityConfig {
     }
 
     /**
+     * Mirrors the disable above for {@link AgentMcpAuthorizationFilter}.
+     * The MCP filter must run AFTER {@link ApiKeyAuthFilter} so that
+     * {@code CallerContext} is populated before the MCP scope check —
+     * and AFTER {@code BearerTokenAuthenticationFilter} so the JWT path
+     * is also resolved. Spring Boot would otherwise auto-register this
+     * filter at the position it self-declared (or at default ordering),
+     * placing it before the security chain populates either signal
+     * and 403-ing every legitimate MCP request in API-key-only mode.
+     * Disabling auto-registration here and adding via {@code addFilterAfter}
+     * in the chains below puts it in the right place exactly once.
+     */
+    @Bean
+    public FilterRegistrationBean<AgentMcpAuthorizationFilter> disableMcpAuthorizationFilterAutoRegistration(
+            ObjectProvider<AgentMcpAuthorizationFilter> filterProvider) {
+        FilterRegistrationBean<AgentMcpAuthorizationFilter> reg = new FilterRegistrationBean<>();
+        AgentMcpAuthorizationFilter filter = filterProvider.getIfAvailable();
+        if (filter != null) {
+            reg.setFilter(filter);
+        }
+        reg.setEnabled(false);
+        return reg;
+    }
+
+    /**
      * Active when {@code trabuco.auth.enabled=true}. Validates JWTs
      * against the configured OIDC issuer and emits RFC 7807
      * {@code application/problem+json} for 401/403.
@@ -194,10 +219,18 @@ public class AgentSecurityConfig {
     @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "true")
     public SecurityFilterChain agentOauth2FilterChain(
             HttpSecurity http,
-            ObjectProvider<ApiKeyAuthFilter> apiKeyAuthFilter) throws Exception {
+            ObjectProvider<ApiKeyAuthFilter> apiKeyAuthFilter,
+            ObjectProvider<AgentMcpAuthorizationFilter> mcpAuthorizationFilter) throws Exception {
         ApiKeyAuthFilter apiKey = apiKeyAuthFilter.getIfAvailable();
         if (apiKey != null) {
             http.addFilterBefore(apiKey, BearerTokenAuthenticationFilter.class);
+        }
+        AgentMcpAuthorizationFilter mcpFilter = mcpAuthorizationFilter.getIfAvailable();
+        if (mcpFilter != null) {
+            // MCP filter runs after BearerTokenAuthenticationFilter so the
+            // JWT path's SecurityContextHolder is already populated by the
+            // time the MCP scope check fires.
+            http.addFilterAfter(mcpFilter, BearerTokenAuthenticationFilter.class);
         }
         return http
             .csrf(AbstractHttpConfigurer::disable)
@@ -254,10 +287,18 @@ public class AgentSecurityConfig {
     @ConditionalOnProperty(value = "trabuco.auth.enabled", havingValue = "false")
     public SecurityFilterChain agentPermitAllFilterChain(
             HttpSecurity http,
-            ObjectProvider<ApiKeyAuthFilter> apiKeyAuthFilter) throws Exception {
+            ObjectProvider<ApiKeyAuthFilter> apiKeyAuthFilter,
+            ObjectProvider<AgentMcpAuthorizationFilter> mcpAuthorizationFilter) throws Exception {
         ApiKeyAuthFilter apiKey = apiKeyAuthFilter.getIfAvailable();
         if (apiKey != null) {
             http.addFilterBefore(apiKey, UsernamePasswordAuthenticationFilter.class);
+        }
+        AgentMcpAuthorizationFilter mcpFilter = mcpAuthorizationFilter.getIfAvailable();
+        if (mcpFilter != null) {
+            // In API-key-only mode, MCP filter must run AFTER ApiKeyAuthFilter
+            // so CallerContext is populated by the time the MCP filter
+            // checks the partner-tier requirement.
+            http.addFilterAfter(mcpFilter, ApiKeyAuthFilter.class);
         }
         return http
             .csrf(AbstractHttpConfigurer::disable)

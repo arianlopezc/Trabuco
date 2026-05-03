@@ -190,9 +190,12 @@ A `try/catch` in a controller or HTTP-facing service that only rethrows or retur
 Don't suggest "add a vector store" — three are wired and selected by classpath dependency:
 
 - **PGVector** (default in `aiagent-rag` archetype), **Qdrant**, **MongoDB Atlas Vector Search**.
-- Retrieval goes through `VectorKnowledgeRetriever` (`@Primary` when a `VectorStore` bean is present).
-- Ingestion goes through `DocumentIngestionService.ingest(text, metadata)`. Both stamp `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped before storage.
-- Cross-tenant reads are impossible by construction — the retriever applies `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` to every `SearchRequest`.
+- Two retrievers, two interfaces, one tenant contract:
+  - `VectorKnowledgeRetriever` implements Trabuco's `KnowledgeRetriever` (used by `KnowledgeTools.@Tool` path).
+  - `TenantFilteringDocumentRetriever` implements Spring AI's `DocumentRetriever` (used by `RetrievalAugmentationAdvisor` on `PrimaryAgent`).
+  - Both resolve `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` PER CALL from `CallerContext`. Don't suggest building advisors with raw `VectorStoreDocumentRetriever` — that's a static-filter regression.
+- Ingestion goes through `DocumentIngestionService.ingest(text, metadata)`. Stamps `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped before storage.
+- Cross-tenant reads are impossible by construction — every `SearchRequest` is tenant-filtered.
 - A keyword fallback (`KeywordKnowledgeRetriever` over `KnowledgeBase.ENTRIES`) is selected automatically when no `VectorStore` is wired. Don't reinvent either path.
 - Retrieved chunks pass through `FencingDocumentRetriever`, which marks the trust boundary between prompt and document content. Don't bypass.
 

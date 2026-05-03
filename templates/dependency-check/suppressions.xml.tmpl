@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+OWASP dependency-check suppression file for {{.ProjectNamePascal}}.
+
+Each <suppress> block whitelists a specific CVE or vulnerability that
+the team has reviewed and decided does not apply (false positive,
+unreachable code path, accepted risk with mitigation). EVERY suppression
+must include a written justification — silent suppressions become
+forgotten suppressions become unpatched CVEs.
+
+The schema:
+  https://jeremylong.github.io/DependencyCheck/general/suppression.html
+
+Example shape:
+  <suppress>
+    <notes><![CDATA[
+      Justification: <why this CVE doesn't apply to us>
+      Date: 2026-05-15
+      Reviewer: <username>
+      Re-review: 2026-11-15 (every 6 months)
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.example/example@.*$</packageUrl>
+    <cve>CVE-YYYY-NNNNN</cve>
+  </suppress>
+
+Add new suppressions below this comment.
+-->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+</suppressions>

@@ -1,0 +1,38 @@
+# Dependabot keeps GitHub Actions SHAs and Maven dependencies current.
+# Without it, the SHA pins below ossify and miss security patches:
+#   actions/checkout@<sha> # v4.2.2
+#   actions/setup-java@<sha> # v4.4.0
+# The pins above were correct at generation time. Dependabot opens a PR
+# whenever a new release is tagged so the # v<x.y.z> comment stays
+# accurate and the SHA tracks the underlying release.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "maven"
+    # Group routine patch/minor bumps so the PR queue doesn't drown
+    # the team. Major bumps still ship as individual PRs because they
+    # often need code changes (Spring Boot, Spring AI, JobRunr).
+    groups:
+      maven-patch-and-minor:
+        update-types:
+          - "patch"
+          - "minor"
+        exclude-patterns:
+          - "org.springframework.boot:*"
+          - "org.springframework.ai:*"
+          - "org.jobrunr:*"

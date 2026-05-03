@@ -125,7 +125,10 @@ Scope is HTTP-only. Event listeners, JobRunr handlers, and `@Scheduled` jobs mus
 
 Three vector stores are wired and selected by classpath dependency: PGVector (default), Qdrant, MongoDB Atlas Vector Search. Don't suggest "add a vector store" — extend the existing path.
 
-- Retrieval: `VectorKnowledgeRetriever` (`@Primary` when a `VectorStore` bean is present); falls back to `KeywordKnowledgeRetriever` over `KnowledgeBase.ENTRIES` otherwise.
+- Two retrievers enforce the same tenant contract:
+  - `VectorKnowledgeRetriever` (Trabuco's `KnowledgeRetriever`, used by `KnowledgeTools.@Tool`).
+  - `TenantFilteringDocumentRetriever` (Spring AI's `DocumentRetriever`, used by `RetrievalAugmentationAdvisor` on `PrimaryAgent`).
+  - Both resolve the filter per call from `CallerContext`. Building an advisor with raw `VectorStoreDocumentRetriever` is a static-filter regression.
 - Ingestion: `DocumentIngestionService.ingest(text, metadata)` — stamps `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped.
 - Tenant isolation is enforced at every read via `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())`. Cross-tenant reads are impossible by construction.
 - Retrieved chunks pass through `FencingDocumentRetriever`. Don't bypass the fences.

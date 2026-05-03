@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -77,6 +78,18 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
      */
     private final java.util.List<String> registeredLabels;
 
+    /**
+     * Hybrid-mode signal: when {@code trabuco.auth.enabled=true}, the
+     * OAuth2 chain is also active and {@code BearerTokenAuthenticationFilter}
+     * sits later in the chain to validate JWT bearers. An unrecognized
+     * bearer in hybrid mode might still be a valid JWT, so we delegate
+     * to the chain rather than 401-ing here. In API-key-only mode
+     * ({@code trabuco.auth.enabled=false}), no JWT chain follows and
+     * an unrecognized bearer is unambiguously invalid.
+     */
+    @Value("${trabuco.auth.enabled:false}")
+    private boolean oauth2Enabled;
+
     public ApiKeyAuthFilter(AgentAuthProperties props) {
         Map<byte[], KeyConfig> hashed = new LinkedHashMap<>();
         for (Map.Entry<String, KeyConfig> e : props.keys().entrySet()) {
@@ -136,6 +149,17 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
             KeyConfig entry = lookup(inboundHash);
 
             if (entry == null) {
+                if (oauth2Enabled) {
+                    // Hybrid mode: this isn't a registered API key, but
+                    // BearerTokenAuthenticationFilter further along the
+                    // chain might recognize it as a JWT. Delegate
+                    // without setting CallerContext (the JWT path has
+                    // its own identity propagation via JwtAuthenticationConverter
+                    // and AgentSecurityConfig's CallerContext bridge).
+                    // Final 401 is the OAuth2 chain's responsibility.
+                    chain.doFilter(request, response);
+                    return;
+                }
                 sendError(response, HttpStatus.UNAUTHORIZED, "Invalid API key");
                 return;
             }

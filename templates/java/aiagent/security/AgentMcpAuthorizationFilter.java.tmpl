@@ -7,7 +7,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -59,15 +58,22 @@ import java.io.IOException;
  * Default since 1.12), the filter never registers — no per-request
  * cost on the API-key chain.
  *
- * <p>{@code @Order(Ordered.HIGHEST_PRECEDENCE + 100)} places this
- * after Spring Security's auth filter (which populates
- * {@code SecurityContextHolder}) and after {@link ApiKeyAuthFilter}
- * (which populates {@code CallerContext}). Both signals must be
- * available when this filter inspects them.
+ * <p>This filter is registered <i>inside</i> the Spring Security chains
+ * via {@code AgentSecurityConfig.addFilterAfter(... ApiKeyAuthFilter.class)}.
+ * That positioning guarantees both signals — Spring Security's
+ * {@code SecurityContextHolder} and Trabuco's {@code CallerContext} —
+ * are populated before this filter runs. Earlier releases used
+ * {@code @Order(HIGHEST_PRECEDENCE + 100)} on a {@code @Component}-scanned
+ * filter, which placed it in the global servlet chain BEFORE the
+ * security chain that hosts {@code ApiKeyAuthFilter}; in API-key-only
+ * mode that meant every legitimate partner-tier MCP request saw
+ * anonymous {@code CallerContext} and 403'd. The
+ * {@code FilterRegistrationBean} in {@code AgentSecurityConfig} suppresses
+ * the global registration so this filter only runs once, in the right
+ * place.
  */
 @Component
 @ConditionalOnProperty(name = "spring.ai.mcp.server.enabled", havingValue = "true")
-@Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE + 100)
 public class AgentMcpAuthorizationFilter extends OncePerRequestFilter {
 
     static final String MCP_SCOPE = "SCOPE_mcp:invoke";

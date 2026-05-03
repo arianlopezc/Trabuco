@@ -5,6 +5,8 @@ import {{.GroupID}}.aiagent.security.ImmutableCallerIdentity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.rag.Query;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -67,6 +69,9 @@ class VectorTenantIsolationTest {
     @Autowired
     private KnowledgeRetriever knowledgeRetriever;
 
+    @Autowired
+    private VectorStore vectorStore;
+
     @AfterEach
     void clearCaller() {
         // Tests below set CallerContext on the test thread; clear so a
@@ -76,7 +81,7 @@ class VectorTenantIsolationTest {
 
     @Test
     void retrieveAsTenantBCannotSeeTenantAsChunks() {
-        // 1. Ingest as tenant-A.
+        // 1. Ingest under tenant-A.
         CallerContext.set(ImmutableCallerIdentity.builder()
             .tier("partner")
             .keyHash("tenant-a-hash")
@@ -88,22 +93,33 @@ class VectorTenantIsolationTest {
             Map.of("source", "tenant-a-doc"));
         CallerContext.clear();
 
-        // 2. Retrieve as tenant-B with a query that semantically matches
-        //    tenant-A's chunk. Without the fix, B sees A's content.
+        // 2. Ingest a tenant-B document so the retrieval has a legitimate
+        //    non-empty result to bind assertions against. Without this,
+        //    a regression that returns nothing for everyone would slip
+        //    past `allSatisfy` (vacuously true on an empty collection).
         CallerContext.set(ImmutableCallerIdentity.builder()
             .tier("partner")
             .keyHash("tenant-b-hash")
             .keyLabel("tenant-b")
             .tenantId("tenant-b")
             .build());
+        ingestionService.ingest(
+            "Beta Industries revenue forecast for next quarter is positive.",
+            Map.of("source", "tenant-b-doc"));
+
+        // 3. Retrieve as tenant-B with a query that semantically matches
+        //    BOTH ingested chunks. Without the filter, B sees A's content.
         List<Document> hits = knowledgeRetriever.retrieve(
-            "Acme Corp revenue forecast", 5);
+            "revenue forecast", 5);
 
         assertThat(hits)
-            .as("tenant-B must not retrieve tenant-A's chunks — regression")
-            .allSatisfy(d -> assertThat(d.getMetadata().get("tenant_id"))
-                .as("every returned chunk must belong to tenant-B")
-                .isEqualTo("tenant-b"));
+            .as("tenant-B retrieval must return tenant-B's own chunk — not vacuously empty")
+            .isNotEmpty()
+            .as("every returned chunk must belong to tenant-B")
+            .allSatisfy(d -> assertThat(d.getMetadata())
+                .containsEntry("tenant_id", "tenant-b"))
+            .as("tenant-A's confidential content must not leak into tenant-B's results")
+            .noneSatisfy(d -> assertThat(d.getText()).contains("Acme Corp"));
     }
 
     @Test
@@ -143,21 +159,79 @@ class VectorTenantIsolationTest {
             .build());
         // Caller claims tenant-victim — server must overwrite with tenant-c.
         ingestionService.ingest(
-            "Stealth document.",
+            "Stealth document attempting cross-tenant ingest.",
             Map.of("tenant_id", "tenant-victim", "source", "spoof-test"));
         CallerContext.clear();
 
-        // tenant-victim must see nothing — the spoofed id was stripped.
+        // Ingest a legitimate document under tenant-victim so retrieval
+        // has a non-empty result to bind against. Without this, an empty
+        // result would pass `noneSatisfy` vacuously.
         CallerContext.set(ImmutableCallerIdentity.builder()
             .tier("partner")
             .keyHash("tenant-victim-hash")
             .keyLabel("tenant-victim")
             .tenantId("tenant-victim")
             .build());
-        List<Document> victimHits = knowledgeRetriever.retrieve("Stealth document", 5);
+        ingestionService.ingest(
+            "Tenant-victim's legitimate document about stealth operations.",
+            Map.of("source", "victim-legit-doc"));
+
+        List<Document> victimHits = knowledgeRetriever.retrieve("stealth", 5);
 
         assertThat(victimHits)
-            .as("tenant-victim must not see chunks ingested under spoofed metadata — server-side stamping wins")
-            .noneSatisfy(d -> assertThat(d.getText()).contains("Stealth document"));
+            .as("tenant-victim retrieval must return its own legitimate chunk — not vacuously empty")
+            .isNotEmpty()
+            .as("the spoofed cross-tenant ingest must not appear in tenant-victim's results")
+            .noneSatisfy(d -> assertThat(d.getText()).contains("attempting cross-tenant ingest"))
+            .as("every returned chunk must belong to tenant-victim — server-side stamping wins")
+            .allSatisfy(d -> assertThat(d.getMetadata())
+                .containsEntry("tenant_id", "tenant-victim"));
+    }
+
+    @Test
+    void advisorPathRetrieverAlsoRespectsTenantFilter() {
+        // Regression guard for : the
+        // RetrievalAugmentationAdvisor in PrimaryAgent uses a separate
+        // DocumentRetriever (TenantFilteringDocumentRetriever) than the
+        // @Tool-driven KnowledgeRetriever path. Both must enforce the
+        // same tenant filter; this test exercises the advisor's
+        // retriever directly so a regression in PrimaryAgent's wiring
+        // is caught even when the @Tool path remains correct.
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("tenant-x-hash")
+            .keyLabel("tenant-x")
+            .tenantId("tenant-x")
+            .build());
+        ingestionService.ingest(
+            "Project Aurora launch metrics for tenant-X.",
+            Map.of("source", "tenant-x-doc"));
+        CallerContext.clear();
+
+        CallerContext.set(ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("tenant-y-hash")
+            .keyLabel("tenant-y")
+            .tenantId("tenant-y")
+            .build());
+        ingestionService.ingest(
+            "Project Comet launch metrics for tenant-Y.",
+            Map.of("source", "tenant-y-doc"));
+
+        // Use TenantFilteringDocumentRetriever directly — same instance
+        // shape PrimaryAgent.buildRagAdvisor wires into the advisor.
+        TenantFilteringDocumentRetriever advisorRetriever =
+            new TenantFilteringDocumentRetriever(vectorStore, 5);
+
+        List<Document> hits = advisorRetriever.retrieve(new Query("launch metrics"));
+
+        assertThat(hits)
+            .as("advisor retriever must return tenant-Y's own chunk — not vacuously empty")
+            .isNotEmpty()
+            .as("every returned chunk must belong to tenant-Y")
+            .allSatisfy(d -> assertThat(d.getMetadata())
+                .containsEntry("tenant_id", "tenant-y"))
+            .as("tenant-X's content must not leak through the advisor path")
+            .noneSatisfy(d -> assertThat(d.getText()).contains("Project Aurora"));
     }
 }

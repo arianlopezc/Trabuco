@@ -110,12 +110,25 @@ func (o *Orchestrator) SaveState(s *state.State) error {
 // specialist, validates output, presents the gate, commits or rolls back.
 // Returns the user's gate action so the caller can decide whether to
 // proceed to the next phase.
+//
+// Lock acquisition lives here, at the entry boundary. The actual work
+// is in runPhaseLocked so the GateEditAndApprove path can recurse
+// without re-acquiring the same-PID lock (which would always fail —
+// AcquireLock rejects a same-PID held lock as a stale-lock guard).
 func (o *Orchestrator) RunPhase(ctx context.Context, phase types.Phase, hint string) (types.GateAction, error) {
 	if err := state.AcquireLock(o.repoRoot, "cli"); err != nil {
 		return "", err
 	}
 	defer state.ReleaseLock(o.repoRoot)
 
+	return o.runPhaseLocked(ctx, phase, hint)
+}
+
+// runPhaseLocked is the inner phase runner. The caller MUST already
+// hold the migration lock — RunPhase acquires it once and delegates here.
+// GateEditAndApprove recurses through this entry point so the lock
+// stays held across the retry cycle.
+func (o *Orchestrator) runPhaseLocked(ctx context.Context, phase types.Phase, hint string) (types.GateAction, error) {
 	s, err := o.LoadState()
 	if err != nil {
 		return "", err
@@ -283,12 +296,15 @@ func (o *Orchestrator) RunPhase(ctx context.Context, phase types.Phase, hint str
 		return types.GateApprove, nil
 
 	case types.GateEditAndApprove:
-		// Roll back, then re-run with the user's hint.
+		// Roll back, then re-run with the user's hint. Recurse through
+		// runPhaseLocked rather than RunPhase: the lock is already held
+		// by the outer RunPhase call, and AcquireLock would reject a
+		// same-PID re-acquisition as a stale-lock guard.
 		_ = vcs.ResetHard(o.repoRoot, preTag)
 		rec.State = types.PhasePending
 		rec.RetryCount++
 		_ = o.SaveState(s)
-		return o.RunPhase(ctx, phase, editHint)
+		return o.runPhaseLocked(ctx, phase, editHint)
 
 	case types.GateReject:
 		_ = vcs.ResetHard(o.repoRoot, preTag)

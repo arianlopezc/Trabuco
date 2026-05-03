@@ -78,6 +78,20 @@ Run each grep across the changed files. Every match is a finding unless explicit
     xargs -I{} sh -c 'rg -L "CallerContext\.set" {} && echo "MISSING in {}"'
   ```
 - **Caller-supplied `tenant_id` reaching the vector store** — `DocumentIngestionService.stampTenantId` strips `tenant_id` from caller-supplied metadata so partner-A can't claim partner-B's tenant. Any new code path that ingests into the `VectorStore` must derive `tenant_id` from `CallerContext.get().tenantId()` only.
+- **`RetrievalAugmentationAdvisor` without tenant filter** — Spring AI's stock `VectorStoreDocumentRetriever` accepts a static filter at construction time. The advisor is shared across requests so a static filter cannot bind to the current caller's tenant — either no filter (cross-tenant leak) or pinned to one tenant for life. Trabuco's `TenantFilteringDocumentRetriever` resolves the filter per call from `CallerContext`. Any new advisor that wraps `VectorStoreDocumentRetriever` directly is a regression — must use `TenantFilteringDocumentRetriever` (or wrap it inside `FencingDocumentRetriever`).
+  ```bash
+  # Surface advisors built with raw VectorStoreDocumentRetriever
+  rg -nP 'VectorStoreDocumentRetriever\.builder\(' AIAgent/src/main/java
+  # Anything outside TenantFilteringDocumentRetriever.java is a finding.
+  ```
+- **SSE subscriber leak** — `taskManager.subscribe(...)` without a paired `taskManager.unsubscribe(...)` in `emitter.onCompletion` / `onTimeout` / `onError`. Listeners + closures retained for life of the registry entry; after `SUBSCRIBERS_MAX_PER_TASK` reconnects (32) new SSE clients are silently dropped. The listener variable must be CAPTURED before subscribing so the same instance can be unsubscribed.
+  ```bash
+  rg -lP 'taskManager\.subscribe\(' AIAgent/src/main/java | \
+    xargs -I{} sh -c 'rg -L "taskManager\.unsubscribe" {} && echo "MISSING unsubscribe in {}"'
+  ```
+- **`AgentMcpAuthorizationFilter` registered globally instead of inside the security chain** — the filter must run AFTER `ApiKeyAuthFilter` (or `BearerTokenAuthenticationFilter` in OAuth2 mode) so `CallerContext` is populated when the MCP scope check fires. Registration via `@Order` puts it in the global servlet chain ahead of the security chain → 403s every legitimate partner request in API-key-only mode. The canonical wiring is `addFilterAfter(... ApiKeyAuthFilter.class)` in `AgentSecurityConfig` plus a `FilterRegistrationBean` with `setEnabled(false)` to suppress global registration.
+- **Bounded resource without reaper** — `TaskManager` (10k task cap) and `RateLimiter` (100k bucket cap) are bounded ConcurrentMaps; without a `@Scheduled` reaper, they fill toward the cap and every new entry permanently throws / 429s. Any new bounded in-memory registry must follow the same shape: cap + `@Scheduled` eviction of terminal/idle entries + `@PreDestroy` for executor cleanup if applicable.
+- **`OncePerRequestFilter` clearing/auth filters not overriding `shouldNotFilterAsyncDispatch()`** — Spring's default skips ASYNC dispatches. A clearing filter that doesn't run on async dispatch leaks `CallerContext` / `RequestContextHolder` to whatever thread the carrier returns to. Filters touching identity must override `shouldNotFilterAsyncDispatch()` to return `false`.
 {{- end}}
 
 ### Secrets & injection

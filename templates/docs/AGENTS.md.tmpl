@@ -215,9 +215,10 @@ Per-provider recipes (Keycloak / Auth0 / Okta / Cognito / generic OIDC) live in 
 The AIAgent module ships vector-RAG knowledge retrieval (Spring AI 1.0.5). Do not reinvent it — extend the existing surface:
 
 - `KnowledgeRetriever` interface; `VectorKnowledgeRetriever` (pgvector / Qdrant / MongoDB Atlas) wins autowiring when `agent.knowledge.vector-store` selects one. `KeywordKnowledgeRetriever` is the always-emitted baseline / fallback.
+- The ambient RAG path on `PrimaryAgent` uses a separate `TenantFilteringDocumentRetriever` (Spring AI's `DocumentRetriever` interface) wrapped by `FencingDocumentRetriever`. Both retrievers — `KnowledgeRetriever` (tool path) and `TenantFilteringDocumentRetriever` (advisor path) — resolve the `tenant_id` filter PER CALL from `CallerContext`. Any new retriever must follow the same shape.
 - `DocumentIngestionService` + `IngestionController` (POST `/ingest`, partner-scope, default-disabled via `agent.ingest.enabled=true` to enable).
-- Tenant isolation: `CallerIdentity.tenantId()` is enforced at the retriever boundary; caller-supplied `tenant_id` in metadata is server-side stripped before storage.
-- See `docs/vector-rag.md` for store-specific recipes and `.ai/prompts/add-knowledge-entry.md` for per-task guidance.
+- Tenant isolation: `CallerIdentity.tenantId()` is enforced at every retriever AND at ingest time; caller-supplied `tenant_id` in metadata is server-side stripped before storage.
+- See `docs/vector-rag.md` for store-specific recipes, `.ai/prompts/JAVA_CODE_QUALITY.md` §6.1.2 for the canonical retriever pattern, and `.ai/prompts/add-knowledge-entry.md` for per-task guidance.
 {{- end}}
 
 ## What This Project Does NOT Include

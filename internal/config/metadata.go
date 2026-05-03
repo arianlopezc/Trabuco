@@ -25,6 +25,12 @@ type ProjectMetadata struct {
 	MessageBroker string   `json:"messageBroker,omitempty"`
 	AIAgents      []string `json:"aiAgents,omitempty"`
 	CIProvider    string   `json:"ciProvider,omitempty"`
+	// VectorStore is the AIAgent module's vector RAG backend choice:
+	// "pgvector", "qdrant", "mongodb", or empty (keyword-only). Persisted
+	// because `trabuco sync` rebuilds the project from this metadata —
+	// without it, sync round-trips through an empty value and never
+	// re-emits vector-store templates.
+	VectorStore   string   `json:"vectorStore,omitempty"`
 }
 
 // LoadMetadata loads project metadata from .trabuco.json in the specified directory
@@ -85,6 +91,7 @@ func NewMetadataFromConfig(cfg *ProjectConfig, version string) *ProjectMetadata 
 		MessageBroker: cfg.MessageBroker,
 		AIAgents:      cfg.AIAgents,
 		CIProvider:    cfg.CIProvider,
+		VectorStore:   cfg.VectorStore,
 	}
 }
 
@@ -102,6 +109,7 @@ func (m *ProjectMetadata) ToProjectConfig() *ProjectConfig {
 		MessageBroker: m.MessageBroker,
 		AIAgents:      m.AIAgents,
 		CIProvider:    m.CIProvider,
+		VectorStore:   m.VectorStore,
 	}
 }
 

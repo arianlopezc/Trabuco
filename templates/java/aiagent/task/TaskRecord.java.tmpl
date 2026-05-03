@@ -40,4 +40,13 @@ public class TaskRecord {
     public void setStatus(String status) { this.status = status; this.updatedAt = Instant.now(); }
     public void setResult(Map<String, Object> result) { this.result = result; }
     public void setError(String error) { this.error = error; }
+
+    /**
+     * True when the task has reached a terminal state. Reapers in
+     * TaskManager use this to decide which records can be garbage-
+     * collected after a TTL.
+     */
+    public boolean isTerminal() {
+        return "completed".equals(status) || "failed".equals(status);
+    }
 }

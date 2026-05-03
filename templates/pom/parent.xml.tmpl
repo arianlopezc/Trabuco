@@ -335,4 +335,56 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- OWASP dependency-check: NVD-backed CVE scanner. Off by
+             default because the first run downloads ~1 GB of NVD data
+             and CVE scans add minutes to the build. The scheduled
+             `.github/workflows/security-audit.yml` runs `mvn -Psecurity-audit
+             verify` weekly. Operators can run it locally any time:
+             `mvn -Psecurity-audit verify -DnvdApiKey=$NVD_API_KEY`.
+             Set NVD_API_KEY (free, https://nvd.nist.gov/developers/request-an-api-key)
+             to dramatically speed up the database refresh — without it the
+             rate-limited public endpoint serves the data 30x slower. -->
+        <profile>
+            <id>security-audit</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>11.1.0</version>
+                        <configuration>
+                            <!-- Fail on CVSS >= 7 (HIGH or CRITICAL).
+                                 Lowering this catches more issues at the
+                                 cost of more triage. The suppressions
+                                 file is the documented exception path. -->
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <suppressionFile>${maven.multiModuleProjectDirectory}/.dependency-check/suppressions.xml</suppressionFile>
+                            <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+                            <!-- Cache the NVD database under .m2 so weekly
+                                 CI runs don't re-download. -->
+                            <dataDirectory>${user.home}/.m2/dependency-check-data</dataDirectory>
+                            <!-- Skip dev/test scopes — they don't ship
+                                 with production jars. -->
+                            <skipTestScope>true</skipTestScope>
+                            <skipProvidedScope>true</skipProvidedScope>
+                            <!-- HTML + JSON outputs for CI artifact upload. -->
+                            <formats>
+                                <format>HTML</format>
+                                <format>JSON</format>
+                            </formats>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>aggregate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>

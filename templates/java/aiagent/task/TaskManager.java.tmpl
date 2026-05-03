@@ -1,7 +1,10 @@
 package {{.GroupID}}.aiagent.task;
 
+import jakarta.annotation.PreDestroy;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.Instant;
 import {{.GroupID}}.aiagent.security.CallerContext;
 import {{.GroupID}}.aiagent.security.CallerIdentity;
@@ -31,6 +34,15 @@ public class TaskManager {
     private static final int TASK_REGISTRY_MAX = 10_000;
 
     private static final int SUBSCRIBERS_MAX_PER_TASK = 32;
+
+    /**
+     * How long a terminal (completed/failed) task is retained before
+     * the reaper drops it. Clients have this long to poll the result
+     * via {@code tasks/get} or via SSE streaming. After eviction the
+     * task id resolves to "not found" — same shape as a never-existed
+     * task, so an attacker enumerating UUIDs can't tell the difference.
+     */
+    private static final Duration TERMINAL_TASK_TTL = Duration.ofHours(1);
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TaskManager.class);
 
@@ -136,8 +148,66 @@ public class TaskManager {
         var subs = subscribers.get(taskId);
         if (subs != null) {
             for (var listener : subs) {
-                try { listener.accept(event); } catch (Exception ignored) {}
+                try {
+                    listener.accept(event);
+                } catch (Exception e) {
+                    // Listener exceptions are typically IOExceptions from a
+                    // dead SSE client (browser closed the tab). Log at DEBUG
+                    // because chatty terminal disconnects shouldn't drown
+                    // signal — but DO log so a regression where every notify
+                    // throws becomes visible. A persistent stream of these
+                    // hints that subscribe/unsubscribe is leaking listeners.
+                    log.debug("Subscriber listener for task {} threw: {}", taskId, e.toString());
+                }
             }
+        }
+    }
+
+    /**
+     * Reap terminal tasks that have aged past the TTL, then prune
+     * orphaned subscriber lists for ids no longer in the registry.
+     * Without this reaper, the registry fills toward
+     * {@link #TASK_REGISTRY_MAX} (10k) and submitTask permanently
+     * starts throwing. The subscribers map is reaped jointly to
+     * close the SSE listener-leak window when streams disconnect
+     * before they can unsubscribe.
+     */
+    @Scheduled(fixedDelayString = "PT1M")
+    public void reapTerminalTasks() {
+        Instant cutoff = Instant.now().minus(TERMINAL_TASK_TTL);
+        int removed = 0;
+        for (Map.Entry<String, TaskRecord> e : tasks.entrySet()) {
+            TaskRecord r = e.getValue();
+            if (r.isTerminal() && r.getUpdatedAt() != null && r.getUpdatedAt().isBefore(cutoff)) {
+                tasks.remove(e.getKey(), r);
+                removed++;
+            }
+        }
+        // Drop subscriber entries whose tasks no longer exist.
+        subscribers.keySet().removeIf(k -> !tasks.containsKey(k));
+        if (removed > 0) {
+            log.debug("Reaped {} terminal task(s) older than {}; current size {}",
+                removed, TERMINAL_TASK_TTL, tasks.size());
+        }
+    }
+
+    /**
+     * Drains the executor on Spring shutdown so in-flight tasks have
+     * a chance to finish. Aligned with Spring Boot's
+     * {@code spring.lifecycle.timeout-per-shutdown-phase} default of
+     * 30 seconds — tasks running past that are forcibly cancelled.
+     */
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                log.warn("TaskManager executor did not terminate within 30s; forcing shutdownNow");
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 
