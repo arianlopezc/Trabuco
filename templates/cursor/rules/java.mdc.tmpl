@@ -215,6 +215,15 @@ executor.submit(() -> {
     }
 });
 ```
+
+## Streaming endpoints (SSE in AIAgent)
+
+The shipped `StreamingController` (`/tasks/{taskId}/stream`) is the reference implementation. Don't improvise the lifecycle — the 5-part shape (rate-limit → per-caller cap → `getTaskForOwner` → captured listener → paired unsubscribe in all 3 emitter hooks) defends three silent failures (listener leak, slot leak, BOLA via task-id polling).
+
+- Inline `taskManager.subscribe(id, e -> {...})` is a regression — capture the listener as a named `Consumer<TaskEvent>` so the same instance can be unsubscribed.
+- Use `taskManager.getTaskForOwner(id, caller.keyHash())`, never `getTask(id)` — same 404 for not-found and not-yours (BOLA defense).
+- All three of `emitter.onCompletion` / `onTimeout` / `onError` must run `releaseSlot` (unsubscribe + counter decrement). Skip any one and that path leaks forever.
+- See `/add-streaming-endpoint` for the procedure.
 {{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}
 

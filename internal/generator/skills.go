@@ -260,6 +260,17 @@ func skillCatalog() []skillDef {
 			CursorGlobs:  []string{"AIAgent/**/knowledge/**/*.java", "AIAgent/**/agent/PrimaryAgent.java"},
 		},
 		{
+			Name:         "add-streaming-endpoint",
+			Description:  "Add an SSE streaming endpoint with the canonical 5-part lifecycle (rate-limit, per-caller cap, BOLA-safe ownership, named listener with paired unsubscribe in all 3 emitter hooks).",
+			ArgumentHint: "[endpoint-name]",
+			Paths:        aiPaths,
+			BodyTmpl:     "skills/add-streaming-endpoint.body.md.tmpl",
+			RequiredModule: config.ModuleAIAgent,
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/protocol/**/*.java", "AIAgent/**/task/**/*.java"},
+		},
+		{
 			Name:         "add-a2a-skill",
 			Description:  "Expose an Agent-to-Agent (A2A) skill endpoint: JSON-RPC handler, async task manager wiring, A2AController registration.",
 			ArgumentHint: "[skill-name]",

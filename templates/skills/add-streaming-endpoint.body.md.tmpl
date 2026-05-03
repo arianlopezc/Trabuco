@@ -1,0 +1,54 @@
+# Add an SSE streaming endpoint
+
+Adds a Server-Sent Events endpoint that streams task or event updates to the caller. The 5-part lifecycle is non-negotiable — every part defends a specific silent failure mode.
+
+## Use this skill when
+
+- Adding a stream for a different resource type (e.g. `/conversations/{convId}/stream`, `/agents/{agentId}/stream`).
+- Streaming different event shapes (partial tokens, tool-call traces, ingestion-progress events) to authenticated callers.
+- Adding a parallel SSE surface alongside the shipped `/tasks/{taskId}/stream`.
+
+The shipped `StreamingController` is the reference implementation — copy its shape; do not improvise the lifecycle.
+
+## The 5-part lifecycle (copy this exactly)
+
+```
+1. rateLimiter.checkRateLimit(caller)                                 ← per-caller QPS
+2. activeStreamsByCaller.incrementAndGet() <= MAX_STREAMS_PER_CALLER  ← thread-pool defense
+3. taskManager.getTaskForOwner(id, caller.keyHash()).orElseThrow(404) ← BOLA defense
+4. Consumer<TaskEvent> listener = event -> { ... };                   ← NAMED variable (capture)
+5. emitter.onCompletion / onTimeout / onError → releaseSlot           ← unsubscribe + decrement
+   then taskManager.subscribe(id, listener);                          ← same instance
+```
+
+**Each step exists for a reason:**
+
+- **Step 1** rate-limits per caller. Without it, one partner opening connections in a loop saturates `RateLimiter.LIMITS`.
+- **Step 2** caps concurrent streams per caller (default 32). Each emitter pins a Tomcat HTTP thread for up to 60s; without the cap, one partner can exhaust the entire thread pool.
+- **Step 3** is the BOLA defense. `getTaskForOwner` returns `Optional.empty()` for BOTH not-found AND not-yours — same 404, no information leak about whether the task UUID exists.
+- **Step 4** captures the listener as a NAMED variable. Inline `taskManager.subscribe(id, e -> {...})` creates a lambda you can never unsubscribe — `unsubscribe(id, e -> {...})` would match a DIFFERENT lambda instance.
+- **Step 5** wires unsubscribe + counter decrement into ALL THREE terminal-state hooks. Skip any one and the SSE client that hits that path leaks its listener and slot forever.
+
+## Key steps (summary)
+
+1. **Add the controller method** — `@RestController` class, `@GetMapping` the new path, `@RequireScope("partner")`, returns `SseEmitter`.
+2. **Inject `TaskManager` + `RateLimiter`** via constructor (or whatever event source replaces `TaskManager` for non-task streams — the API contract is `subscribe(key, listener)` / `unsubscribe(key, listener)`).
+3. **Implement the 5-part lifecycle** by extracting helper methods so the entry-point body reads as a literal table of contents. The shipped `StreamingController` is the canonical reference.
+4. **Define `releaseSlot` as a `Runnable`** that calls `unsubscribe` AND decrements the per-caller counter. Wire it into `onCompletion`, `onTimeout`, `onError`.
+5. **Send initial state for already-terminal resources** — if the resource is already `completed`/`failed`, send one event and `emitter.complete()` (which fires `onCompletion` → `releaseSlot`).
+6. **Test the lifecycle** — capture the listener, simulate completion/timeout/error, assert `unsubscribe` ran AND the per-caller counter decremented.
+
+## Project conventions you must follow
+
+- **Capture the listener as a named variable.** Inline lambdas in `subscribe(...)` cannot be unsubscribed.
+- **Use `getTaskForOwner` (or equivalent owner-scoped lookup), not `getTask`.** Same 404 for not-found and not-yours.
+- **Default to `@RequireScope("partner")`.** Lower scope only with explicit justification — streaming endpoints are partner-tier in the shipped audit checklist.
+- **Always wire all three hooks.** `onCompletion` fires on normal client disconnect; `onTimeout` fires after the emitter's configured timeout (60 seconds default); `onError` fires on send failures.
+- **Decrement BEFORE removing the per-caller map entry.** When `remaining <= 0`, remove the entry to bound memory growth — this is the self-cleaning alternative to a `@Scheduled` reaper for the bounded `activeStreamsByCaller` map.
+- **Use explicit types.** `CallerIdentity caller`, `TaskRecord task`, `Consumer<TaskEvent> listener`, `AtomicInteger activeSlots` — `var` obscures the per-call lifecycle in code reviews of this density.
+- **Extract helpers when the entry point exceeds ~30 lines.** Each step in the 5-part lifecycle is one helper: `acquireSlotOrThrow`, `requireOwnedTask`, `buildListener`, `wireLifecycleHooks`, `dispatchInitialStateIfTerminal`. The entry point becomes a literal mirror of the lifecycle.
+- **Don't bypass `RequestContextClearingFilter`.** SSE responses use ASYNC dispatch — the clearing filter's `shouldNotFilterAsyncDispatch()` override (returning `false`) keeps `CallerContext` from leaking to the carrier thread on completion.
+
+## Full step-by-step
+
+See `.ai/prompts/add-streaming-endpoint.md` (full controller skeleton with helper-method extraction, the `releaseSlot` pattern, the 60-second emitter-timeout rationale, testing the lifecycle, and common mistakes from the C1 incident).

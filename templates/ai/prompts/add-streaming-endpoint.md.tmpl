@@ -1,0 +1,256 @@
+# Add an SSE streaming endpoint
+
+## Overview
+
+Server-Sent Events (SSE) endpoints stream task / event updates from the AIAgent module to authenticated callers. Each emitter pins a Tomcat HTTP thread for up to 60 seconds — without the right lifecycle wiring, one caller can exhaust the entire thread pool, leak listeners forever, or stream another caller's task data. The shipped `StreamingController` (`/tasks/{taskId}/stream`) is the reference; this prompt is the procedure for adding parallel SSE surfaces (per-conversation, per-agent, etc.) that preserve the same lifecycle invariants.
+
+This is the long-form companion to `/add-streaming-endpoint`.
+
+## Architecture
+
+```
+HTTP request thread
+        │
+        ▼
+controller.streamX(id)
+        │
+        ├─ 1. rateLimiter.checkRateLimit(caller)              ← per-caller QPS
+        ├─ 2. acquireSlotOrThrow(caller.keyHash)              ← MAX_STREAMS_PER_CALLER cap
+        ├─ 3. requireOwnedX(id, caller.keyHash)               ← BOLA-safe ownership
+        ├─ 4. SseEmitter emitter = new SseEmitter(60s)
+        ├─ 5. Consumer<TaskEvent> listener = event -> ...     ← NAMED variable
+        ├─ 6. wireLifecycleHooks(emitter, ..., listener)      ← onCompletion / onTimeout / onError
+        ├─ 7. taskManager.subscribe(id, listener)             ← SAME instance as unsubscribe
+        ├─ 8. dispatchInitialStateIfTerminal(emitter, x)
+        └─ return emitter
+
+ASYNC carrier thread (later, when an event arrives)
+        │
+        ▼
+listener.accept(event)
+        │
+        ├─ emitter.send(payload)
+        └─ if isTerminal(event.status) → emitter.complete()   ← fires onCompletion
+                                                                ↓
+                                                         releaseSlot:
+                                                           taskManager.unsubscribe(id, listener)
+                                                           activeSlots.decrementAndGet()
+                                                           if remaining <= 0 → remove caller entry
+```
+
+## Steps — full controller skeleton
+
+### 1. Add the controller class
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/protocol/Stream<Resource>Controller.java`
+
+```java
+package {{.GroupID}}.aiagent.protocol;
+
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import {{.GroupID}}.aiagent.security.RateLimiter;
+import {{.GroupID}}.aiagent.security.RequireScope;
+import {{.GroupID}}.aiagent.task.TaskEvent;
+import {{.GroupID}}.aiagent.task.TaskManager;
+import {{.GroupID}}.aiagent.task.TaskRecord;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+
+@RestController
+public class StreamConversationController {
+
+    private static final int MAX_STREAMS_PER_CALLER = 32;
+    private static final long EMITTER_TIMEOUT_MS = 60_000L;
+
+    private final TaskManager taskManager;
+    private final RateLimiter rateLimiter;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ConcurrentHashMap<String, AtomicInteger> activeStreamsByCaller = new ConcurrentHashMap<>();
+
+    public StreamConversationController(TaskManager taskManager, RateLimiter rateLimiter) {
+        this.taskManager = taskManager;
+        this.rateLimiter = rateLimiter;
+    }
+
+    @GetMapping("/conversations/{conversationId}/stream")
+    @RequireScope("partner")
+    public SseEmitter streamConversation(@PathVariable String conversationId) {
+        CallerIdentity caller = CallerContext.get();
+        rateLimiter.checkRateLimit(caller);
+
+        AtomicInteger activeSlots = acquireSlotOrThrow(caller.keyHash());
+        TaskRecord conversation = requireOwnedConversation(conversationId, caller.keyHash());
+
+        SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT_MS);
+        Consumer<TaskEvent> listener = buildListener(emitter, conversationId);
+        wireLifecycleHooks(emitter, conversationId, listener, caller.keyHash(), activeSlots);
+
+        taskManager.subscribe(conversationId, listener);
+        dispatchInitialStateIfTerminal(emitter, conversation);
+        return emitter;
+    }
+
+    private AtomicInteger acquireSlotOrThrow(String callerKeyHash) {
+        AtomicInteger active = activeStreamsByCaller
+            .computeIfAbsent(callerKeyHash, k -> new AtomicInteger(0));
+        if (active.incrementAndGet() > MAX_STREAMS_PER_CALLER) {
+            active.decrementAndGet();
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                "SSE stream cap exceeded (" + MAX_STREAMS_PER_CALLER + " concurrent per caller)");
+        }
+        return active;
+    }
+
+    private TaskRecord requireOwnedConversation(String conversationId, String callerKeyHash) {
+        return taskManager.getTaskForOwner(conversationId, callerKeyHash)
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Conversation not found"));
+    }
+
+    private Consumer<TaskEvent> buildListener(SseEmitter emitter, String conversationId) {
+        return event -> {
+            try {
+                Map<String, Object> payload = Map.of(
+                    "conversation_id", event.taskId(),
+                    "status", event.status(),
+                    "result", event.result() != null ? event.result() : "",
+                    "timestamp", event.timestamp().toString());
+                emitter.send(SseEmitter.event()
+                    .name(event.status())
+                    .data(objectMapper.writeValueAsString(payload)));
+                if (isTerminal(event.status())) {
+                    emitter.complete();              // fires onCompletion → releaseSlot
+                }
+            } catch (Exception e) {
+                emitter.completeWithError(e);        // fires onError → releaseSlot
+            }
+        };
+    }
+
+    private void wireLifecycleHooks(SseEmitter emitter,
+                                    String conversationId,
+                                    Consumer<TaskEvent> listener,
+                                    String callerKeyHash,
+                                    AtomicInteger activeSlots) {
+        Runnable releaseSlot = () -> {
+            taskManager.unsubscribe(conversationId, listener);   // SAME instance
+            int remaining = activeSlots.decrementAndGet();
+            if (remaining <= 0) {
+                activeStreamsByCaller.remove(callerKeyHash);
+            }
+        };
+        emitter.onCompletion(releaseSlot);
+        emitter.onTimeout(() -> {
+            releaseSlot.run();
+            emitter.complete();
+        });
+        emitter.onError(t -> releaseSlot.run());
+    }
+
+    private void dispatchInitialStateIfTerminal(SseEmitter emitter, TaskRecord conversation) {
+        if (!isTerminal(conversation.getStatus())) {
+            return;
+        }
+        try {
+            Map<String, Object> payload = Map.of(
+                "conversation_id", conversation.getTaskId(),
+                "status", conversation.getStatus(),
+                "result", conversation.getResult() != null ? conversation.getResult() : "");
+            emitter.send(SseEmitter.event()
+                .name(conversation.getStatus())
+                .data(objectMapper.writeValueAsString(payload)));
+            emitter.complete();
+        } catch (Exception e) {
+            emitter.completeWithError(e);
+        }
+    }
+
+    private static boolean isTerminal(String status) {
+        return "completed".equals(status) || "failed".equals(status);
+    }
+}
+```
+
+### 2. Why this shape
+
+The entry-point method (`streamConversation`) is the 5-part lifecycle as a list of named operations. Each helper does one thing and is named for what it defends:
+
+- **`acquireSlotOrThrow`** — thread-pool defense. Named to make the throw-on-cap behavior visible at the call site.
+- **`requireOwnedConversation`** — BOLA defense. The "require" prefix signals "throws on not-found-or-not-yours."
+- **`buildListener`** — the Spring-AI/Trabuco `Consumer<TaskEvent>` contract; encapsulated so the listener can be tested independently of the controller.
+- **`wireLifecycleHooks`** — couples the unsubscribe + counter-decrement to all three terminal states. Keeps the `releaseSlot` Runnable visible.
+- **`dispatchInitialStateIfTerminal`** — handles the "task already done" race; isolated so it can short-circuit cleanly via the early `return`.
+- **`isTerminal`** — extracted predicate; used in two places. Keeps the magic strings (`"completed"`, `"failed"`) in one place.
+
+### 3. Test the lifecycle
+
+The single most valuable test is "after the emitter completes, the listener is unsubscribed." Mockito-style:
+
+```java
+@Test
+void onEmitterCompletion_unsubscribesListener_andDecrementsSlot() throws Exception {
+    // Arrange — caller owns the conversation, status is in-flight
+    TaskRecord ownConversation = new TaskRecord("conv-1", "caller-key-hash");
+    when(taskManager.getTaskForOwner("conv-1", "caller-key-hash"))
+        .thenReturn(Optional.of(ownConversation));
+    setCallerContext("caller-key-hash");
+
+    // Act — open a stream, then trigger completion
+    SseEmitter emitter = controller.streamConversation("conv-1");
+    emitter.complete();  // fires onCompletion → releaseSlot
+
+    // Assert — the SAME listener instance was unsubscribed
+    ArgumentCaptor<Consumer<TaskEvent>> captor = ArgumentCaptor.forClass(Consumer.class);
+    verify(taskManager).subscribe(eq("conv-1"), captor.capture());
+    verify(taskManager).unsubscribe("conv-1", captor.getValue());
+}
+```
+
+The `captor.getValue()` matters: it asserts the SAME `Consumer<TaskEvent>` instance was unsubscribed. The C1 regression in v1.12.3 was three separate inline lambdas that each caused `unsubscribe` to no-op silently. Capturing the listener and asserting equality catches that.
+
+A second test — for the per-caller cap — opens 33 streams in a loop and asserts the 33rd throws `TOO_MANY_REQUESTS` while the per-caller counter stays at 32.
+
+## Project conventions you must follow
+
+- **Capture the listener as a named variable.** Inline lambdas in `subscribe(...)` cannot be unsubscribed.
+- **Use `getTaskForOwner` (or equivalent owner-scoped lookup), not `getTask`.** Same 404 for not-found and not-yours — no info leak.
+- **Default to `@RequireScope("partner")`.** Streaming endpoints are partner-tier in the shipped audit checklist.
+- **Always wire all three hooks.** `onCompletion` fires on normal client disconnect; `onTimeout` fires after the emitter's configured timeout (60 seconds default); `onError` fires on send failures.
+- **Decrement BEFORE removing the per-caller map entry.** `remaining <= 0` triggers `activeStreamsByCaller.remove(callerKeyHash)` — the self-cleaning alternative to a `@Scheduled` reaper for SSE endpoints (connections are short-lived).
+- **Use explicit types.** `CallerIdentity`, `TaskRecord`, `Consumer<TaskEvent>`, `AtomicInteger` — `var` obscures the per-call lifecycle in dense code.
+- **Extract helpers when the entry point exceeds ~30 lines.** Each lifecycle step is one helper. The entry point becomes a 12-line table of contents for the 5-part lifecycle.
+- **Don't bypass `RequestContextClearingFilter`.** SSE responses use ASYNC dispatch — the clearing filter's `shouldNotFilterAsyncDispatch()` override (returning `false`) keeps `CallerContext` from leaking to the carrier thread on completion. See `JAVA_CODE_QUALITY` §6.1.1.
+
+## Common mistakes
+
+- **Inline `taskManager.subscribe(id, e -> {...})`** — the lambda is a fresh instance the controller can't reach later. `unsubscribe(id, e -> {...})` matches a DIFFERENT instance, never removes anything. Listeners leak forever (canonical C1 regression).
+- **Skipping `unsubscribe` in `onTimeout`** — the 60-second timeout is the most common terminal state for slow consumers. Skip it and idle-timed-out streams leak listeners on every disconnect.
+- **Using `getTask(id)` instead of `getTaskForOwner(id, callerKeyHash)`** — BOLA. Any caller with a partner key can stream another caller's task by guessing/scraping the task UUID. The shipped pattern returns `Optional.empty()` for both not-found AND not-yours so 404 leaks no information.
+- **Forgetting to decrement `active` on terminal states** — the per-caller counter pins to its peak forever. After 32 streams the caller hits 429 indefinitely.
+- **Skipping the rate limit / per-caller cap** — DoS vector. Each emitter pins a Tomcat HTTP thread for up to 60 seconds; one partner opening connections in a loop can pin the entire pool.
+- **Forgetting `emitter.complete()` from the listener body on terminal events** — the emitter stays open until the 60-second timeout, holding the HTTP thread. The terminal event has already been sent; closing the emitter is the conclusion of the stream contract.
+- **Long inline `streamX` method** — the 5-part lifecycle is dense; reviewers struggle to verify each part in a 70-line method. Extract helpers so the entry point reads as a list of operations.
+- **Using `var` for `CallerIdentity` / `TaskRecord` / `Consumer<TaskEvent>`** — these are the load-bearing types. Explicit names help reviewers verify the BOLA-safe ownership and the listener-instance identity.
+
+## Security checklist (before merging)
+
+- [ ] `@RequireScope("partner")` (or stricter) on the streaming endpoint.
+- [ ] Rate-limit + per-caller cap fire BEFORE the emitter is constructed.
+- [ ] Ownership check uses `getTaskForOwner(id, caller.keyHash())`, returns 404 for both not-found and not-yours.
+- [ ] Listener is captured as a NAMED `Consumer<TaskEvent>` variable (not inline).
+- [ ] `releaseSlot` runs in `onCompletion`, `onTimeout`, AND `onError`.
+- [ ] `releaseSlot` calls `taskManager.unsubscribe(id, listener)` with the SAME listener instance, then decrements the counter, then removes the per-caller map entry when `remaining <= 0`.
+- [ ] Tests cover: completion path unsubscribes, timeout path unsubscribes, error path unsubscribes, 33rd concurrent stream throws 429.
+
+> **Reference**: `.ai/prompts/JAVA_CODE_QUALITY.md` §6.1.4 documents the canonical capture-listener pattern. The shipped `StreamingController` (`/tasks/{taskId}/stream`) is the worked example.

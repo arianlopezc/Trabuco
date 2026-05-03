@@ -84,7 +84,7 @@ Run each grep across the changed files. Every match is a finding unless explicit
   rg -nP 'VectorStoreDocumentRetriever\.builder\(' AIAgent/src/main/java
   # Anything outside TenantFilteringDocumentRetriever.java is a finding.
   ```
-- **SSE subscriber leak** — `taskManager.subscribe(...)` without a paired `taskManager.unsubscribe(...)` in `emitter.onCompletion` / `onTimeout` / `onError`. Listeners + closures retained for life of the registry entry; after `SUBSCRIBERS_MAX_PER_TASK` reconnects (32) new SSE clients are silently dropped. The listener variable must be CAPTURED before subscribing so the same instance can be unsubscribed.
+- **SSE subscriber leak or per-caller slot leak** — `taskManager.subscribe(...)` without a paired `taskManager.unsubscribe(...)` in ALL THREE of `emitter.onCompletion` / `onTimeout` / `onError`, OR a per-caller stream counter (e.g. `activeStreamsByCaller`) that increments without a paired decrement on every terminal-state path. Listeners + closures retained for life of the registry entry; after `SUBSCRIBERS_MAX_PER_TASK` reconnects (32) new SSE clients are silently dropped. Slot leaks 429 the caller permanently after 32 streams. Listener variable MUST be CAPTURED as a named `Consumer<TaskEvent>` before subscribing so the same instance can be unsubscribed. See `/add-streaming-endpoint` for the canonical 5-part lifecycle.
   ```bash
   rg -lP 'taskManager\.subscribe\(' AIAgent/src/main/java | \
     xargs -I{} sh -c 'rg -L "taskManager\.unsubscribe" {} && echo "MISSING unsubscribe in {}"'

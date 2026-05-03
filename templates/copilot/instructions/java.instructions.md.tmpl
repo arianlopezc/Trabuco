@@ -147,6 +147,14 @@ executor.submit(() -> {
 ```
 
 Skip this and `VectorKnowledgeRetriever`'s tenant filter falls back to anonymous identity — cross-tenant data leak.
+
+## Streaming endpoints (SSE in AIAgent)
+
+`StreamingController` (`/tasks/{taskId}/stream`) is the canonical reference for the 5-part SSE lifecycle: rate-limit → per-caller cap → `getTaskForOwner` (BOLA-safe) → named `Consumer<TaskEvent>` listener → paired unsubscribe in all three of `onCompletion` / `onTimeout` / `onError`. New streaming endpoints must mirror this shape.
+
+- Inline `subscribe(id, e -> {...})` cannot be unsubscribed — capture the listener as a named variable.
+- `getTask(id)` is a BOLA regression; use `getTaskForOwner(id, caller.keyHash())`.
+- See `/add-streaming-endpoint` for the procedure.
 {{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}
 
