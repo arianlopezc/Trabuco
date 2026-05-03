@@ -18,6 +18,12 @@ func (g *Generator) generateDocs() error {
 		return err
 	}
 
+	if g.config.HasModule(config.ModuleAPI) || g.config.HasModule(config.ModuleAIAgent) {
+		if err := g.writeTemplate("docs/auth.md.tmpl", "docs/auth.md"); err != nil {
+			return err
+		}
+	}
+
 	// F-INFRA-01: Maven Wrapper. Ships {@code only-script} distribution
 	// (no embedded jar) so the bootstrap script downloads the pinned
 	// Maven distribution at first invocation. Pinning the Maven version
@@ -117,6 +123,16 @@ func (g *Generator) generateDocs() error {
 		if err := g.writeTemplate("github/workflows/ci.yml.tmpl", ".github/workflows/ci.yml"); err != nil {
 			return err
 		}
+		if err := g.writeTemplate("github/dependabot.yml.tmpl", ".github/dependabot.yml"); err != nil {
+			return err
+		}
+		if err := g.writeTemplate("github/workflows/security-audit.yml.tmpl", ".github/workflows/security-audit.yml"); err != nil {
+			return err
+		}
+	}
+
+	if err := g.writeTemplate("dependency-check/suppressions.xml.tmpl", ".dependency-check/suppressions.xml"); err != nil {
+		return err
 	}
 
 	// Generate Claude Code specific files when Claude is selected

@@ -1,0 +1,77 @@
+package {{.GroupID}}.aiagent.knowledge;
+
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.rag.Query;
+import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+
+import java.util.List;
+
+/**
+ * Spring AI {@link DocumentRetriever} that applies a per-request
+ * {@code tenant_id} filter derived from {@link CallerContext}.
+ *
+ * <h2>Why this exists</h2>
+ *
+ * <p>Spring AI's stock {@link
+ * org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever}
+ * accepts a static {@code FilterExpression} at construction time. The
+ * primary agent's RAG advisor is built once and reused across requests;
+ * a static filter cannot bind to the current caller's tenant — it would
+ * either leak across tenants (no filter) or pin to one tenant for life.
+ * This retriever resolves the filter <i>per call</i> by reading
+ * {@link CallerContext#get()} inside {@link #retrieve(Query)}.
+ *
+ * <p>Mirrors the contract enforced by {@link VectorKnowledgeRetriever}
+ * for the {@code @Tool}-driven path. Both retrievers must apply the
+ * same filter or the central tenant-isolation guarantee leaks at the
+ * advisor surface.
+ *
+ * <h2>Composition with FencingDocumentRetriever</h2>
+ *
+ * <p>This retriever is the inner layer; {@link FencingDocumentRetriever}
+ * wraps it before the chunks reach the advisor. Tenant filtering must
+ * happen first (otherwise we'd fence cross-tenant content), then
+ * provenance fencing wraps what remains.
+ *
+ * <h2>Tenant isolation contract</h2>
+ *
+ * <p>Every {@link SearchRequest} carries
+ * {@code FilterExpressionBuilder.eq("tenant_id", caller.tenantId())}.
+ * The tenant value comes from {@link CallerIdentity#tenantId()} — the
+ * API-key hash for the legacy path, the JWT {@code tenant_id} claim
+ * for the OIDC path. {@code DocumentIngestionService} stamps the same
+ * field server-side at write time, and pgvector / Qdrant / Mongo Atlas
+ * each maintain a payload index on it. Cross-tenant similarity matches
+ * are filtered out at the vector store, not in application code.
+ */
+public class TenantFilteringDocumentRetriever implements DocumentRetriever {
+
+    private static final String TENANT_ID_KEY = "tenant_id";
+
+    private final VectorStore vectorStore;
+
+    private final int topK;
+
+    public TenantFilteringDocumentRetriever(VectorStore vectorStore, int topK) {
+        this.vectorStore = vectorStore;
+        this.topK = topK;
+    }
+
+    @Override
+    public List<Document> retrieve(Query query) {
+        CallerIdentity caller = CallerContext.get();
+        FilterExpressionBuilder filter = new FilterExpressionBuilder();
+        SearchRequest request = SearchRequest.builder()
+            .query(query.text())
+            .topK(topK)
+            .filterExpression(filter.eq(TENANT_ID_KEY, caller.tenantId()).build())
+            .build();
+        List<Document> results = vectorStore.similaritySearch(request);
+        return results == null ? List.of() : results;
+    }
+}

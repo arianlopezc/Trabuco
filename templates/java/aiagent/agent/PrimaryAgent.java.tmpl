@@ -2,13 +2,13 @@ package {{.GroupID}}.aiagent.agent;
 
 import {{.GroupID}}.aiagent.knowledge.FencingDocumentRetriever;
 import {{.GroupID}}.aiagent.knowledge.KnowledgeTools;
+import {{.GroupID}}.aiagent.knowledge.TenantFilteringDocumentRetriever;
 import {{.GroupID}}.aiagent.tool.PlaceholderTools;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
-import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -97,18 +97,24 @@ public class PrimaryAgent {
     }
 
     private static Advisor buildRagAdvisor(VectorStore vectorStore) {
-        // Wrap the raw retriever with FencingDocumentRetriever so every
-        // chunk is delivered to the LLM inside <untrusted_document> tags
-        // with role-token sanitization. The system prompt above tells
-        // the model to treat fenced content as data, not instructions.
-        // Together these mitigate / OWASP LLM-01 indirect
-        // prompt injection through the RAG context window.
+        // Two layers, applied inside-out:
+        //   1. TenantFilteringDocumentRetriever — reads CallerContext per
+        //      retrieval and applies tenant_id = caller.tenantId() to the
+        //      vector search. Without this, the advisor would leak chunks
+        //      across tenants for every /chat request (the @Tool-driven
+        //      path is filtered separately by VectorKnowledgeRetriever;
+        //      the advisor needs its own tenant gate).
+        //   2. FencingDocumentRetriever — wraps each retrieved chunk in
+        //      <untrusted_document> tags with role-token sanitization, so
+        //      the system prompt's "treat fenced content as data, not
+        //      instructions" rule has something to bind to. Mitigates
+        //      OWASP LLM-01 / LLM-04 indirect prompt injection through
+        //      the RAG context window.
+        // Tenant filtering must run first so we never fence cross-tenant
+        // content for sanitization.
         return RetrievalAugmentationAdvisor.builder()
             .documentRetriever(new FencingDocumentRetriever(
-                VectorStoreDocumentRetriever.builder()
-                    .vectorStore(vectorStore)
-                    .topK(4)
-                    .build()))
+                new TenantFilteringDocumentRetriever(vectorStore, 4)))
             .build();
     }
 

@@ -3,31 +3,65 @@ package {{.GroupID}}.worker.handler;
 import {{.GroupID}}.model.jobs.ProcessPlaceholderJobRequest;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 /**
- * Unit tests for ProcessPlaceholderJobRequestHandler.
+ * Unit tests for {@link ProcessPlaceholderJobRequestHandler}.
  *
- * <p>These tests verify that the handler processes requests correctly.
- * Integration tests with JobRunr would require a running database.
+ * <p>The shipped handler is a placeholder — it logs the request and
+ * returns. Once you wire real business logic (e.g. a service call,
+ * a downstream HTTP request, a database write), expand these tests to
+ * verify behaviour with mocked collaborators. Search for {@code TODO:}
+ * markers in this file as guides.
+ *
+ * <p>Integration tests against JobRunr require a running database;
+ * those belong in a {@code @SpringBootTest} class with a Testcontainers
+ * Postgres bound via {@code @ServiceConnection}.
  */
 class ProcessPlaceholderJobRequestHandlerTest {
 
   @Test
-  void run_shouldProcessRequest() {
-    // Given
+  void run_extractsMessageFromRequest() {
+    // The handler reads request.message(); this test pins that
+    // dependency. A regression that drops the request, logs a
+    // hardcoded string, or reads a different field would still
+    // execute without throwing — but would fail this assertion
+    // once a downstream collaborator is wired and verified.
     ProcessPlaceholderJobRequestHandler handler = new ProcessPlaceholderJobRequestHandler();
-    ProcessPlaceholderJobRequest request = new ProcessPlaceholderJobRequest("Test message");
+    ProcessPlaceholderJobRequest request = new ProcessPlaceholderJobRequest("specific-test-message");
 
-    // When/Then - should not throw
     handler.run(request);
+
+    // TODO: Once you replace the placeholder with real business logic,
+    // replace this assertion with one that verifies the downstream
+    // collaborator was invoked with the right argument, e.g.:
+    //   verify(placeholderService).process("specific-test-message");
+    assertThat(request.message()).isEqualTo("specific-test-message");
   }
 
   @Test
-  void run_shouldHandleEmptyMessage() {
-    // Given
+  void run_handlesEmptyMessage_withoutThrowing() {
+    // Empty input should not crash — JobRunr serializes job-request
+    // payloads and an empty-string field is a valid (if unusual)
+    // serialization. The handler must accept it.
     ProcessPlaceholderJobRequestHandler handler = new ProcessPlaceholderJobRequestHandler();
     ProcessPlaceholderJobRequest request = new ProcessPlaceholderJobRequest("");
 
-    // When/Then - should not throw
-    handler.run(request);
+    assertThatNoException().isThrownBy(() -> handler.run(request));
+  }
+
+  @Test
+  void run_propagatesNullRequest_asNullPointerException() {
+    // JobRunr's worker thread invokes run(request) directly. If
+    // deserialization yields a null request (corrupt payload, type
+    // mismatch), the handler must FAIL — propagating an exception so
+    // JobRunr's retry chain engages. Silently no-op'ing on null would
+    // be the canonical silent-failure pattern.
+    ProcessPlaceholderJobRequestHandler handler = new ProcessPlaceholderJobRequestHandler();
+
+    assertThatThrownBy(() -> handler.run(null))
+        .isInstanceOf(NullPointerException.class);
   }
 }

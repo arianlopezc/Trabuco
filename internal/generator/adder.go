@@ -59,17 +59,25 @@ func (a *ModuleAdder) GetConfig() *config.ProjectConfig {
 	return a.config
 }
 
-// Add adds a module and its dependencies to the project
-func (a *ModuleAdder) Add(module string, database, nosqlDatabase, messageBroker string) error {
+// Add adds a module and its dependencies to the project.
+//
+// All post-backup mutations are wrapped by a deferred restore guard.
+// Without it, a failure midway through (e.g. updateParentPOM succeeded
+// but updateDockerCompose failed, or SaveMetadata succeeded but
+// regenerateDocs failed) would leave the project wedged: new module
+// directories on disk, parent POM listing them, but .trabuco.json or
+// docs out of sync. The defer ensures every error path rolls back to
+// the pre-add snapshot.
+func (a *ModuleAdder) Add(module string, database, nosqlDatabase, messageBroker string) (err error) {
 	green := color.New(color.FgGreen)
 
 	// Validate module can be added
-	if err := a.ValidateCanAdd(module); err != nil {
+	if err = a.ValidateCanAdd(module); err != nil {
 		return err
 	}
 
 	// Validate options for specific modules
-	if err := a.validateOptions(module, database, nosqlDatabase, messageBroker); err != nil {
+	if err = a.validateOptions(module, database, nosqlDatabase, messageBroker); err != nil {
 		return err
 	}
 
@@ -82,73 +90,82 @@ func (a *ModuleAdder) Add(module string, database, nosqlDatabase, messageBroker 
 
 	// Backup existing files
 	filesToBackup := GetFilesToBackup(module)
-	if err := a.backup.BackupAll(filesToBackup); err != nil {
+	if err = a.backup.BackupAll(filesToBackup); err != nil {
 		return fmt.Errorf("failed to create backup: %w", err)
 	}
+
+	// Restore on any error past this point. Covers the addModule loop
+	// AND every sequential mutation that follows (parent POM, docker-
+	// compose, Model/Shared/API modules, metadata, docs). Cleanup of
+	// the backup itself runs only on success at the bottom.
+	defer func() {
+		if err != nil {
+			if restoreErr := a.backup.Restore(); restoreErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to restore backup: %v\n", restoreErr)
+				a.backup.PrintRestoreInstructions()
+			}
+		}
+	}()
 
 	// Update config with new options
 	a.updateConfig(module, database, nosqlDatabase, messageBroker)
 
 	// Add each module
 	for _, mod := range allModules {
-		if err := a.addModule(mod); err != nil {
-			// Restore on failure
-			if restoreErr := a.backup.Restore(); restoreErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to restore backup: %v\n", restoreErr)
-				a.backup.PrintRestoreInstructions()
-			}
+		if err = a.addModule(mod); err != nil {
 			return fmt.Errorf("failed to add %s: %w", mod, err)
 		}
 		green.Printf("  \u2713 Created %s module\n", mod)
 	}
 
 	// Update parent POM (modules and properties)
-	if err := a.updateParentPOM(allModules, messageBroker); err != nil {
+	if err = a.updateParentPOM(allModules, messageBroker); err != nil {
 		return fmt.Errorf("failed to update parent POM: %w", err)
 	}
 	green.Println("  \u2713 Updated pom.xml")
 
 	// Update docker-compose if needed
-	if err := a.updateDockerCompose(module, database, nosqlDatabase, messageBroker); err != nil {
+	if err = a.updateDockerCompose(module, database, nosqlDatabase, messageBroker); err != nil {
 		return fmt.Errorf("failed to update docker-compose: %w", err)
 	}
 
 	// Update Model module if needed
-	if err := a.updateModelModule(module); err != nil {
+	if err = a.updateModelModule(module); err != nil {
 		return fmt.Errorf("failed to update Model module: %w", err)
 	}
 
 	// Update Shared module if needed (when adding datastore)
-	if err := a.updateSharedModule(module); err != nil {
+	if err = a.updateSharedModule(module); err != nil {
 		return fmt.Errorf("failed to update Shared module: %w", err)
 	}
 
 	// Update API module if needed (to include new packages in ComponentScan)
-	if err := a.updateAPIModule(module); err != nil {
+	if err = a.updateAPIModule(module); err != nil {
 		return fmt.Errorf("failed to update API module: %w", err)
 	}
 
 	// Update metadata
 	a.updateMetadata(allModules, database, nosqlDatabase, messageBroker)
-	if err := config.SaveMetadata(a.projectPath, a.metadata); err != nil {
+	if err = config.SaveMetadata(a.projectPath, a.metadata); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 	green.Println("  ✓ Updated .trabuco.json")
 
 	// Regenerate documentation files (README.md and AI agent files)
-	if err := a.regenerateDocs(); err != nil {
+	if err = a.regenerateDocs(); err != nil {
 		return fmt.Errorf("failed to regenerate documentation: %w", err)
 	}
 	green.Println("  ✓ Updated documentation files")
 
-	// Cleanup old backups first, then current backup after successful operation
-	if err := a.backup.CleanupOldBackups(); err != nil {
-		// Non-fatal warning
-		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup old backups: %v\n", err)
+	// Cleanup old backups first, then current backup after successful
+	// operation. Cleanup-warning errors are intentionally NOT assigned
+	// to `err` — a backup-cleanup failure must not trigger restore
+	// (which would undo the successful Add).
+	if cleanupErr := a.backup.CleanupOldBackups(); cleanupErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup old backups: %v\n", cleanupErr)
 	}
-	if err := a.backup.Cleanup(); err != nil {
-		// Non-fatal warning
-		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup backup: %v\n", err)
+	if cleanupErr := a.backup.Cleanup(); cleanupErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup backup: %v\n", cleanupErr)
 	}
 
 	return nil

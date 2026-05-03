@@ -17,13 +17,19 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>{{.JavaVersion}}</maven.compiler.source>
         <maven.compiler.target>{{.JavaVersion}}</maven.compiler.target>
-        <spring-boot.version>3.4.2</spring-boot.version>
-        <!-- Mockito: override Spring Boot's managed version (5.14.2) which does
-             not support Java 24/25 class-file bytecode. Mockito 5.17+ adds Java
-             25 support; pinning to a newer 5.x keeps mocks working when the
-             developer's runtime JVM is newer than {{.JavaVersion}}. -->
+        <!-- Spring Boot 3.5.x ships Spring Framework 6.2.x with ASM 9.8,
+             which adds Java 25 class-file support (major version 69).
+             3.4.2 used ASM 9.7.x and rejected Java 25 test classes during
+             classpath scan with "Incompatible class format". 3.5.x is
+             the minimum baseline for the JDK 25 entry of the supported
+             matrix. -->
+        <spring-boot.version>3.5.5</spring-boot.version>
+        <!-- Mockito: override Spring Boot's managed version which lags
+             on Java 25 class-file bytecode. Mockito 5.17+ adds Java 25
+             support; pinning to a newer 5.x keeps mocks working when
+             the developer's runtime JVM is newer than {{.JavaVersion}}. -->
         <mockito.version>5.19.0</mockito.version>
-        <testcontainers.version>2.0.3</testcontainers.version>
+        <testcontainers.version>1.20.5</testcontainers.version>
 {{- if or (.HasModule "Jobs") (.HasModule "Worker")}}
         <jobrunr.version>8.4.0</jobrunr.version>
 {{- end}}
@@ -334,5 +340,57 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- OWASP dependency-check: NVD-backed CVE scanner. Off by
+             default because the first run downloads ~1 GB of NVD data
+             and CVE scans add minutes to the build. The scheduled
+             `.github/workflows/security-audit.yml` runs `mvn -Psecurity-audit
+             verify` weekly. Operators can run it locally any time:
+             `mvn -Psecurity-audit verify -DnvdApiKey=$NVD_API_KEY`.
+             Set NVD_API_KEY (free, https://nvd.nist.gov/developers/request-an-api-key)
+             to dramatically speed up the database refresh — without it the
+             rate-limited public endpoint serves the data 30x slower. -->
+        <profile>
+            <id>security-audit</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>11.1.0</version>
+                        <configuration>
+                            <!-- Fail on CVSS >= 7 (HIGH or CRITICAL).
+                                 Lowering this catches more issues at the
+                                 cost of more triage. The suppressions
+                                 file is the documented exception path. -->
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <suppressionFile>${maven.multiModuleProjectDirectory}/.dependency-check/suppressions.xml</suppressionFile>
+                            <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+                            <!-- Cache the NVD database under .m2 so weekly
+                                 CI runs don't re-download. -->
+                            <dataDirectory>${user.home}/.m2/dependency-check-data</dataDirectory>
+                            <!-- Skip dev/test scopes — they don't ship
+                                 with production jars. -->
+                            <skipTestScope>true</skipTestScope>
+                            <skipProvidedScope>true</skipProvidedScope>
+                            <!-- HTML + JSON outputs for CI artifact upload. -->
+                            <formats>
+                                <format>HTML</format>
+                                <format>JSON</format>
+                            </formats>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>aggregate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

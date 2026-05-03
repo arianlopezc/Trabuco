@@ -5,6 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @ComponentScan(basePackages = {
@@ -14,6 +15,7 @@ import org.springframework.context.annotation.ComponentScan;
     "{{.GroupID}}.nosqldatastore"{{end}}
 })
 @EnableConfigurationProperties(AgentAuthProperties.class)
+@EnableScheduling
 public class {{.ProjectNamePascal}}AIAgentApplication {
 
     public static void main(String[] args) {

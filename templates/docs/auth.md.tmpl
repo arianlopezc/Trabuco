@@ -1,0 +1,175 @@
+# Authentication — {{.ProjectNamePascal}}
+
+Trabuco generates **OAuth2 Resource Server** auth scaffolding for the API{{- if .HasModule "AIAgent"}} and AIAgent{{- end}} module(s). It ships **dormant by default**: the code is wired, the filter chain is built, but JWT validation only activates when you flip `trabuco.auth.enabled=true` and supply the OIDC discovery values.
+
+This document covers:
+- [How the dual-chain pattern works](#dual-chain-design)
+- [Activation: required environment variables](#activation)
+- [Auth modes (JWT-only, API-key-only, hybrid)](#auth-modes)
+- [Per-provider recipes](#per-provider-recipes)
+- [Scope mapping and authorization](#scope-mapping-and-authorization)
+- [Troubleshooting](#troubleshooting)
+
+## Dual-chain design
+
+`SecurityConfig` declares two `SecurityFilterChain` beans gated by `@ConditionalOnProperty("trabuco.auth.enabled")`:
+
+| Property value | Active chain | Purpose |
+|---|---|---|
+| `true` | `oauth2FilterChain` | OAuth2 Resource Server, JWT validation, RFC 7807 problem-details on 401/403 |
+| `false` | `permitAllFilterChain` | Local development; all paths reachable without auth |
+| _unset_ | (none — boot fails) | `validateAuthDecisionMade` `@PostConstruct` guard refuses to start |
+
+The unset case is deliberate: a service must make an explicit auth decision. Forgetting to set the flag in production would otherwise silently ship a permissive chain.
+
+When `trabuco.auth.enabled=true` is set, `validateAuthDecisionMade` further requires:
+
+- **Issuer**: `OIDC_ISSUER_URI` (mapped to `spring.security.oauth2.resourceserver.jwt.issuer-uri`) — recommended, enables automatic discovery + issuer validation.
+- **Or JWK Set URL**: `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` — signature validation only, useful when discovery isn't available.
+- **Audience**: `OIDC_AUDIENCE` (mapped to `spring.security.oauth2.resourceserver.jwt.audiences`) — non-empty. An empty list silently disables Spring Boot's audience validator and admits sister-service tokens (token-confusion class).
+
+## Activation
+
+```bash
+export TRABUCO_AUTH_ENABLED=true
+export OIDC_ISSUER_URI=https://your-tenant.auth0.com/
+export OIDC_AUDIENCE=https://api.your-service.com
+```
+
+That's the minimum. Additional optional knobs:
+
+| Env var | Purpose | Default |
+|---|---|---|
+| `OIDC_JWK_SET_URI` | Skip discovery, point directly at JWKS | derived from issuer |
+| `OIDC_CLOCK_SKEW_SECONDS` | Tolerance for clock drift (typical: 30–60s) | 60 |
+| `OIDC_REQUIRED_CLAIMS` | Comma-separated claims that MUST be present | (none) |
+
+## Auth modes
+
+{{- if .HasModule "AIAgent"}}
+The AIAgent module ships a legacy API-key path **alongside** the JWT path. Three modes are supported:
+
+| Mode | `trabuco.auth.enabled` | `app.aiagent.api-key.enabled` | When to use |
+|---|---|---|---|
+| **JWT-only** | `true` | `false` | New deployments, service-to-service over JWT |
+| **API-key-only** | `false` | `true` | Legacy clients (long-lived API keys), pre-OIDC migration |
+| **Hybrid** | `true` | `true` | Migration window: accept both during cutover |
+
+### Hybrid mode behavior
+
+In hybrid mode, `ApiKeyAuthFilter` runs first (added before `BearerTokenAuthenticationFilter`):
+
+1. If the bearer matches a registered API key hash → `ApiKeyAuthFilter` populates `CallerContext` and the request continues.
+2. If the bearer is **not** a registered API key, `ApiKeyAuthFilter` delegates to the chain so `BearerTokenAuthenticationFilter` can attempt JWT validation.
+3. If neither path authenticates, the OAuth2 chain returns 401 via `AuthProblemDetailHandler`.
+
+`ScopeEnforcer.effectiveCaller` then takes the higher tier of the two paths — so a partner-tier API key combined with a public-scope JWT is treated as `partner`.
+{{- else}}
+This module ships JWT-only auth. Two modes:
+
+| Mode | `trabuco.auth.enabled` | When to use |
+|---|---|---|
+| **JWT-only** | `true` | Production deployments |
+| **Permissive (dev)** | `false` | Local development |
+{{- end}}
+
+## Per-provider recipes
+
+### Auth0
+
+```bash
+export OIDC_ISSUER_URI=https://YOUR-TENANT.auth0.com/
+export OIDC_AUDIENCE=https://api.your-service.com
+```
+
+Auth0 emits scopes in the `scope` claim as a space-separated string. `JwtAuthenticationConverter` handles both string and list forms. Use `@PreAuthorize("hasAuthority('SCOPE_read:items')")` to guard endpoints.
+
+### Okta
+
+```bash
+export OIDC_ISSUER_URI=https://YOUR-DOMAIN.okta.com/oauth2/default
+export OIDC_AUDIENCE=api://your-api-id
+```
+
+Okta supports both `scp` (CIBA / OIDC) and `scope` claims; if your authorization server emits `scp`, override the claim name in `JwtAuthenticationConverter` (search for `setAuthoritiesClaimName`).
+
+### AWS Cognito
+
+```bash
+export OIDC_ISSUER_URI=https://cognito-idp.<region>.amazonaws.com/<user-pool-id>
+export OIDC_AUDIENCE=<app-client-id>
+```
+
+Cognito does not natively emit an `aud` claim for User Pool access tokens — it uses `client_id` instead. You may need a custom audience validator. Application docs in `validateAuthDecisionMade` will warn at startup if the audience is missing.
+
+### Keycloak
+
+```bash
+export OIDC_ISSUER_URI=https://your-keycloak.com/realms/your-realm
+export OIDC_AUDIENCE=your-client-id
+```
+
+Keycloak emits `realm_access.roles` and `resource_access.<client>.roles` — these are NOT `scope`. To map roles to authorities, customize the `JwtAuthenticationConverter` to read from `realm_access.roles`.
+
+### Azure AD / Entra ID
+
+```bash
+export OIDC_ISSUER_URI=https://login.microsoftonline.com/<tenant-id>/v2.0
+export OIDC_AUDIENCE=api://<app-id>
+```
+
+Azure AD's v2.0 endpoint is required (v1.0 emits incompatible token shapes). Audience must match the Application ID URI.
+
+### Google (Workspace / GCP IAP)
+
+```bash
+export OIDC_ISSUER_URI=https://accounts.google.com
+export OIDC_AUDIENCE=<oauth-client-id>.apps.googleusercontent.com
+```
+
+For GCP IAP-protected services, audience is the IAP-signed JWT audience (your backend service's signed-header audience).
+
+## Scope mapping and authorization
+
+`JwtAuthenticationConverter` maps the JWT `scope` claim to Spring Security `GrantedAuthority` with a `SCOPE_` prefix. Use them in two places:
+
+```java
+// Spring Security at the controller method:
+@PreAuthorize("hasAuthority('SCOPE_partner')")
+public ResponseEntity<X> protectedEndpoint() { ... }
+```
+
+{{- if .HasModule "AIAgent"}}
+```java
+// AIAgent's @RequireScope (bridges API-key tier and JWT scope):
+@RequireScope("partner")
+public ResponseEntity<X> aiAgentEndpoint() { ... }
+```
+
+`@RequireScope` is the AIAgent module's tier-based gate. It evaluates `effectiveCaller(callerContext, jwt)` — the higher of:
+- API-key tier from `CallerContext` (set by `ApiKeyAuthFilter`)
+- JWT scope mapped to tier (`SCOPE_partner` → `partner`, `SCOPE_public` → `public`, otherwise `public` for any authenticated JWT)
+
+This is what makes hybrid mode work: legacy API-key clients keep their tier, new JWT clients get their tier from scope, and either path satisfies the requirement.
+{{- end}}
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| App refuses to start: `trabuco.auth.enabled is required` | Property unset | Set `TRABUCO_AUTH_ENABLED=true` (or `false` for dev) explicitly |
+| `trabuco.auth.enabled=true requires...issuer-uri or jwk-set-uri` | Discovery values missing | Set `OIDC_ISSUER_URI` |
+| `trabuco.auth.enabled=true requires...audiences` | Audience missing | Set `OIDC_AUDIENCE` to the API identifier configured at the issuer |
+| 401 with `application/problem+json` body — `"detail": "An error occurred while attempting to decode the Jwt: ..."` | Token signature invalid, JWKS stale, or alg mismatch | Verify `OIDC_ISSUER_URI` matches the token's `iss`; force JWKS refresh |
+| 401 — `"detail": "...The aud claim is not valid"` | Token's `aud` doesn't match `OIDC_AUDIENCE` | Verify the token's `aud` field; if it's a list-of-strings, ensure your `OIDC_AUDIENCE` is one of them |
+| 401 — `"detail": "...The iat claim is in the future"` | Clock skew between issuer and resource server | Set `OIDC_CLOCK_SKEW_SECONDS=120` to widen tolerance |
+| 403 — `"Insufficient authority"` | Token authenticated but scope insufficient | Verify the JWT carries the expected `scope` claim and the value matches the `@PreAuthorize`/`@RequireScope` requirement |
+{{- if .HasModule "AIAgent"}}
+| Hybrid mode: JWT-bearer requests get 401 "Invalid API key" | (fixed in v1.12.3+) | Upgrade Trabuco; pre-1.12.3 `ApiKeyAuthFilter` rejected non-API-key bearers before the JWT chain saw them |
+{{- end}}
+
+## Related documentation
+
+- [`AGENTS.md`](./AGENTS.md) — AI-agent reference for this project (auth section)
+- [`CLAUDE.md`](./CLAUDE.md) — Claude Code reference
+- [`security-audit.md`](./security-audit.md) — running the 173-check security audit

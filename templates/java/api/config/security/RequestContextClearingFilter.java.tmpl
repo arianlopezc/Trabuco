@@ -44,4 +44,19 @@ public class RequestContextClearingFilter extends OncePerRequestFilter {
             RequestContextHolder.clear();
         }
     }
+
+    /**
+     * {@link OncePerRequestFilter} skips ASYNC dispatches by default.
+     * For a CLEARING filter that's a leak: a request that triggers an
+     * async dispatch (DeferredResult, Callable controller, async
+     * forward) would leave {@link RequestContextHolder} populated when
+     * the carrier thread returns to the pool. The next unrelated
+     * request reusing that virtual-thread carrier sees a stale identity.
+     * Override to {@code false} so the {@code finally} clear runs at
+     * the outermost cleanup point regardless of dispatch type.
+     */
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
 }

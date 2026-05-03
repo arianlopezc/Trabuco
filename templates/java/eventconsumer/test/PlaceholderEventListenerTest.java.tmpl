@@ -4,23 +4,36 @@ import {{.GroupID}}.model.events.PlaceholderCreatedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 {{- if .UsesSQS}}
 import io.awspring.cloud.sqs.listener.acknowledgement.Acknowledgement;
-import org.mockito.Mock;
 {{- else if .UsesPubSub}}
 import com.google.cloud.spring.pubsub.support.BasicAcknowledgeablePubsubMessage;
-import org.mockito.Mock;
 {{- end}}
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for PlaceholderEventListener.
  *
- * <p>These tests verify that the listener can process events without errors.
- * For integration tests with {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}}, use
+ * <p>Behavioural coverage of the listener contract:
+ * <ul>
+ *   <li>Idempotency-tracker is invoked with the event's id (not "any" id) on every delivery.</li>
+ *   <li>First delivery routes through the handler; duplicate delivery short-circuits.</li>
+{{- if or .UsesSQS .UsesPubSub}}
+ *   <li>Acknowledge is called on the success path AND on the dedup-skip path
+ *       so the broker stops redelivering. The broker is the only retry mechanism;
+ *       ack-on-error would be the canonical silent-failure pattern.</li>
+{{- end}}
+ * </ul>
+ *
+ * <p>For integration tests with {{if .UsesKafka}}Kafka{{else if .UsesRabbitMQ}}RabbitMQ{{else if .UsesSQS}}AWS SQS{{else if .UsesPubSub}}GCP Pub/Sub{{end}}, use
 {{- if .UsesKafka}}
- * @EmbeddedKafka or Testcontainers.</p>
+ * {@code @EmbeddedKafka} or Testcontainers.</p>
 {{- else if .UsesRabbitMQ}}
  * Testcontainers with RabbitMQ.</p>
 {{- else if .UsesSQS}}
@@ -32,59 +45,97 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class PlaceholderEventListenerTest {
 
-  // Real (in-memory) tracker — Mockito-inline can't mock the
-  // concrete class on Java 25 due to its synchronized methods.
-  // The tracker is stateless across test runs once {@code reset()}
-  // is called in {@code @BeforeEach}.
-  private final IdempotencyTracker idempotencyTracker = new IdempotencyTracker();
+  @Mock
+  private IdempotencyTracker idempotencyTracker;
 
-  private PlaceholderEventListener listener;
-{{if .UsesSQS}}
+{{- if .UsesSQS}}
+
   @Mock
   private Acknowledgement acknowledgement;
-{{else if .UsesPubSub}}
+{{- else if .UsesPubSub}}
+
   @Mock
   private BasicAcknowledgeablePubsubMessage message;
-{{end}}
+{{- end}}
+
+  private PlaceholderEventListener listener;
+
   @BeforeEach
-  void freshTracker() {
-    idempotencyTracker.reset();
+  void setUp() {
     listener = new PlaceholderEventListener(idempotencyTracker);
   }
 
   @Test
-  void handlePlaceholderEvent_withCreatedEvent_processesSuccessfully() {
-    // Arrange
-    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("123", "Test Placeholder");
+  void firstDelivery_callsTrackerWithEventId{{if or .UsesSQS .UsesPubSub}}_andAcksOnSuccess{{end}}() {
+    when(idempotencyTracker.checkAndMark("evt-1")).thenReturn(true);
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("evt-1", "First");
 
-    // Act & Assert
 {{- if .UsesSQS}}
-    assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, acknowledgement));
+    listener.handlePlaceholderEvent(event, acknowledgement);
 {{- else if .UsesPubSub}}
-    assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event, message));
+    listener.handlePlaceholderEvent(event, message);
 {{- else}}
-    assertDoesNotThrow(() -> listener.handlePlaceholderEvent(event));
+    listener.handlePlaceholderEvent(event);
+{{- end}}
+
+    verify(idempotencyTracker).checkAndMark(eq(event.eventId()));
+{{- if .UsesSQS}}
+    verify(acknowledgement).acknowledge();
+{{- else if .UsesPubSub}}
+    verify(message).ack();
 {{- end}}
   }
 
   @Test
-  void handlePlaceholderEvent_withMultipleEvents_processesAll() {
-    // Arrange
-    PlaceholderCreatedEvent event1 = PlaceholderCreatedEvent.create("1", "First");
-    PlaceholderCreatedEvent event2 = PlaceholderCreatedEvent.create("2", "Second");
+  void duplicateDelivery_skipsHandler{{if or .UsesSQS .UsesPubSub}}_butStillAcks{{end}}() {
+    // Tracker reports duplicate — the listener short-circuits before
+    // the switch{{if or .UsesSQS .UsesPubSub}} and acks so the broker stops redelivering this id.
+    // Skipping the ack would put the dedup decision into a redelivery
+    // loop until the message hits the DLQ{{end}}.
+    when(idempotencyTracker.checkAndMark("evt-1")).thenReturn(false);
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("evt-1", "First");
 
-    // Act & Assert
-    assertDoesNotThrow(() -> {
 {{- if .UsesSQS}}
-      listener.handlePlaceholderEvent(event1, acknowledgement);
-      listener.handlePlaceholderEvent(event2, acknowledgement);
+    listener.handlePlaceholderEvent(event, acknowledgement);
 {{- else if .UsesPubSub}}
-      listener.handlePlaceholderEvent(event1, message);
-      listener.handlePlaceholderEvent(event2, message);
+    listener.handlePlaceholderEvent(event, message);
 {{- else}}
-      listener.handlePlaceholderEvent(event1);
-      listener.handlePlaceholderEvent(event2);
+    listener.handlePlaceholderEvent(event);
 {{- end}}
-    });
+
+    verify(idempotencyTracker).checkAndMark(eq(event.eventId()));
+{{- if .UsesSQS}}
+    verify(acknowledgement).acknowledge();
+    // The dedup-skip path must NOT nack/throw — the message has
+    // already been processed previously, so re-running side effects
+    // would be a regression.
+{{- else if .UsesPubSub}}
+    verify(message).ack();
+    verify(message, never()).nack();
+{{- end}}
+  }
+
+  @Test
+  void distinctEventIds_areEachCheckedAgainstTracker() {
+    // Catches a regression where the listener might pass a hardcoded
+    // id (or a stale captured id) to checkAndMark across deliveries.
+    when(idempotencyTracker.checkAndMark("evt-1")).thenReturn(true);
+    when(idempotencyTracker.checkAndMark("evt-2")).thenReturn(true);
+    PlaceholderCreatedEvent first = PlaceholderCreatedEvent.create("evt-1", "First");
+    PlaceholderCreatedEvent second = PlaceholderCreatedEvent.create("evt-2", "Second");
+
+{{- if .UsesSQS}}
+    listener.handlePlaceholderEvent(first, acknowledgement);
+    listener.handlePlaceholderEvent(second, acknowledgement);
+{{- else if .UsesPubSub}}
+    listener.handlePlaceholderEvent(first, message);
+    listener.handlePlaceholderEvent(second, message);
+{{- else}}
+    listener.handlePlaceholderEvent(first);
+    listener.handlePlaceholderEvent(second);
+{{- end}}
+
+    verify(idempotencyTracker).checkAndMark(eq("evt-1"));
+    verify(idempotencyTracker).checkAndMark(eq("evt-2"));
   }
 }

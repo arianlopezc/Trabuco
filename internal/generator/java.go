@@ -1039,6 +1039,7 @@ func (g *Generator) generateAIAgentModule() error {
 	if g.config.HasVectorStore() {
 		knowledgeFiles = append(knowledgeFiles,
 			struct{ tmpl, out string }{"java/aiagent/knowledge/VectorKnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "VectorKnowledgeRetriever.java")},
+			struct{ tmpl, out string }{"java/aiagent/knowledge/TenantFilteringDocumentRetriever.java.tmpl", filepath.Join("knowledge", "TenantFilteringDocumentRetriever.java")},
 			struct{ tmpl, out string }{"java/aiagent/knowledge/EmbeddingService.java.tmpl", filepath.Join("knowledge", "EmbeddingService.java")},
 			struct{ tmpl, out string }{"java/aiagent/knowledge/DocumentIngestionService.java.tmpl", filepath.Join("knowledge", "DocumentIngestionService.java")},
 		)

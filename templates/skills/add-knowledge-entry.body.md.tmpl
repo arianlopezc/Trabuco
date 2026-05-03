@@ -20,8 +20,8 @@ Both paths feed the same `@Tool askQuestion` surface and share the same security
 
 ### Vector path
 1. **Ingest** documents through `DocumentIngestionService.ingest(text, metadata)` — chunks are auto-split via `TokenTextSplitter`, embedded, and written with `metadata.tenant_id` stamped from `CallerContext.get().tenantId()` (server-side; caller-supplied `tenant_id` is stripped).
-2. **Retrieval** runs `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` on every search — cross-tenant reads are impossible by construction.
-3. **Provenance** is wrapped by `FencingDocumentRetriever`. Do not bypass the fences when adding new ingestion paths.
+2. **Retrieval enforces the tenant filter on TWO paths** — `KnowledgeRetriever.retrieve(...)` (the `@Tool` path) AND `RetrievalAugmentationAdvisor` (the ambient RAG path on `PrimaryAgent`). The advisor uses a separate retriever (`TenantFilteringDocumentRetriever`) that resolves the filter per call. Both apply `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` to every `SearchRequest` — cross-tenant reads are impossible by construction.
+3. **Provenance** is wrapped by `FencingDocumentRetriever` (which itself wraps `TenantFilteringDocumentRetriever` for the advisor path). Do not bypass the fences when adding new ingestion paths.
 
 ## Project conventions you must follow
 

@@ -974,6 +974,141 @@ executor.submit(() -> {
 
 Without the capture+set, downstream code on the worker thread sees `CallerIdentity.anonymous()` — the vector retriever's tenant filter falls back to anonymous, audit logs lose attribution, and `KnowledgeTools` behaves as if there were no caller. That's a tenant-isolation regression class.{{- else}} For JobRunr handlers, the equivalent pattern is to carry an `IdentityClaims` field inside the job request payload and re-establish it via `AuthScope` at the start of the handler — see the comments inside `ProcessPlaceholderJobRequestHandler`.{{- end}}
 - **RFC 7807 problem-details on auth failures.** `AuthProblemDetailHandler` is wired as both `authenticationEntryPoint` and `accessDeniedHandler` so 401/403 responses emit `application/problem+json` (not Spring's whitelabel JSON). The problem `type` URIs are `urn:problem-type:unauthorized` (401) and `urn:problem-type:forbidden` (403){{- if .HasModule "AIAgent"}}; the API and AIAgent modules use the same naming so cross-module clients can match a stable URI{{- end}}.
+- **`OncePerRequestFilter` and async dispatch.** The base class skips ASYNC dispatches by default (`shouldNotFilterAsyncDispatch()` returns true). Filters that touch identity — auth filters that populate `RequestContextHolder`/`CallerContext`, and the `RequestContextClearingFilter` that clears them — must override this to `false`. Without the override, an async-dispatched controller leaves identity state on the carrier thread, leaking to the next unrelated request that reuses the same virtual-thread carrier.
+
+{{- if .HasModule "AIAgent"}}
+
+### 6.1.2 Tenant Isolation in the Vector RAG Path
+
+Two retrievers, two interfaces, one contract: every read must apply
+`FilterExpressionBuilder.eq("tenant_id", caller.tenantId())`.
+
+```java
+// Trabuco's KnowledgeRetriever (used by KnowledgeTools.@Tool path):
+public class VectorKnowledgeRetriever implements KnowledgeRetriever { ... }
+
+// Spring AI's DocumentRetriever (used by RetrievalAugmentationAdvisor):
+public class TenantFilteringDocumentRetriever implements DocumentRetriever { ... }
+```
+
+Both implementations resolve the filter PER CALL by reading
+`CallerContext.get()` inside the retrieve method. They share the same
+contract but cannot share an interface (Trabuco's `KnowledgeRetriever`
+is a Trabuco concept; Spring AI's `DocumentRetriever` is from the
+upstream library) — three similar lines beat coupling the two.
+
+**Anti-pattern:** building the advisor with `VectorStoreDocumentRetriever`
+directly:
+
+```java
+// WRONG — static filter at construction means cross-tenant leak or
+// pinned to the constructor caller's tenant for life:
+RetrievalAugmentationAdvisor.builder()
+    .documentRetriever(VectorStoreDocumentRetriever.builder()
+        .vectorStore(vs)
+        .topK(4)
+        .build())  // no .filterExpression — every tenant sees all chunks
+    .build();
+```
+
+**Canonical:** wrap `TenantFilteringDocumentRetriever` inside
+`FencingDocumentRetriever`. Tenant filter runs first (don't fence
+cross-tenant content), then the fence wraps for prompt-injection
+defense:
+
+```java
+RetrievalAugmentationAdvisor.builder()
+    .documentRetriever(new FencingDocumentRetriever(
+        new TenantFilteringDocumentRetriever(vectorStore, 4)))
+    .build();
+```
+
+Test contract: `VectorTenantIsolationTest` MUST exercise BOTH the
+`KnowledgeRetriever` path and the advisor's `DocumentRetriever` path.
+Assertions must be non-vacuous (`allSatisfy`/`noneSatisfy` over an
+empty collection passes trivially) — ingest a tenant-B document
+first, then assert tenant-B's retrieval is non-empty AND contains
+only tenant-B's content AND none of tenant-A's.
+
+### 6.1.3 Bounded In-Memory State Needs Reapers
+
+`TaskManager` (10k task cap), `RateLimiter` (100k bucket cap), and any
+similar in-memory registry are bounded — but a CAP without an
+EVICTION policy is a one-way trip. Once full, every new entry
+permanently throws / 429s.
+
+The canonical shape — `@PreDestroy` for executor cleanup + `@Scheduled`
+reaper for terminal/idle entries:
+
+```java
+@Component
+public class MyRegistry {
+    private static final int MAX_ENTRIES = 10_000;
+    private static final Duration ENTRY_TTL = Duration.ofHours(1);
+
+    private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+    // Cap-checked submission. Throws if full — prefer this over
+    // silent eviction so the caller knows the registry is wedged.
+    public String submit(...) {
+        if (entries.size() >= MAX_ENTRIES) {
+            throw new IllegalStateException("Registry full ("
+                + MAX_ENTRIES + "); reaper has not yet caught up.");
+        }
+        ...
+    }
+
+    @Scheduled(fixedDelayString = "PT1M")
+    public void reapTerminalEntries() {
+        Instant cutoff = Instant.now().minus(ENTRY_TTL);
+        entries.entrySet().removeIf(e ->
+            e.getValue().isTerminal() && e.getValue().getUpdatedAt().isBefore(cutoff));
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+```
+
+Requires `@EnableScheduling` on the application class.
+
+### 6.1.4 SSE Subscriber Lifecycle
+
+`taskManager.subscribe(...)` adds a `Consumer<TaskEvent>` to the
+in-memory subscribers list for a task. Without a paired `unsubscribe`
+the listener (and its closure) is retained for the life of the
+registry entry. After `SUBSCRIBERS_MAX_PER_TASK` (32) reconnects the
+silent-cap drops new subscribers.
+
+Canonical shape — capture the listener instance, register it once,
+unsubscribe on every terminal SSE state:
+
+```java
+Consumer<TaskEvent> listener = event -> { /* emitter.send ... */ };
+
+emitter.onCompletion(() -> taskManager.unsubscribe(taskId, listener));
+emitter.onTimeout(() -> taskManager.unsubscribe(taskId, listener));
+emitter.onError(t -> taskManager.unsubscribe(taskId, listener));
+
+taskManager.subscribe(taskId, listener);
+```
+
+The listener variable must be captured BEFORE subscribing AND the
+unsubscribe must use the SAME instance — `emitter.onCompletion(() ->
+taskManager.unsubscribe(taskId, e -> {...}))` would create a new
+lambda that doesn't match.
+{{- end}}
 {{- end}}
 
 ### 6.2 Transaction Management

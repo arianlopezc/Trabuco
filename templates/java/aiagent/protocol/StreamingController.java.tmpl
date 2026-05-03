@@ -69,24 +69,12 @@ public class StreamingController {
 
         SseEmitter emitter = new SseEmitter(60_000L); // 60 second timeout
 
-        // release the per-caller slot when the emitter
-        // closes — by completion, by timeout, or by client
-        // disconnect (the SseEmitter framework calls these callbacks
-        // for each terminal state).
-        Runnable releaseSlot = () -> {
-            int remaining = active.decrementAndGet();
-            if (remaining <= 0) {
-                activeStreamsByCaller.remove(caller.keyHash());
-            }
-        };
-        emitter.onCompletion(releaseSlot);
-        emitter.onTimeout(() -> {
-            releaseSlot.run();
-            emitter.complete();
-        });
-        emitter.onError(t -> releaseSlot.run());
-
-        taskManager.subscribe(taskId, event -> {
+        // Capture the subscriber lambda so the same instance can be
+        // unsubscribed on emitter teardown. Without an unsubscribe call,
+        // each completed/timed-out emitter leaves its closure in
+        // TaskManager#subscribers — eventually hitting SUBSCRIBERS_MAX_PER_TASK
+        // (32) and silently dropping every new subscriber for that task.
+        java.util.function.Consumer<{{.GroupID}}.aiagent.task.TaskEvent> listener = event -> {
             try {
                 String data = objectMapper.writeValueAsString(Map.of(
                     "task_id", event.taskId(),
@@ -105,7 +93,27 @@ public class StreamingController {
             } catch (Exception e) {
                 emitter.completeWithError(e);
             }
+        };
+
+        // releaseSlot decrements the per-caller cap AND removes the
+        // subscriber. Both must run on every terminal SSE state —
+        // completion, timeout, error. Without unsubscribe, finished
+        // streams leak listeners forever.
+        Runnable releaseSlot = () -> {
+            taskManager.unsubscribe(taskId, listener);
+            int remaining = active.decrementAndGet();
+            if (remaining <= 0) {
+                activeStreamsByCaller.remove(caller.keyHash());
+            }
+        };
+        emitter.onCompletion(releaseSlot);
+        emitter.onTimeout(() -> {
+            releaseSlot.run();
+            emitter.complete();
         });
+        emitter.onError(t -> releaseSlot.run());
+
+        taskManager.subscribe(taskId, listener);
 
         // If task already completed, send current state and close
         if ("completed".equals(task.getStatus()) || "failed".equals(task.getStatus())) {
