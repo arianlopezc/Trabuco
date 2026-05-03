@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.m2/dependency-check-data
-          key: nvd-db-${{ '{{' }} hashFiles('.dependency-check/suppressions.xml') {{ '}}' }}
+          key: nvd-db-${{ "{{" }} hashFiles('.dependency-check/suppressions.xml') {{ "}}" }}
           restore-keys: |
             nvd-db-
 
@@ -55,8 +55,8 @@ jobs:
           # NVD_API_KEY is optional but speeds up the data refresh ~30x.
           # Get one at https://nvd.nist.gov/developers/request-an-api-key
           # and add it as a repository secret.
-          NVD_API_KEY: ${{ '{{' }} secrets.NVD_API_KEY {{ '}}' }}
-        run: mvn -Psecurity-audit verify -DfailBuildOnCVSS=${{ '{{' }} github.event.inputs.fail-build-on-cvss || '7' {{ '}}' }} -DskipTests -B
+          NVD_API_KEY: ${{ "{{" }} secrets.NVD_API_KEY {{ "}}" }}
+        run: mvn -Psecurity-audit verify -DfailBuildOnCVSS=${{ "{{" }} github.event.inputs.fail-build-on-cvss || '7' {{ "}}" }} -DskipTests -B
 
       - name: Upload reports
         if: always()
