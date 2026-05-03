@@ -271,6 +271,17 @@ func skillCatalog() []skillDef {
 			CursorGlobs:  []string{"AIAgent/**/protocol/**/*.java", "AIAgent/**/task/**/*.java"},
 		},
 		{
+			Name:         "add-agent-variant",
+			Description:  "Add a new specialist agent (compliance, summarization, translation, etc.) alongside PrimaryAgent / SpecialistAgent. 4-file pattern: @Qualifier ChatModel + agent class + @Tool wrapper + PrimaryAgent injection. Avoids the @ConditionalOnBean(ChatModel.class) silent-miss trap.",
+			ArgumentHint: "[agent-name]",
+			Paths:        aiPaths,
+			BodyTmpl:     "skills/add-agent-variant.body.md.tmpl",
+			RequiredModule: config.ModuleAIAgent,
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/agent/**/*.java", "AIAgent/**/config/ChatClientConfig.java"},
+		},
+		{
 			Name:         "add-a2a-skill",
 			Description:  "Expose an Agent-to-Agent (A2A) skill endpoint: JSON-RPC handler, async task manager wiring, A2AController registration.",
 			ArgumentHint: "[skill-name]",

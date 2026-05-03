@@ -224,6 +224,16 @@ The shipped `StreamingController` (`/tasks/{taskId}/stream`) is the reference im
 - Use `taskManager.getTaskForOwner(id, caller.keyHash())`, never `getTask(id)` — same 404 for not-found and not-yours (BOLA defense).
 - All three of `emitter.onCompletion` / `onTimeout` / `onError` must run `releaseSlot` (unsubscribe + counter decrement). Skip any one and that path leaks forever.
 - See `/add-streaming-endpoint` for the procedure.
+
+## Multi-agent pattern (AIAgent)
+
+`PrimaryAgent` orchestrates; specialist agents (e.g. `SpecialistAgent`) are wrapped in `@Tool` beans (e.g. `SpecialistAgentTool`) so the primary's LLM can delegate. Adding a new agent variant is always 4 files: `ChatClientConfig` qualifier bean + agent class + `@Tool` wrapper + `PrimaryAgent` injection.
+
+- NEVER `@ConditionalOnBean(ChatModel.class)` on the agent or `ChatClientConfig` — silently fails (Spring evaluates before Spring AI auto-config registers ChatModel). The `@ConditionalOnBean(<UserAgent>.class)` pattern on the `@Tool` wrapper IS valid (both classes are user-scanned).
+- Each agent gets its own `@Qualifier("xChatModel")` so production can tune temperature / model variant / rate limit independently.
+- `@CircuitBreaker(name = "llm")` on every public agent method, paired private fallback. Same name = single LLM outage opens all circuits at once.
+- Set `ToolCallingChatOptions.maxTokens(2048)` on the `ChatClient.builder` to bound cost per turn (Spring AI 1.0.5 has no tool-call recursion cap; F-AIAGENT-12).
+- See `/add-agent-variant` for the procedure.
 {{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}
 

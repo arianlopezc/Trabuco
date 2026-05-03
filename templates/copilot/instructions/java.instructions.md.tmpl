@@ -155,6 +155,16 @@ Skip this and `VectorKnowledgeRetriever`'s tenant filter falls back to anonymous
 - Inline `subscribe(id, e -> {...})` cannot be unsubscribed — capture the listener as a named variable.
 - `getTask(id)` is a BOLA regression; use `getTaskForOwner(id, caller.keyHash())`.
 - See `/add-streaming-endpoint` for the procedure.
+
+## Multi-agent pattern (AIAgent)
+
+`PrimaryAgent` orchestrates; specialist agents are wrapped in `@Tool` beans so the primary's LLM can delegate. Adding a new agent variant is always 4 files: `ChatClientConfig` qualifier bean + agent class + `@Tool` wrapper + `PrimaryAgent` injection.
+
+- NEVER `@ConditionalOnBean(ChatModel.class)` on the agent class or `ChatClientConfig` — silently fails (Spring evaluates the conditional before Spring AI auto-config registers ChatModel). `@ConditionalOnBean(<UserAgent>.class)` on the `@Tool` wrapper IS valid.
+- Each agent gets a unique `@Qualifier("xChatModel")` (production tunes per-agent independently).
+- `@CircuitBreaker(name = "llm")` uniformly + paired private fallback method.
+- `ToolCallingChatOptions.maxTokens(2048)` on the builder bounds cost per turn (F-AIAGENT-12).
+- See `/add-agent-variant` for the procedure.
 {{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}
 
