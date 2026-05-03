@@ -129,9 +129,11 @@ Three vector stores are wired and selected by classpath dependency: PGVector (de
   - `VectorKnowledgeRetriever` (Trabuco's `KnowledgeRetriever`, used by `KnowledgeTools.@Tool`).
   - `TenantFilteringDocumentRetriever` (Spring AI's `DocumentRetriever`, used by `RetrievalAugmentationAdvisor` on `PrimaryAgent`).
   - Both resolve the filter per call from `CallerContext`. Building an advisor with raw `VectorStoreDocumentRetriever` is a static-filter regression.
+- Adding a re-ranking / hybrid / multi-source retriever: implement `DocumentRetriever`, slot BETWEEN `FencingDocumentRetriever` (outer) and `TenantFilteringDocumentRetriever` (inner) in `PrimaryAgent.buildRagAdvisor`. Order is a security invariant. See `/add-retriever`.
 - Ingestion: `DocumentIngestionService.ingest(text, metadata)` — stamps `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped.
 - Tenant isolation is enforced at every read via `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())`. Cross-tenant reads are impossible by construction.
 - Retrieved chunks pass through `FencingDocumentRetriever`. Don't bypass the fences.
+- Extending ingestion (new endpoint, scheduled job, event listener, custom metadata field): always route through `DocumentIngestionService.ingest(...)`. Direct `vectorStore.add(...)` outside that service bypasses tenant_id stamping. Non-request threads use `CallerIdentity.serviceAccount(label, tenantId)` + `CallerContext.set` / `try / finally clear`. New filterable metadata fields need a Flyway expression index on `(metadata->>'<field>')` placed in `db/vector-migration/` (NOT `db/migration/`). See `/extend-rag-ingestion`.
 
 ## Async context propagation (AIAgent)
 
@@ -146,6 +148,24 @@ executor.submit(() -> {
 ```
 
 Skip this and `VectorKnowledgeRetriever`'s tenant filter falls back to anonymous identity — cross-tenant data leak.
+
+## Streaming endpoints (SSE in AIAgent)
+
+`StreamingController` (`/tasks/{taskId}/stream`) is the canonical reference for the 5-part SSE lifecycle: rate-limit → per-caller cap → `getTaskForOwner` (BOLA-safe) → named `Consumer<TaskEvent>` listener → paired unsubscribe in all three of `onCompletion` / `onTimeout` / `onError`. New streaming endpoints must mirror this shape.
+
+- Inline `subscribe(id, e -> {...})` cannot be unsubscribed — capture the listener as a named variable.
+- `getTask(id)` is a BOLA regression; use `getTaskForOwner(id, caller.keyHash())`.
+- See `/add-streaming-endpoint` for the procedure.
+
+## Multi-agent pattern (AIAgent)
+
+`PrimaryAgent` orchestrates; specialist agents are wrapped in `@Tool` beans so the primary's LLM can delegate. Adding a new agent variant is always 4 files: `ChatClientConfig` qualifier bean + agent class + `@Tool` wrapper + `PrimaryAgent` injection.
+
+- NEVER `@ConditionalOnBean(ChatModel.class)` on the agent class or `ChatClientConfig` — silently fails (Spring evaluates the conditional before Spring AI auto-config registers ChatModel). `@ConditionalOnBean(<UserAgent>.class)` on the `@Tool` wrapper IS valid.
+- Each agent gets a unique `@Qualifier("xChatModel")` (production tunes per-agent independently).
+- `@CircuitBreaker(name = "llm")` uniformly + paired private fallback method.
+- `ToolCallingChatOptions.maxTokens(2048)` on the builder bounds cost per turn (F-AIAGENT-12).
+- See `/add-agent-variant` for the procedure.
 {{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}
 
@@ -157,6 +177,7 @@ Auth scaffolding is generated, not absent. Do not suggest "Add Spring Security" 
 - Activated by `trabuco.auth.enabled=true` plus `OIDC_ISSUER_URI` and `OIDC_AUDIENCE`. App refuses to boot if `trabuco.auth.enabled` is unset.
 - Use `@PreAuthorize("hasAuthority('SCOPE_<name>')")` on controllers / service methods{{- if .HasModule "AIAgent" }}; in the AIAgent module also `@RequireScope("public" | "partner")`{{- end }}.
 - Per-provider config recipes: `docs/auth.md`.
+- Extending the auth chain (new tier, new OIDC scope, non-RFC IdP claim extractor, custom filter) goes through `/extend-auth-chain`. Tier additions touch `CallerIdentity.tierLevel` + `RateLimiter.LIMITS` + `ScopeEnforcer` authority sets in lock-step. Custom `@Component` filters MUST have a paired `FilterRegistrationBean` with `setEnabled(false)`.
 {{- end}}
 
 ## Security baseline

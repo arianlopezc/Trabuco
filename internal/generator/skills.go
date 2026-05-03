@@ -249,6 +249,61 @@ func skillCatalog() []skillDef {
 			CursorGlobs:  []string{"AIAgent/**/knowledge/**/*"},
 		},
 		{
+			Name:         "add-retriever",
+			Description:  "Add a custom DocumentRetriever to the AIAgent RAG path (re-ranking, hybrid, multi-source). Composition order is a security invariant — tenant filter innermost, fencing outermost.",
+			ArgumentHint: "[retriever-name]",
+			Paths:        aiPaths,
+			BodyTmpl:     "skills/add-retriever.body.md.tmpl",
+			RequiredModule: config.ModuleAIAgent,
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/knowledge/**/*.java", "AIAgent/**/agent/PrimaryAgent.java"},
+		},
+		{
+			Name:         "add-streaming-endpoint",
+			Description:  "Add an SSE streaming endpoint with the canonical 5-part lifecycle (rate-limit, per-caller cap, BOLA-safe ownership, named listener with paired unsubscribe in all 3 emitter hooks).",
+			ArgumentHint: "[endpoint-name]",
+			Paths:        aiPaths,
+			BodyTmpl:     "skills/add-streaming-endpoint.body.md.tmpl",
+			RequiredModule: config.ModuleAIAgent,
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/protocol/**/*.java", "AIAgent/**/task/**/*.java"},
+		},
+		{
+			Name:         "add-agent-variant",
+			Description:  "Add a new specialist agent (compliance, summarization, translation, etc.) alongside PrimaryAgent / SpecialistAgent. 4-file pattern: @Qualifier ChatModel + agent class + @Tool wrapper + PrimaryAgent injection. Avoids the @ConditionalOnBean(ChatModel.class) silent-miss trap.",
+			ArgumentHint: "[agent-name]",
+			Paths:        aiPaths,
+			BodyTmpl:     "skills/add-agent-variant.body.md.tmpl",
+			RequiredModule: config.ModuleAIAgent,
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/agent/**/*.java", "AIAgent/**/config/ChatClientConfig.java"},
+		},
+		{
+			Name:         "extend-rag-ingestion",
+			Description:  "Extend the RAG ingestion pipeline: new HTTP endpoints, scheduled / event-driven paths, custom metadata fields with indexing. Preserves the 5 ingestion invariants (DocumentIngestionService routing, CallerContext on non-request threads, metadata allow-list / x-* namespace, indexing for filterable fields, rate-limit + scope gate).",
+			ArgumentHint: "[ingestion-name]",
+			Paths:        aiPaths,
+			BodyTmpl:     "skills/extend-rag-ingestion.body.md.tmpl",
+			RequiredModule: config.ModuleAIAgent,
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/knowledge/**/*.java", "AIAgent/**/protocol/Ingestion*.java", "AIAgent/**/db/vector-migration/*.sql"},
+		},
+		{
+			Name:         "extend-auth-chain",
+			Description:  "Extend Trabuco's auth chain: add a new tier, OIDC scope mapping, non-RFC IdP claim extractor, or custom security filter. Cross-module pattern preserves the 4 silent-failure invariants (tier → tierLevel + LIMITS + ScopeEnforcer; filter @Component + FilterRegistrationBean disable; OIDC_AUDIENCE boot guard).",
+			ArgumentHint: "[extension-name]",
+			Paths:        []string{"AIAgent/**/*.java", "API/**/*.java", "Shared/**/*.java"},
+			BodyTmpl:     "skills/extend-auth-chain.body.md.tmpl",
+			RequiredModule: "anyAuthChain",
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/security/**/*.java", "AIAgent/**/config/security/**/*.java", "API/**/config/security/**/*.java", "Shared/**/auth/**/*.java"},
+		},
+		{
 			Name:         "add-a2a-skill",
 			Description:  "Expose an Agent-to-Agent (A2A) skill endpoint: JSON-RPC handler, async task manager wiring, A2AController registration.",
 			ArgumentHint: "[skill-name]",
@@ -269,6 +324,10 @@ func (s skillDef) shouldEmit(cfg *config.ProjectConfig) bool {
 		return true
 	case "anyDatastore":
 		return cfg.HasAnyDatastore()
+	case "anyAuthChain":
+		// Auth-chain extension is meaningful when either the API
+		// security config or the AIAgent security config is generated.
+		return cfg.HasModule(config.ModuleAPI) || cfg.HasModule(config.ModuleAIAgent)
 	default:
 		return cfg.HasModule(s.RequiredModule)
 	}

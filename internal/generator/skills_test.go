@@ -136,9 +136,13 @@ func TestSkills_ModuleGate_AIAgentOnly(t *testing.T) {
 	}
 	dir := generateWithSkills(t, cfg)
 
-	for _, name := range []string{"add-tool", "add-guardrail-rule", "add-knowledge-entry", "add-a2a-skill"} {
+	for _, name := range []string{"add-tool", "add-guardrail-rule", "add-knowledge-entry", "add-retriever", "add-streaming-endpoint", "add-agent-variant", "extend-rag-ingestion", "add-a2a-skill"} {
 		assertSkillAbsent(t, dir, ".claude/skills/"+name+"/SKILL.md")
 	}
+	// extend-auth-chain emits when API OR AIAgent is selected. The
+	// gatetest config above includes API → the skill should be PRESENT.
+	assertSkillPresent(t, dir, ".claude/skills/extend-auth-chain/SKILL.md", "extend-auth-chain",
+		[]string{"name: extend-auth-chain"})
 	// Universal skills still emit.
 	assertSkillPresent(t, dir, ".claude/skills/add-entity/SKILL.md", "add-entity",
 		[]string{"name: add-entity"})
@@ -301,7 +305,9 @@ func TestSkills_ReviewOff_EmitsNothing(t *testing.T) {
 		"add-entity", "add-endpoint", "add-service",
 		"add-migration", "add-repository-method", "add-test",
 		"add-tool", "add-event", "add-job", "add-knowledge-entry",
-		"add-guardrail-rule", "add-a2a-skill", "pr", "commit",
+		"add-retriever", "add-streaming-endpoint", "add-agent-variant",
+		"extend-rag-ingestion", "extend-auth-chain", "add-guardrail-rule",
+		"add-a2a-skill", "pr", "commit",
 	}
 	for _, name := range reviewSkills {
 		p := filepath.Join(dir, ".claude/skills", name, "SKILL.md")

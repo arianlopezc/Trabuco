@@ -1,0 +1,54 @@
+# Add a specialist agent variant
+
+Adds a new specialist agent (compliance review, summarization, classification, translation, etc.) alongside `PrimaryAgent` and `SpecialistAgent`. Always 4 files; the Spring lifecycle traps are non-obvious and the failure modes are silent.
+
+## Use this skill when
+
+- Adding a domain-specific agent the LLM can delegate to (e.g. `SummarizationAgent`, `ComplianceAgent`, `TranslationAgent`).
+- Splitting an existing agent's responsibilities across multiple ChatModels with different temperatures or providers.
+
+## The 4 files (always all four)
+
+| File | Action | Role |
+|---|---|---|
+| `aiagent/config/ChatClientConfig.java` | MODIFY | Add `@Bean @Qualifier("xChatModel")` aliased to the auto-configured provider model. |
+| `aiagent/agent/<X>Agent.java` | NEW | The agent itself. `@Component`, `@Qualifier` ChatModel, `@CircuitBreaker(name="llm")`, fallback method. |
+| `aiagent/agent/<X>AgentTool.java` | NEW | `@Tool` wrapper exposing the agent to the LLM. `@Component @ConditionalOnBean(<X>Agent.class)`. |
+| `aiagent/agent/PrimaryAgent.java` | MODIFY | Inject `<X>AgentTool` in the constructor and add it to `.defaultTools(...)`. |
+
+Skip any one and the agent silently fails to register, can't be invoked by the LLM, or shares cost / rate budget with another agent.
+
+## Three Spring lifecycle traps (memorize these)
+
+1. **NEVER `@ConditionalOnBean(ChatModel.class)` on the agent class or `ChatClientConfig`.** Spring evaluates that conditional on user-scanned components BEFORE Spring AI's auto-config registers `ChatModel`. The conditional silently fails; the agent bean never registers; the first request that injects it throws `NoSuchBeanDefinitionException`. The AIAgent module is generated only when the Spring AI starter is also pulled, so `ChatModel` is guaranteed at runtime — generator-time emission is the gate, not a runtime conditional. (Documented in `PrimaryAgent.java`, `SpecialistAgent.java`, `ChatClientConfig.java`. The shipped `code-reviewer` agent greps for this regression.)
+
+2. **Each agent gets its own `@Qualifier`.** Reusing `@Qualifier("primaryChatModel")` works — but in production the two agents now share a temperature, a model variant, a rate limit, and a cost budget. Add a new alias bean in `ChatClientConfig`; even if it currently delegates to the same provider model, the seam is in place when production tunes them independently.
+
+3. **`@CircuitBreaker(name = "llm")` on every public agent method**, with a paired private fallback method matching the signature (params + `Throwable t`). Use the same `name = "llm"` as `PrimaryAgent` / `SpecialistAgent` — a single LLM provider outage opens all circuits at once instead of cascading.
+
+## Bound the cost per turn (F-AIAGENT-12 mitigation)
+
+Set `ToolCallingChatOptions.maxTokens(2048)` (or the value your domain needs) on every new agent's `ChatClient.builder`. Spring AI 1.0.5 does not ship a `maxToolCalls` cap on the tool-execution loop, so `maxTokens` (output cap per LLM turn) is the meaningful cost guard. Hardened deployments with stricter budgets pair this with `internalToolExecutionEnabled(false)` and manage the tool-call loop manually.
+
+## Key steps (summary)
+
+1. **Add the qualifier bean** in `ChatClientConfig`. Even if it delegates to the same auto-configured ChatModel today, the seam is in place for production tuning.
+2. **Create the agent class** as `@Component` (no conditional). Inject the qualifier ChatModel + any tools the agent itself uses (e.g. `KnowledgeTools` for RAG-aware specialists). Build the `ChatClient` with a focused system prompt and `ToolCallingChatOptions.maxTokens(2048)`.
+3. **Add `@CircuitBreaker(name = "llm", fallbackMethod = "<x>Fallback")`** on the public method. The fallback method takes the same params plus `Throwable t` and returns the same type. Use `@SuppressWarnings("unused")` on the fallback (Spring invokes it reflectively).
+4. **Create the `@Tool` wrapper** as `@Component @ConditionalOnBean(<X>Agent.class)` (this conditional IS valid — both classes are user-scanned). `@Tool(description = "...")` — the description is what the LLM reads to decide WHEN to invoke; be specific. `@ToolParam(description = "...")` on every parameter.
+5. **Inject the new tool into `PrimaryAgent`** — add the constructor parameter and append to `.defaultTools(...)`. Order doesn't matter for tools.
+6. **Test** — use `@SpringBootTest` for wiring (catches the `@ConditionalOnBean(ChatModel.class)` trap if accidentally introduced), mock the ChatModel for behavior assertions.
+
+## Project conventions you must follow
+
+- **Each agent is `@Component`, no conditional.** The AIAgent module is generated only when its Spring AI starter is also pulled — `ChatModel` is guaranteed at runtime. Don't gate again.
+- **Each agent's fallback is `private`, `@SuppressWarnings("unused")`, and matches `(originalParams..., Throwable t)`.** Spring invokes it reflectively; the warning silences the IDE.
+- **The `@Tool` wrapper carries `@ConditionalOnBean(<X>Agent.class)`.** This conditional IS reliable because both classes are user-scanned.
+- **`@Tool` and `@ToolParam` descriptions guide the LLM.** Vague descriptions ("Ask the agent something") leave the LLM unable to pick the right tool. Be specific about the agent's domain and when to invoke.
+- **All agents share `@CircuitBreaker(name = "llm")`.** A single LLM outage opens once.
+- **Set `ToolCallingChatOptions.maxTokens(...)`** on every new agent's `ChatClient.builder` to bound cost per turn (F-AIAGENT-12 partial mitigation).
+- **Use explicit types in agent code.** `ChatClient`, `ChatModel`, agent class types — `var` obscures the wiring at the exact point reviewers verify the qualifier discipline.
+
+## Full step-by-step
+
+See `.ai/prompts/add-agent-variant.md` (full 4-file code skeleton with the `PlaceholderAgent` worked example, system-prompt conventions, the `@CircuitBreaker` fallback pattern, multi-agent test wiring, and common mistakes).

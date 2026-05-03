@@ -78,18 +78,40 @@ Run each grep across the changed files. Every match is a finding unless explicit
     xargs -I{} sh -c 'rg -L "CallerContext\.set" {} && echo "MISSING in {}"'
   ```
 - **Caller-supplied `tenant_id` reaching the vector store** — `DocumentIngestionService.stampTenantId` strips `tenant_id` from caller-supplied metadata so partner-A can't claim partner-B's tenant. Any new code path that ingests into the `VectorStore` must derive `tenant_id` from `CallerContext.get().tenantId()` only.
-- **`RetrievalAugmentationAdvisor` without tenant filter** — Spring AI's stock `VectorStoreDocumentRetriever` accepts a static filter at construction time. The advisor is shared across requests so a static filter cannot bind to the current caller's tenant — either no filter (cross-tenant leak) or pinned to one tenant for life. Trabuco's `TenantFilteringDocumentRetriever` resolves the filter per call from `CallerContext`. Any new advisor that wraps `VectorStoreDocumentRetriever` directly is a regression — must use `TenantFilteringDocumentRetriever` (or wrap it inside `FencingDocumentRetriever`).
+- **`RetrievalAugmentationAdvisor` without tenant filter, or composition order inverted** — Spring AI's stock `VectorStoreDocumentRetriever` accepts a static filter at construction time. The advisor is shared across requests so a static filter cannot bind to the current caller's tenant — either no filter (cross-tenant leak) or pinned to one tenant for life. Trabuco's `TenantFilteringDocumentRetriever` resolves the filter per call from `CallerContext`. The canonical chain is `FencingDocumentRetriever( … TenantFilteringDocumentRetriever(vectorStore, topK))`. Custom retrievers (re-ranking, hybrid, multi-source) slot BETWEEN those two layers. Flag: any inversion (Tenant outside Fencing), omission (no Tenant layer), or new advisor wrapping `VectorStoreDocumentRetriever` directly. See `/add-retriever`.
   ```bash
   # Surface advisors built with raw VectorStoreDocumentRetriever
   rg -nP 'VectorStoreDocumentRetriever\.builder\(' AIAgent/src/main/java
   # Anything outside TenantFilteringDocumentRetriever.java is a finding.
   ```
-- **SSE subscriber leak** — `taskManager.subscribe(...)` without a paired `taskManager.unsubscribe(...)` in `emitter.onCompletion` / `onTimeout` / `onError`. Listeners + closures retained for life of the registry entry; after `SUBSCRIBERS_MAX_PER_TASK` reconnects (32) new SSE clients are silently dropped. The listener variable must be CAPTURED before subscribing so the same instance can be unsubscribed.
+- **SSE subscriber leak or per-caller slot leak** — `taskManager.subscribe(...)` without a paired `taskManager.unsubscribe(...)` in ALL THREE of `emitter.onCompletion` / `onTimeout` / `onError`, OR a per-caller stream counter (e.g. `activeStreamsByCaller`) that increments without a paired decrement on every terminal-state path. Listeners + closures retained for life of the registry entry; after `SUBSCRIBERS_MAX_PER_TASK` reconnects (32) new SSE clients are silently dropped. Slot leaks 429 the caller permanently after 32 streams. Listener variable MUST be CAPTURED as a named `Consumer<TaskEvent>` before subscribing so the same instance can be unsubscribed. See `/add-streaming-endpoint` for the canonical 5-part lifecycle.
   ```bash
   rg -lP 'taskManager\.subscribe\(' AIAgent/src/main/java | \
     xargs -I{} sh -c 'rg -L "taskManager\.unsubscribe" {} && echo "MISSING unsubscribe in {}"'
   ```
+- **`@ConditionalOnBean(ChatModel.class)` on user-scanned classes** — Spring evaluates the conditional BEFORE Spring AI's auto-configuration registers `ChatModel`, so the bean silently never registers and the first request that injects it throws `NoSuchBeanDefinitionException`. The shipped `PrimaryAgent`, `SpecialistAgent`, and `ChatClientConfig` are deliberately unconditional — generator-time emission is the gate (the AIAgent module is only generated when its Spring AI starter is also pulled). Flag any user `@Component` / `@Configuration` class that adds `@ConditionalOnBean(ChatModel.class)` — including new agent variants. The `@ConditionalOnBean(<UserAgent>.class)` pattern on `@Tool` wrappers IS valid (both classes are user-scanned). See `/add-agent-variant`.
+  ```bash
+  rg -nP '@ConditionalOnBean\(\s*ChatModel\.class\s*\)' AIAgent/src/main/java
+  ```
+- **Direct `vectorStore.add(...)` outside `DocumentIngestionService`** — the canonical ingestion path stamps `tenant_id` server-side via `DocumentIngestionService.stampTenantId`. Any class that calls `vectorStore.add(`, `vectorStore.delete(`, or any other mutating method bypasses the stamping → every written chunk gets whatever `tenant_id` the caller-supplied metadata happens to have (likely none → retrieval misses; or worst case partner-A claims partner-B's tenant). The shipped reads (`VectorKnowledgeRetriever`, `TenantFilteringDocumentRetriever`) are read-only and don't trigger this. Flag any new write site outside `DocumentIngestionService.java`. See `/extend-rag-ingestion`.
+  ```bash
+  rg -lP 'vectorStore\.(add|delete)\(' AIAgent/src/main/java | \
+    grep -v DocumentIngestionService.java
+  # Anything else is a finding.
+  ```
 - **`AgentMcpAuthorizationFilter` registered globally instead of inside the security chain** — the filter must run AFTER `ApiKeyAuthFilter` (or `BearerTokenAuthenticationFilter` in OAuth2 mode) so `CallerContext` is populated when the MCP scope check fires. Registration via `@Order` puts it in the global servlet chain ahead of the security chain → 403s every legitimate partner request in API-key-only mode. The canonical wiring is `addFilterAfter(... ApiKeyAuthFilter.class)` in `AgentSecurityConfig` plus a `FilterRegistrationBean` with `setEnabled(false)` to suppress global registration.
+- **Custom servlet filter `@Component` + `addFilterBefore`/`addFilterAfter` without `FilterRegistrationBean.setEnabled(false)`** — Spring auto-registers any `@Component` that implements `Filter` into the global servlet chain. The `SecurityFilterChain` then registers it manually via `addFilterBefore` / `addFilterAfter`. Both fire on every request → duplicate work, often duplicate side effects (correlation IDs added twice, identity state cleared between the two passes, request context flapping). The shipped `ApiKeyAuthFilter` and `AgentMcpAuthorizationFilter` declare a paired `FilterRegistrationBean<...>` `@Bean` with `setEnabled(false)` — every custom filter must follow the same shape. Filters touching `CallerContext` / `RequestContextHolder` / MDC must also override `shouldNotFilterAsyncDispatch()` to return `false`. See `/extend-auth-chain`.
+  ```bash
+  # Custom filters in security/ packages must have a paired FilterRegistrationBean disable.
+  rg -lP 'extends OncePerRequestFilter|implements Filter\b' \
+    AIAgent/src/main/java API/src/main/java 2>/dev/null | \
+    while read filter_path; do
+      filter_class=$(basename "$filter_path" .java)
+      rg -L "FilterRegistrationBean<${filter_class}>.*setEnabled\(false\)" \
+        AIAgent/src/main/java API/src/main/java 2>/dev/null \
+        && echo "MISSING FilterRegistrationBean disable for $filter_class"
+    done
+  ```
 - **Bounded resource without reaper** — `TaskManager` (10k task cap) and `RateLimiter` (100k bucket cap) are bounded ConcurrentMaps; without a `@Scheduled` reaper, they fill toward the cap and every new entry permanently throws / 429s. Any new bounded in-memory registry must follow the same shape: cap + `@Scheduled` eviction of terminal/idle entries + `@PreDestroy` for executor cleanup if applicable.
 - **`OncePerRequestFilter` clearing/auth filters not overriding `shouldNotFilterAsyncDispatch()`** — Spring's default skips ASYNC dispatches. A clearing filter that doesn't run on async dispatch leaks `CallerContext` / `RequestContextHolder` to whatever thread the carrier returns to. Filters touching identity must override `shouldNotFilterAsyncDispatch()` to return `false`.
 {{- end}}

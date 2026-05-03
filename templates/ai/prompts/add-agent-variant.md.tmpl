@@ -1,0 +1,265 @@
+# Add a specialist agent variant
+
+## Overview
+
+Trabuco's AIAgent ships a 2-agent reference: `PrimaryAgent` (user-facing) and `SpecialistAgent` (delegated to via `SpecialistAgentTool`). New specialist agents follow the same shape — always 4 files, three Spring lifecycle traps to avoid, and a `maxTokens` cap to bound cost per turn. This is the long-form companion to `/add-agent-variant`.
+
+## Architecture
+
+```
+                      User
+                        │
+                        ▼
+                  AgentRestController
+                        │
+                        ▼
+                   PrimaryAgent  ◀── @Qualifier("primaryChatModel") ChatModel
+                   ChatClient
+                  /     │     \
+        defaultTools(...)
+        /         │          \
+SpecialistAgentTool  YourNewAgentTool   PlaceholderTools / KnowledgeTools
+        │              │
+   @ConditionalOnBean(SpecialistAgent.class)
+        │              │
+        ▼              ▼
+SpecialistAgent    YourNewAgent  ◀── @Qualifier("yourChatModel") ChatModel
+ChatClient         ChatClient
+        │              │
+   @CircuitBreaker(name="llm", fallbackMethod=...)
+   defaultOptions(ToolCallingChatOptions.maxTokens(2048))
+
+ChatClientConfig declares the @Qualifier aliases:
+  primaryChatModel    → anthropicChatModel
+  specialistChatModel → anthropicChatModel
+  guardrailChatModel  → anthropicChatModel
+  yourChatModel       → anthropicChatModel  ← NEW (production tunes independently)
+```
+
+## Three Spring lifecycle traps (memorize these)
+
+The shipped `PrimaryAgent`, `SpecialistAgent`, and `ChatClientConfig` Javadocs all warn about #1. The other two are documented in audit findings.
+
+1. **NEVER `@ConditionalOnBean(ChatModel.class)` on user-scanned classes.** Spring evaluates that conditional on user `@Component` / `@Configuration` BEFORE Spring AI's auto-config registers `ChatModel`. The conditional silently fails — the agent bean never registers — the first request injecting it throws `NoSuchBeanDefinitionException`. The shipped reference classes are deliberately unconditional. The `code-reviewer` agent greps for this regression.
+
+2. **Each agent gets its own `@Qualifier`.** In dev all qualifiers point at the same auto-configured ChatModel; in production each agent tunes temperature, model variant, rate limit, and cost budget independently. Add a new alias bean in `ChatClientConfig` even if it currently delegates to the same provider model — the seam is what production needs.
+
+3. **`@CircuitBreaker(name = "llm")` everywhere.** All agents share the SAME circuit-breaker name. When the LLM provider has an outage, the circuit opens once globally — every agent fails fast at once instead of cascading retries that compound the outage.
+
+## Bound the cost per turn
+
+Set `ToolCallingChatOptions.maxTokens(2048)` (tune to your domain) on every new agent's `ChatClient.builder`. Spring AI 1.0.5 does not expose a tool-call recursion cap, so `maxTokens` (output tokens per LLM call) is the meaningful cost guard against runaway tool-call loops. Hardened deployments pair this with `internalToolExecutionEnabled(false)` and manage the tool-call loop manually — F-AIAGENT-12 in `.ai/security-audit/checklist-aiagent-java.md`.
+
+## Steps — full 4-file skeleton with `PlaceholderAgent` as the worked example
+
+The shipped `SpecialistAgent` is the canonical reference. The example below uses the placeholder convention (matching `PlaceholderTools`, `PlaceholderEntity`, `PlaceholderJobRequestHandler`) — replace `Placeholder` with your domain name.
+
+### 1. Add the qualifier bean in `ChatClientConfig`
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/config/ChatClientConfig.java`
+
+Append a new `@Bean` factory:
+
+```java
+/**
+ * Placeholder agent's ChatModel. Production should pin a model
+ * variant / temperature appropriate for the agent's domain
+ * (e.g. lower temperature for compliance review, higher for
+ * creative summarization).
+ */
+@Bean
+@Qualifier("placeholderChatModel")
+public ChatModel placeholderChatModel(@Qualifier("anthropicChatModel") ChatModel anthropicChatModel) {
+    return anthropicChatModel;
+}
+```
+
+### 2. Create the agent class
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/agent/PlaceholderAgent.java`
+
+```java
+package {{.GroupID}}.aiagent.agent;
+
+import {{.GroupID}}.aiagent.knowledge.KnowledgeTools;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
+
+/**
+ * Placeholder agent — replace with your domain agent (compliance,
+ * summarization, translation, classification, etc.).
+ *
+ * <p>See {@code PrimaryAgent} for why this class deliberately does NOT
+ * carry {@code @ConditionalOnBean(ChatModel.class)}.
+ */
+@Component
+public class PlaceholderAgent {
+
+    private static final String SYSTEM_PROMPT = """
+        You are the placeholder agent.
+
+        TODO: Customize this system prompt for your specialist domain:
+        - Describe the agent's area of expertise.
+        - List specific capabilities and constraints.
+        - Define how this agent differs from the primary agent.
+        - Specify the output format (structured response, ALLOW/BLOCK,
+          plain text, etc.).
+        """;
+
+    private static final int MAX_OUTPUT_TOKENS = 2048;
+
+    private final ChatClient chatClient;
+
+    public PlaceholderAgent(@Qualifier("placeholderChatModel") ChatModel chatModel,
+                            KnowledgeTools knowledgeTools) {
+        this.chatClient = ChatClient.builder(chatModel)
+            .defaultSystem(SYSTEM_PROMPT)
+            .defaultTools(knowledgeTools)
+            .defaultOptions(ToolCallingChatOptions.builder()
+                .maxTokens(MAX_OUTPUT_TOKENS)
+                .build())
+            .build();
+    }
+
+    @CircuitBreaker(name = "llm", fallbackMethod = "askFallback")
+    public String ask(String question) {
+        return chatClient.prompt()
+            .user(question)
+            .call()
+            .content();
+    }
+
+    @SuppressWarnings("unused")
+    private String askFallback(String question, Throwable t) {
+        return "Placeholder agent operations are temporarily unavailable. Please try again shortly.";
+    }
+}
+```
+
+### 3. Create the `@Tool` wrapper
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/agent/PlaceholderAgentTool.java`
+
+```java
+package {{.GroupID}}.aiagent.agent;
+
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Component;
+
+/**
+ * Wraps {@link PlaceholderAgent} as a tool the {@code PrimaryAgent} can
+ * delegate to.
+ *
+ * <p>{@code @ConditionalOnBean(PlaceholderAgent.class)} is the correct
+ * pattern here — both classes are user-scanned, so the conditional fires
+ * after Spring resolves user components. (Contrast with
+ * {@code @ConditionalOnBean(ChatModel.class)} on the agent itself, which
+ * silently fails — see {@code PrimaryAgent} Javadoc.)
+ */
+@Component
+@ConditionalOnBean(PlaceholderAgent.class)
+public class PlaceholderAgentTool {
+
+    private final PlaceholderAgent placeholderAgent;
+
+    public PlaceholderAgentTool(PlaceholderAgent placeholderAgent) {
+        this.placeholderAgent = placeholderAgent;
+    }
+
+    @Tool(description = "Delegate to the placeholder agent for [TODO: describe the agent's domain]. "
+        + "Use when the user asks something that requires [TODO: specialized knowledge / processing / output format].")
+    public String askPlaceholderAgent(
+            @ToolParam(description = "[TODO: describe the input — be specific so the LLM picks the right tool]") String question) {
+        return placeholderAgent.ask(question);
+    }
+}
+```
+
+### 4. Inject into `PrimaryAgent`
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/agent/PrimaryAgent.java`
+
+Modify the constructor — add the new tool parameter and append to `defaultTools(...)`:
+
+```java
+public PrimaryAgent(@Qualifier("primaryChatModel") ChatModel chatModel,
+                    PlaceholderTools placeholderTools,
+                    KnowledgeTools knowledgeTools,
+                    SpecialistAgentTool specialistAgentTool,
+                    PlaceholderAgentTool placeholderAgentTool,        // ← NEW
+                    Optional<VectorStore> vectorStore) {
+    ChatClient.Builder builder = ChatClient.builder(chatModel)
+        .defaultSystem(SYSTEM_PROMPT)
+        .defaultTools(placeholderTools, knowledgeTools, specialistAgentTool, placeholderAgentTool); // ← NEW
+    vectorStore.ifPresent(vs -> builder.defaultAdvisors(buildRagAdvisor(vs)));
+    this.chatClient = builder.build();
+}
+```
+
+### 5. Wire test
+
+**File**: `AIAgent/src/test/java/{{.PackagePath}}/aiagent/agent/PlaceholderAgentTest.java`
+
+```java
+@SpringBootTest
+class PlaceholderAgentTest {
+
+    @Autowired private PlaceholderAgent placeholderAgent;        // catches @ConditionalOnBean(ChatModel.class) trap
+    @Autowired private PlaceholderAgentTool placeholderAgentTool;
+    @MockBean(name = "anthropicChatModel") private ChatModel chatModel;
+
+    @Test
+    void placeholderAgent_isWired() {
+        assertThat(placeholderAgent).isNotNull();
+        assertThat(placeholderAgentTool).isNotNull();
+    }
+
+    @Test
+    void ask_delegatesToChatClient() {
+        // Stub ChatModel and assert the agent invokes it once.
+    }
+}
+```
+
+The wire test alone is the smoke test that catches the `@ConditionalOnBean(ChatModel.class)` trap — if the agent bean fails to register, `@Autowired` injection throws at startup.
+
+## Project conventions you must follow
+
+- **Each agent is `@Component`, no `@ConditionalOnBean` on the agent class.** Generator-time emission is the gate.
+- **Fallback method**: `private`, `@SuppressWarnings("unused")`, signature `(originalParams..., Throwable t)`, same return type. Resilience4j invokes it reflectively.
+- **`@Tool` wrapper**: `@ConditionalOnBean(<YourAgent>.class)` IS reliable here.
+- **Tool descriptions**: specific. The LLM reads them to decide which tool to invoke.
+- **`@CircuitBreaker(name = "llm")`** uniformly across agents.
+- **`ToolCallingChatOptions.maxTokens(...)`** on every new agent's builder. F-AIAGENT-12 partial mitigation.
+- **Explicit types**: `ChatClient`, `ChatModel`, `ToolCallingChatOptions` — `var` hides the qualifier wiring.
+
+## Common mistakes
+
+- **`@ConditionalOnBean(ChatModel.class)` on the agent or `ChatClientConfig`** — silent miss. The bean never registers. First request injecting it throws `NoSuchBeanDefinitionException`. The shipped `code-reviewer` agent greps for this exact regression.
+- **Reusing `@Qualifier("primaryChatModel")` on the new agent** — prod cost / rate-limit collisions. Add a new `@Qualifier("xChatModel")` bean.
+- **Missing `@CircuitBreaker`** — LLM provider outages propagate as 5xx to the user instead of returning the fallback string. Use `name = "llm"` for global outage coordination.
+- **Missing `maxTokens` cap** — runaway tool-call loops can drive cost arbitrarily high. F-AIAGENT-12.
+- **Forgetting `.defaultTools(...)` in `PrimaryAgent`** — the new agent registers but the LLM never knows about it. The agent is dead code.
+- **Vague `@Tool` description** — the LLM picks the wrong tool or fails to delegate. Be specific about domain and trigger conditions.
+- **Fallback signature mismatch** — Resilience4j requires `(originalParams..., Throwable t)`. A mismatched signature throws at first circuit open.
+- **Using `var ChatClient`** — explicit `ChatClient` type makes the builder chain visible at the exact line reviewers verify the `defaultOptions` cap and `defaultTools` registration.
+
+## Security checklist (before merging)
+
+- [ ] Agent class is `@Component`, NOT `@ConditionalOnBean(ChatModel.class)`.
+- [ ] Tool wrapper is `@Component @ConditionalOnBean(<Agent>.class)`.
+- [ ] Constructor uses a unique `@Qualifier("xChatModel")` (not reused).
+- [ ] `@CircuitBreaker(name = "llm", fallbackMethod = ...)` on every public method.
+- [ ] Fallback method matches the signature pattern; `@SuppressWarnings("unused")`.
+- [ ] `defaultOptions(ToolCallingChatOptions.builder().maxTokens(<n>).build())` set.
+- [ ] `@Tool` and `@ToolParam` descriptions are specific (not "Ask the agent something").
+- [ ] `PrimaryAgent` constructor injects the new tool AND appends it to `.defaultTools(...)`.
+- [ ] Wire test (`@SpringBootTest` + `@Autowired`) verifies the bean registers.
+
+> **Reference**: shipped `SpecialistAgent.java` for the canonical agent shape. `PrimaryAgent.java` Javadoc for the `@ConditionalOnBean(ChatModel.class)` anti-pattern. `ChatClientConfig.java` for the qualifier alias pattern. `.ai/security-audit/checklist-aiagent-java.md` F-AIAGENT-12 for the cost-cap rationale.

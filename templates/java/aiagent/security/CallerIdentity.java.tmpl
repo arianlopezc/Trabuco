@@ -104,4 +104,29 @@ public interface CallerIdentity {
             .keyLabel("anonymous")
             .build();
     }
+
+    /**
+     * Build a service-account identity for non-request execution paths
+     * (scheduled jobs, event listeners, message-bus consumers, CLI
+     * tools). Use only for code that must call into AIAgent surfaces
+     * from a thread that has no captured request — for request-driven
+     * async work, capture and re-set the actual {@link CallerContext}
+     * (see {@code TaskManager.submitTask}).
+     *
+     * <p>Tier is fixed at {@code "partner"} — service accounts are
+     * privileged. The tenant is explicit so each service writes to a
+     * known data-isolation boundary; never reuse a partner caller's
+     * tenant from configuration without intent.
+     *
+     * <p>The {@code keyHash} / {@code keyLabel} are stamped as
+     * {@code "service:<label>"} for audit-log attribution.
+     */
+    static CallerIdentity serviceAccount(String label, String tenantId) {
+        return ImmutableCallerIdentity.builder()
+            .tier("partner")
+            .keyHash("service:" + label)
+            .keyLabel("service:" + label)
+            .tenantId(tenantId)
+            .build();
+    }
 }

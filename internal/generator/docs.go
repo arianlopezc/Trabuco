@@ -259,11 +259,28 @@ func (g *Generator) generateAIDirectory() error {
 			{"ai/prompts/add-a2a-skill.md.tmpl", ".ai/prompts/add-a2a-skill.md"},
 			{"ai/prompts/add-guardrail-rule.md.tmpl", ".ai/prompts/add-guardrail-rule.md"},
 			{"ai/prompts/add-knowledge-entry.md.tmpl", ".ai/prompts/add-knowledge-entry.md"},
+			{"ai/prompts/add-retriever.md.tmpl", ".ai/prompts/add-retriever.md"},
+			{"ai/prompts/add-streaming-endpoint.md.tmpl", ".ai/prompts/add-streaming-endpoint.md"},
+			{"ai/prompts/add-agent-variant.md.tmpl", ".ai/prompts/add-agent-variant.md"},
+			{"ai/prompts/extend-rag-ingestion.md.tmpl", ".ai/prompts/extend-rag-ingestion.md"},
 		}
 		for _, p := range aiAgentPrompts {
 			if err := g.writeTemplateWithData(p.tmpl, p.out, aiData); err != nil {
 				return fmt.Errorf("failed to generate %s: %w", p.out, err)
 			}
+		}
+	}
+
+	// Auth-chain prompt — applies whenever the auth chain ships, i.e.
+	// either the API or the AIAgent module is selected. Both modules
+	// generate a SecurityConfig + filter chain.
+	if g.config.HasModule(config.ModuleAPI) || g.config.HasModule(config.ModuleAIAgent) {
+		if err := g.writeTemplateWithData(
+			"ai/prompts/extend-auth-chain.md.tmpl",
+			".ai/prompts/extend-auth-chain.md",
+			aiData,
+		); err != nil {
+			return fmt.Errorf("failed to generate extend-auth-chain.md: %w", err)
 		}
 	}
 

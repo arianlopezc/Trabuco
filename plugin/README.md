@@ -80,14 +80,14 @@ This clones the Trabuco repo and installs the plugin from
 ### From a downloaded release tarball
 
 ```bash
-curl -L https://github.com/arianlopezc/Trabuco/releases/latest/download/trabuco-plugin-v1.12.3.tar.gz \
+curl -L https://github.com/arianlopezc/Trabuco/releases/latest/download/trabuco-plugin-v1.13.0.tar.gz \
   | tar -xz -C ~
 ```
 
 Then in Claude Code:
 
 ```text
-/plugin marketplace add ~/trabuco-plugin-v1.12.3
+/plugin marketplace add ~/trabuco-plugin-v1.13.0
 /plugin install trabuco@trabuco-marketplace
 ```
 

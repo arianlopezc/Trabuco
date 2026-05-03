@@ -206,7 +206,7 @@ The app refuses to boot if the property itself is unset — a deliberate guardra
 
 Use `@PreAuthorize("hasAuthority('SCOPE_<name>')")` for fine-grained access control on controllers and service methods.{{- if .HasModule "AIAgent" }} The AIAgent module additionally ships a legacy API-key path (`app.aiagent.api-key.enabled`, default `true`) that coexists with the JWT chain — operators populate `agent.auth.keys.*` or activate the `local-dev` profile. Use `@RequireScope("public" | "partner")` on AIAgent controllers — the interceptor reads both API-key and JWT identity.{{- end }}
 
-Per-provider recipes (Keycloak / Auth0 / Okta / Cognito / generic OIDC) live in `docs/auth.md`.
+Per-provider recipes (Keycloak / Auth0 / Okta / Cognito / generic OIDC) live in `docs/auth.md`. Extending the auth chain (new tier, OIDC scope mapping, non-RFC IdP claim extractor, custom servlet filter) goes through `.ai/prompts/extend-auth-chain.md` — tier additions touch `CallerIdentity.tierLevel` + `RateLimiter.LIMITS` + `ScopeEnforcer` authority sets in lock-step; custom `@Component` filters MUST have a paired `FilterRegistrationBean` with `setEnabled(false)` to prevent double-registration.
 {{- end}}
 {{- if .HasModule "AIAgent"}}
 
@@ -218,7 +218,9 @@ The AIAgent module ships vector-RAG knowledge retrieval (Spring AI 1.0.5). Do no
 - The ambient RAG path on `PrimaryAgent` uses a separate `TenantFilteringDocumentRetriever` (Spring AI's `DocumentRetriever` interface) wrapped by `FencingDocumentRetriever`. Both retrievers — `KnowledgeRetriever` (tool path) and `TenantFilteringDocumentRetriever` (advisor path) — resolve the `tenant_id` filter PER CALL from `CallerContext`. Any new retriever must follow the same shape.
 - `DocumentIngestionService` + `IngestionController` (POST `/ingest`, partner-scope, default-disabled via `agent.ingest.enabled=true` to enable).
 - Tenant isolation: `CallerIdentity.tenantId()` is enforced at every retriever AND at ingest time; caller-supplied `tenant_id` in metadata is server-side stripped before storage.
-- See `docs/vector-rag.md` for store-specific recipes, `.ai/prompts/JAVA_CODE_QUALITY.md` §6.1.2 for the canonical retriever pattern, and `.ai/prompts/add-knowledge-entry.md` for per-task guidance.
+- See `docs/vector-rag.md` for store-specific recipes, `.ai/prompts/JAVA_CODE_QUALITY.md` §6.1.2 for the canonical retriever pattern, `.ai/prompts/add-knowledge-entry.md` for one-off content additions, `.ai/prompts/add-retriever.md` for extending the retrieval chain (re-ranking, hybrid, multi-source), and `.ai/prompts/extend-rag-ingestion.md` for new ingestion paths (HTTP, scheduled, event-driven; metadata schema extension; indexing).
+- SSE streaming surface: `StreamingController` (`GET /tasks/{taskId}/stream`, `@RequireScope("partner")`) is the canonical 5-part lifecycle (rate-limit → per-caller cap → BOLA-safe `getTaskForOwner` → named `Consumer<TaskEvent>` listener → paired unsubscribe in all 3 emitter hooks). Inline `subscribe(id, e -> {...})` lambdas can't be unsubscribed — capture as a named variable. See `.ai/prompts/JAVA_CODE_QUALITY.md` §6.1.4 and `.ai/prompts/add-streaming-endpoint.md`.
+- Multi-agent orchestration: `PrimaryAgent` + `SpecialistAgent` (wrapped in `SpecialistAgentTool`). Adding a new agent variant is always 4 files: `@Qualifier("xChatModel")` alias in `ChatClientConfig`, the agent class as `@Component` (NEVER `@ConditionalOnBean(ChatModel.class)` — silently fails), the `@Tool` wrapper as `@Component @ConditionalOnBean(<X>Agent.class)`, and a `PrimaryAgent` constructor injection. All agents share `@CircuitBreaker(name = "llm")` and set `ToolCallingChatOptions.maxTokens(2048)` on the builder (F-AIAGENT-12 partial mitigation). See `.ai/prompts/add-agent-variant.md`.
 {{- end}}
 
 ## What This Project Does NOT Include

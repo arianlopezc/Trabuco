@@ -194,10 +194,12 @@ Don't suggest "add a vector store" — three are wired and selected by classpath
   - `VectorKnowledgeRetriever` implements Trabuco's `KnowledgeRetriever` (used by `KnowledgeTools.@Tool` path).
   - `TenantFilteringDocumentRetriever` implements Spring AI's `DocumentRetriever` (used by `RetrievalAugmentationAdvisor` on `PrimaryAgent`).
   - Both resolve `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` PER CALL from `CallerContext`. Don't suggest building advisors with raw `VectorStoreDocumentRetriever` — that's a static-filter regression.
+- Adding a re-ranking / hybrid / multi-source retriever: implement `DocumentRetriever`, slot BETWEEN `FencingDocumentRetriever` (outer) and `TenantFilteringDocumentRetriever` (inner) in `PrimaryAgent.buildRagAdvisor`. Order is a security invariant. See `/add-retriever`.
 - Ingestion goes through `DocumentIngestionService.ingest(text, metadata)`. Stamps `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped before storage.
 - Cross-tenant reads are impossible by construction — every `SearchRequest` is tenant-filtered.
 - A keyword fallback (`KeywordKnowledgeRetriever` over `KnowledgeBase.ENTRIES`) is selected automatically when no `VectorStore` is wired. Don't reinvent either path.
 - Retrieved chunks pass through `FencingDocumentRetriever`, which marks the trust boundary between prompt and document content. Don't bypass.
+- Extending ingestion (new endpoint, scheduled job, event listener, custom metadata field) goes through `/extend-rag-ingestion`. Direct `vectorStore.add(...)` outside `DocumentIngestionService` bypasses tenant_id stamping → cross-tenant leak. Non-request threads (`@Scheduled`, `@KafkaListener`) must build a `CallerIdentity.serviceAccount(label, tenantId)` and `CallerContext.set` / `try / finally clear` around `ingest()` — otherwise every chunk lands under the anonymous tenant. New filterable metadata fields need a Flyway migration in `db/vector-migration/` (NOT `db/migration/`).
 
 ## Async context propagation in AIAgent
 
@@ -214,6 +216,25 @@ executor.submit(() -> {
     }
 });
 ```
+
+## Streaming endpoints (SSE in AIAgent)
+
+The shipped `StreamingController` (`/tasks/{taskId}/stream`) is the reference implementation. Don't improvise the lifecycle — the 5-part shape (rate-limit → per-caller cap → `getTaskForOwner` → captured listener → paired unsubscribe in all 3 emitter hooks) defends three silent failures (listener leak, slot leak, BOLA via task-id polling).
+
+- Inline `taskManager.subscribe(id, e -> {...})` is a regression — capture the listener as a named `Consumer<TaskEvent>` so the same instance can be unsubscribed.
+- Use `taskManager.getTaskForOwner(id, caller.keyHash())`, never `getTask(id)` — same 404 for not-found and not-yours (BOLA defense).
+- All three of `emitter.onCompletion` / `onTimeout` / `onError` must run `releaseSlot` (unsubscribe + counter decrement). Skip any one and that path leaks forever.
+- See `/add-streaming-endpoint` for the procedure.
+
+## Multi-agent pattern (AIAgent)
+
+`PrimaryAgent` orchestrates; specialist agents (e.g. `SpecialistAgent`) are wrapped in `@Tool` beans (e.g. `SpecialistAgentTool`) so the primary's LLM can delegate. Adding a new agent variant is always 4 files: `ChatClientConfig` qualifier bean + agent class + `@Tool` wrapper + `PrimaryAgent` injection.
+
+- NEVER `@ConditionalOnBean(ChatModel.class)` on the agent or `ChatClientConfig` — silently fails (Spring evaluates before Spring AI auto-config registers ChatModel). The `@ConditionalOnBean(<UserAgent>.class)` pattern on the `@Tool` wrapper IS valid (both classes are user-scanned).
+- Each agent gets its own `@Qualifier("xChatModel")` so production can tune temperature / model variant / rate limit independently.
+- `@CircuitBreaker(name = "llm")` on every public agent method, paired private fallback. Same name = single LLM outage opens all circuits at once.
+- Set `ToolCallingChatOptions.maxTokens(2048)` on the `ChatClient.builder` to bound cost per turn (Spring AI 1.0.5 has no tool-call recursion cap; F-AIAGENT-12).
+- See `/add-agent-variant` for the procedure.
 {{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}
 
@@ -225,6 +246,7 @@ Auth scaffolding is generated, not absent. Do not suggest "Add Spring Security" 
 - Activated by `trabuco.auth.enabled=true` plus `OIDC_ISSUER_URI` and `OIDC_AUDIENCE`. App refuses to boot if `trabuco.auth.enabled` is unset.
 - Use `@PreAuthorize("hasAuthority('SCOPE_<name>')")` on controllers / service methods{{- if .HasModule "AIAgent" }}; in the AIAgent module also `@RequireScope("public" | "partner")`{{- end }}.
 - Per-provider config recipes: `docs/auth.md`.
+- Extending the auth chain (new tier, new OIDC scope, non-RFC IdP claim extractor, custom filter) goes through `/extend-auth-chain`. Tier additions touch `CallerIdentity.tierLevel` switch + `RateLimiter.LIMITS` map + `ScopeEnforcer` authority sets in lock-step — missing any one is a silent regression. Custom `@Component` filters MUST have a paired `FilterRegistrationBean` with `setEnabled(false)` to prevent double-registration.
 {{- end}}
 
 ## Security baseline
