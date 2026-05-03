@@ -1,0 +1,50 @@
+# Add a custom DocumentRetriever to the AIAgent RAG path
+
+Adds a re-ranking, hybrid, multi-source, or auxiliary-filtering retriever to `PrimaryAgent`'s `RetrievalAugmentationAdvisor` chain. Stops short of replacing the tenant-isolation or fencing layers — those are non-negotiable.
+
+## Two interfaces, two paths — pick the right one
+
+| Interface | Path | When to extend |
+|---|---|---|
+| Spring AI `DocumentRetriever` (`retrieve(Query)`) | RAG advisor on every chat turn | Re-ranking, hybrid merge, multi-source. Default. |
+| Trabuco `KnowledgeRetriever` (`retrieve(String, int)`) | `@Tool askQuestion` (LLM decides when to call) | Custom keyword scoring, source-of-truth swaps. Less common. |
+
+If unsure: **`DocumentRetriever`**. The advisor path runs on every chat turn; the `@Tool` path runs only when the LLM explicitly calls `askQuestion`.
+
+## The composition order is a security invariant
+
+The shipped chain wraps `TenantFilteringDocumentRetriever` (innermost) inside `FencingDocumentRetriever` (outermost). Your new retriever almost always slots **between** them:
+
+```
+FencingDocumentRetriever                         ← outermost; <untrusted_document> fencing
+  └─ YourNewRetriever                            ← e.g. re-rank / hybrid / multi-source
+       └─ TenantFilteringDocumentRetriever       ← innermost (advisor path); per-call tenant_id filter
+            └─ vectorStore.similaritySearch(...)
+```
+
+**Why the order is non-negotiable:**
+
+- `TenantFilteringDocumentRetriever` must run before any custom logic touches chunks — otherwise your re-ranker / merger sees cross-tenant content.
+- `FencingDocumentRetriever` must wrap last — every chunk reaching the LLM has provenance fences and role-token sanitization.
+- Reverse the order or omit a layer and you ship a silent cross-tenant data leak.
+
+## Key steps (summary)
+
+1. **Pick the interface.** `DocumentRetriever` for the advisor path; `KnowledgeRetriever` for the `@Tool` path. Don't implement both.
+2. **Read `CallerContext.get()` per call** if your retriever needs identity — never construct a static `FilterExpression`. The advisor is shared across requests; a captured filter pins to one caller for life.
+3. **Wire into `PrimaryAgent.buildRagAdvisor`** — slot between `FencingDocumentRetriever` (outer) and `TenantFilteringDocumentRetriever` (inner). **Do NOT** wrap a raw `VectorStoreDocumentRetriever` — that's the canonical regression `code-reviewer` flags.
+4. **Write a tenant-isolation test.** Mirror `VectorTenantIsolationTest`: ingest under tenant A and tenant B, retrieve under B, assert `isNotEmpty()` AND only-B AND none-A. A vacuous `allSatisfy`/`noneSatisfy` over an empty list passes trivially.
+5. **Run `/audit`** — `checklist-aiagent-java` covers the RAG-provenance and tenant-isolation invariants end-to-end.
+
+## Project conventions you must follow
+
+- **Tenant filter is innermost.** `TenantFilteringDocumentRetriever` runs before any custom logic touches chunks.
+- **Fencing is outermost.** `FencingDocumentRetriever` wraps last so every chunk reaching the LLM has provenance fences.
+- **Per-call resolution.** `CallerContext.get()` reads inside `retrieve(...)`, never at construction. The advisor is built once and reused across requests.
+- **Empty-result safety.** Return `List.of()` for null or empty results; never throw. Spring AI version drift can return `null`.
+- **No `VectorStoreDocumentRetriever.builder(...)` outside `TenantFilteringDocumentRetriever.java`.** That's the regression the `code-reviewer` agent greps for.
+- **No `@Component` + `@ConditionalOnBean(VectorStore.class)` on the retriever class.** Spring evaluates the conditional before vector-store auto-config registers the bean — silent miss. Declare a regular `@Bean` in `KnowledgeBeansConfiguration` per the canonical pattern (see the Javadoc in `VectorKnowledgeRetriever`).
+
+## Full step-by-step
+
+See `.ai/prompts/add-retriever.md` (full advisor + `@Tool` path interfaces, composition rules, the tenant-isolation test pattern, common mistakes, and the security checklist that mirrors `JAVA_CODE_QUALITY.md` §6.1.2).

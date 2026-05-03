@@ -259,6 +259,7 @@ func (g *Generator) generateAIDirectory() error {
 			{"ai/prompts/add-a2a-skill.md.tmpl", ".ai/prompts/add-a2a-skill.md"},
 			{"ai/prompts/add-guardrail-rule.md.tmpl", ".ai/prompts/add-guardrail-rule.md"},
 			{"ai/prompts/add-knowledge-entry.md.tmpl", ".ai/prompts/add-knowledge-entry.md"},
+			{"ai/prompts/add-retriever.md.tmpl", ".ai/prompts/add-retriever.md"},
 		}
 		for _, p := range aiAgentPrompts {
 			if err := g.writeTemplateWithData(p.tmpl, p.out, aiData); err != nil {

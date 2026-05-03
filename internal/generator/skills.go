@@ -249,6 +249,17 @@ func skillCatalog() []skillDef {
 			CursorGlobs:  []string{"AIAgent/**/knowledge/**/*"},
 		},
 		{
+			Name:         "add-retriever",
+			Description:  "Add a custom DocumentRetriever to the AIAgent RAG path (re-ranking, hybrid, multi-source). Composition order is a security invariant — tenant filter innermost, fencing outermost.",
+			ArgumentHint: "[retriever-name]",
+			Paths:        aiPaths,
+			BodyTmpl:     "skills/add-retriever.body.md.tmpl",
+			RequiredModule: config.ModuleAIAgent,
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/knowledge/**/*.java", "AIAgent/**/agent/PrimaryAgent.java"},
+		},
+		{
 			Name:         "add-a2a-skill",
 			Description:  "Expose an Agent-to-Agent (A2A) skill endpoint: JSON-RPC handler, async task manager wiring, A2AController registration.",
 			ArgumentHint: "[skill-name]",

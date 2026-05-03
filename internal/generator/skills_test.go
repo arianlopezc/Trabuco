@@ -136,7 +136,7 @@ func TestSkills_ModuleGate_AIAgentOnly(t *testing.T) {
 	}
 	dir := generateWithSkills(t, cfg)
 
-	for _, name := range []string{"add-tool", "add-guardrail-rule", "add-knowledge-entry", "add-a2a-skill"} {
+	for _, name := range []string{"add-tool", "add-guardrail-rule", "add-knowledge-entry", "add-retriever", "add-a2a-skill"} {
 		assertSkillAbsent(t, dir, ".claude/skills/"+name+"/SKILL.md")
 	}
 	// Universal skills still emit.
@@ -301,7 +301,7 @@ func TestSkills_ReviewOff_EmitsNothing(t *testing.T) {
 		"add-entity", "add-endpoint", "add-service",
 		"add-migration", "add-repository-method", "add-test",
 		"add-tool", "add-event", "add-job", "add-knowledge-entry",
-		"add-guardrail-rule", "add-a2a-skill", "pr", "commit",
+		"add-retriever", "add-guardrail-rule", "add-a2a-skill", "pr", "commit",
 	}
 	for _, name := range reviewSkills {
 		p := filepath.Join(dir, ".claude/skills", name, "SKILL.md")

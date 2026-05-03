@@ -129,6 +129,7 @@ Three vector stores are wired and selected by classpath dependency: PGVector (de
   - `VectorKnowledgeRetriever` (Trabuco's `KnowledgeRetriever`, used by `KnowledgeTools.@Tool`).
   - `TenantFilteringDocumentRetriever` (Spring AI's `DocumentRetriever`, used by `RetrievalAugmentationAdvisor` on `PrimaryAgent`).
   - Both resolve the filter per call from `CallerContext`. Building an advisor with raw `VectorStoreDocumentRetriever` is a static-filter regression.
+- Adding a re-ranking / hybrid / multi-source retriever: implement `DocumentRetriever`, slot BETWEEN `FencingDocumentRetriever` (outer) and `TenantFilteringDocumentRetriever` (inner) in `PrimaryAgent.buildRagAdvisor`. Order is a security invariant. See `/add-retriever`.
 - Ingestion: `DocumentIngestionService.ingest(text, metadata)` — stamps `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped.
 - Tenant isolation is enforced at every read via `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())`. Cross-tenant reads are impossible by construction.
 - Retrieved chunks pass through `FencingDocumentRetriever`. Don't bypass the fences.

@@ -1,0 +1,225 @@
+# Add a custom DocumentRetriever
+
+## Overview
+
+Trabuco's AIAgent ships a layered retrieval chain that protects two properties simultaneously: **tenant isolation** (a caller can only retrieve their own chunks) and **prompt-injection defense** (every chunk reaching the LLM is fenced as untrusted content). Adding re-ranking, hybrid retrieval, multi-source aggregation, or any auxiliary filtering must preserve both properties — slot the new retriever in the composition without subverting either.
+
+This is the long-form companion to `/add-retriever`.
+
+## Architecture
+
+```
+User: "What's our return policy?"
+        |
+        v  (HTTP thread, CallerContext populated by ApiKeyAuthFilter / BearerTokenAuthenticationFilter)
+PrimaryAgent.chat(message)
+        |
+        v
+RetrievalAugmentationAdvisor.before(query)
+        |
+        v
+FencingDocumentRetriever.retrieve(query)               ← outermost
+        |
+        v
+[YourCustomRetriever.retrieve(query)]                  ← typical insertion point
+        |
+        v
+TenantFilteringDocumentRetriever.retrieve(query)       ← innermost (advisor path)
+        |  reads CallerContext.get().tenantId()
+        v
+VectorStore.similaritySearch(query, tenant_id=X)
+        |
+        v  (chunks bubble back up)
+... TenantFiltering returns chunks (already tenant-scoped at the store)
+... YourCustomRetriever applies re-rank / merge / extra filtering
+... Fencing wraps each chunk in <untrusted_document source="..." id="...">
+        |
+        v
+RetrievalAugmentationAdvisor injects fenced chunks into the prompt
+        |
+        v
+LLM call
+```
+
+## Two interfaces, two paths — pick the right one
+
+| Interface | Used by | Signature | When to extend |
+|---|---|---|---|
+| Spring AI `DocumentRetriever` | `RetrievalAugmentationAdvisor` (ambient RAG on every prompt) | `List<Document> retrieve(Query query)` | Re-ranking, hybrid merge, multi-source. Default extension target. |
+| Trabuco `KnowledgeRetriever` | `KnowledgeTools.askQuestion` (`@Tool`-driven; LLM decides when to call) | `List<Document> retrieve(String query, int topK)` | Custom keyword scoring, source-of-truth swaps. Less common. |
+
+If you don't know which to pick: **`DocumentRetriever`**. The advisor path runs on every chat turn; the `@Tool` path runs only when the LLM explicitly calls `askQuestion`.
+
+## Steps — Advisor path (Spring AI `DocumentRetriever`)
+
+### 1. Implement DocumentRetriever
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/knowledge/<Name>DocumentRetriever.java`
+
+Concrete example — a re-ranking layer:
+
+```java
+package {{.GroupID}}.aiagent.knowledge;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.rag.Query;
+import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
+
+import java.util.Comparator;
+import java.util.List;
+
+/**
+ * Re-ranks the chunks returned by the inner retriever using a
+ * cross-encoder-style scoring layer before they reach the
+ * {@link FencingDocumentRetriever}.
+ *
+ * <p>Slots between Fencing (outer) and TenantFiltering (inner) in
+ * {@code PrimaryAgent.buildRagAdvisor}. By the time {@link #retrieve}
+ * runs, the chunks have already been tenant-filtered by the inner
+ * retriever — no cross-tenant leak risk in the re-ranking logic.
+ */
+public class HybridDocumentRetriever implements DocumentRetriever {
+
+    private final DocumentRetriever delegate;
+
+    public HybridDocumentRetriever(DocumentRetriever delegate) {
+        this.delegate = delegate;
+    }
+
+    @Override
+    public List<Document> retrieve(Query query) {
+        List<Document> raw = delegate.retrieve(query);
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        return raw.stream()
+            .sorted(Comparator.comparingDouble(d -> -score(d, query)))
+            .toList();
+    }
+
+    private double score(Document doc, Query query) {
+        // Your scoring logic (BM25 boost, recency, cross-encoder, etc.).
+        // The doc has already been tenant-filtered by the inner retriever.
+        return 0.0;
+    }
+}
+```
+
+**Conventions:**
+
+- **Empty-input safety**: handle `null` and empty lists; never throw on no results.
+- **Don't read `CallerContext` for tenant scope** — the inner `TenantFilteringDocumentRetriever` already filtered cross-tenant chunks before the list reached you. Reading `CallerContext` is fine for non-tenant axes (user preferences, A/B variant, locale).
+- **No mutable state**: retrievers are constructed once and reused across requests. Per-request state lives in the `Query` argument or `CallerContext`.
+
+### 2. Wire into `PrimaryAgent.buildRagAdvisor`
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/agent/PrimaryAgent.java`
+
+Modify the existing composition (do not replace the existing layers):
+
+```java
+private static Advisor buildRagAdvisor(VectorStore vectorStore) {
+    // Three layers, applied inside-out:
+    //   1. TenantFilteringDocumentRetriever — per-call tenant_id filter
+    //   2. HybridDocumentRetriever — re-ranking on tenant-filtered hits
+    //   3. FencingDocumentRetriever — provenance fences for prompt-injection defense
+    return RetrievalAugmentationAdvisor.builder()
+        .documentRetriever(new FencingDocumentRetriever(
+            new HybridDocumentRetriever(                          // ← NEW LAYER
+                new TenantFilteringDocumentRetriever(vectorStore, 4))))
+        .build();
+}
+```
+
+**The order is a security invariant.** Wrapping `VectorStoreDocumentRetriever` directly (without `TenantFilteringDocumentRetriever`) bypasses tenant isolation — `code-reviewer` flags this regression. Wrapping outside `FencingDocumentRetriever` exposes raw chunks to the LLM.
+
+### 3. Add a tenant-isolation test
+
+**File**: `AIAgent/src/test/java/{{.PackagePath}}/aiagent/knowledge/HybridRetrieverTenantIsolationTest.java`
+
+Mirror `VectorTenantIsolationTest`. The two regressions to guard against are: (a) the re-ranker drops the tenant filter somehow, (b) the test passes vacuously over empty results.
+
+```java
+@Test
+void hybridRetriever_isolatesAcrossTenants() {
+    // Ingest under tenant A
+    setCallerContext("tenant-a");
+    documentIngestionService.ingest("Tenant A confidential doc", Map.of());
+
+    // Ingest under tenant B
+    setCallerContext("tenant-b");
+    documentIngestionService.ingest("Tenant B confidential doc", Map.of());
+
+    // Retrieve under tenant B
+    setCallerContext("tenant-b");
+    List<Document> hits = hybridRetriever.retrieve(new Query("confidential"));
+
+    assertThat(hits)
+        .isNotEmpty()                                              // non-vacuous: must observe results
+        .allSatisfy(d -> assertThat(d.getText()).contains("Tenant B"))
+        .noneSatisfy(d -> assertThat(d.getText()).contains("Tenant A"));
+}
+```
+
+**Vacuous assertions are the canonical regression** — `allSatisfy`/`noneSatisfy` over an empty list passes trivially. The `isNotEmpty()` precondition catches that. The shipped `VectorTenantIsolationTest` has the same shape.
+
+## Steps — `@Tool` path (Trabuco `KnowledgeRetriever`)
+
+Less common, but the same conventions apply.
+
+### 1. Implement KnowledgeRetriever
+
+```java
+package {{.GroupID}}.aiagent.knowledge;
+
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import org.springframework.ai.document.Document;
+
+import java.util.List;
+
+public class CustomKeywordRetriever implements KnowledgeRetriever {
+
+    @Override
+    public List<Document> retrieve(String query, int topK) {
+        CallerIdentity caller = CallerContext.get();
+        // Apply tenant filter via your custom storage layer.
+        // Same tenant_id contract as VectorKnowledgeRetriever.
+        return /* your impl */;
+    }
+}
+```
+
+### 2. Override the bean
+
+In `KnowledgeBeansConfiguration` declare your retriever as `@Primary` so it wins autowiring over the shipped `KeywordKnowledgeRetriever` / `VectorKnowledgeRetriever`. Do NOT add `@ConditionalOnBean(VectorStore.class)` to the retriever class — see the `VectorKnowledgeRetriever` Javadoc for why; declare a regular `@Bean` and let Spring's normal dependency resolution handle it.
+
+## Project conventions you must follow
+
+- **Tenant filter is innermost.** `TenantFilteringDocumentRetriever` MUST run before any custom logic that observes chunk content.
+- **Fencing is outermost.** `FencingDocumentRetriever` MUST be the last layer before the advisor — every chunk reaching the LLM has provenance fences and role-token sanitization.
+- **Per-call resolution.** `CallerContext.get()` is read INSIDE `retrieve(...)`, never captured at construction. The advisor is shared across requests; a captured filter pins to whichever caller built the advisor first.
+- **Empty-input safety.** `delegate.retrieve(query)` may return `null` on Spring AI version drift. Defend.
+- **No `VectorStoreDocumentRetriever.builder(...)` outside `TenantFilteringDocumentRetriever.java`.** That's the regression `code-reviewer` greps for.
+- **No `@Component` on a retriever class.** The canonical wiring is via `KnowledgeBeansConfiguration`'s `@Bean` factory method. `@Component` + `@ConditionalOnBean(VectorStore.class)` silently fails because Spring evaluates the conditional before the auto-config registers the vector store.
+
+## Common mistakes
+
+- **Wrapping `VectorStoreDocumentRetriever` directly** — bypasses tenant isolation. Use `TenantFilteringDocumentRetriever`.
+- **Constructing a static `FilterExpression` at retriever build time** — pins the advisor to one tenant for life.
+- **Skipping the `isNotEmpty()` precondition in tests** — vacuous `allSatisfy` over empty lists passes silently.
+- **Adding the new retriever inside `TenantFilteringDocumentRetriever`** — your retriever sees only same-tenant chunks (good for that scope), but if it queries an additional source on its own (hybrid path), that source is unfiltered.
+- **Putting the new retriever outside `FencingDocumentRetriever`** — raw chunks reach the LLM without provenance fences. Indirect prompt injection becomes trivial.
+- **`@Component` annotation on the retriever class** — `@Component` + `@ConditionalOnBean(VectorStore.class)` is the canonical Spring AI conditional trap.
+
+## Security checklist (before merging)
+
+- [ ] New retriever implements `DocumentRetriever` (advisor path) or `KnowledgeRetriever` (`@Tool` path) — not both.
+- [ ] Composition order: `FencingDocumentRetriever` → ... → `TenantFilteringDocumentRetriever` → `VectorStore`.
+- [ ] No `VectorStoreDocumentRetriever.builder(...)` outside `TenantFilteringDocumentRetriever.java`.
+- [ ] No static `FilterExpression` captured at retriever construction.
+- [ ] Empty-result safety (`return List.of()` for `null`/empty inputs).
+- [ ] Tenant-isolation test ingests under multiple tenants AND asserts non-vacuous isolation (`isNotEmpty()` precondition).
+- [ ] `/audit` clean (`checklist-aiagent-java` RAG provenance + tenant-isolation sections).
+
+> **Reference**: `.ai/prompts/JAVA_CODE_QUALITY.md` §6.1.2 documents the canonical RAG composition. Reading it once is enough to know what to avoid.

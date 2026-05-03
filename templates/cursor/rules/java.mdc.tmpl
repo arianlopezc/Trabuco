@@ -194,6 +194,7 @@ Don't suggest "add a vector store" — three are wired and selected by classpath
   - `VectorKnowledgeRetriever` implements Trabuco's `KnowledgeRetriever` (used by `KnowledgeTools.@Tool` path).
   - `TenantFilteringDocumentRetriever` implements Spring AI's `DocumentRetriever` (used by `RetrievalAugmentationAdvisor` on `PrimaryAgent`).
   - Both resolve `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())` PER CALL from `CallerContext`. Don't suggest building advisors with raw `VectorStoreDocumentRetriever` — that's a static-filter regression.
+- Adding a re-ranking / hybrid / multi-source retriever: implement `DocumentRetriever`, slot BETWEEN `FencingDocumentRetriever` (outer) and `TenantFilteringDocumentRetriever` (inner) in `PrimaryAgent.buildRagAdvisor`. Order is a security invariant. See `/add-retriever`.
 - Ingestion goes through `DocumentIngestionService.ingest(text, metadata)`. Stamps `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped before storage.
 - Cross-tenant reads are impossible by construction — every `SearchRequest` is tenant-filtered.
 - A keyword fallback (`KeywordKnowledgeRetriever` over `KnowledgeBase.ENTRIES`) is selected automatically when no `VectorStore` is wired. Don't reinvent either path.
