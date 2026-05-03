@@ -76,7 +76,7 @@ func init() {
 	initCmd.Flags().StringVar(&flagDatabase, "database", "postgresql", "SQL database type: postgresql, mysql, none (non-interactive)")
 	initCmd.Flags().StringVar(&flagNoSQLDatabase, "nosql-database", "mongodb", "NoSQL database type: mongodb, redis (non-interactive)")
 	initCmd.Flags().StringVar(&flagMessageBroker, "message-broker", "kafka", "Message broker type: kafka, rabbitmq, sqs, pubsub (non-interactive, only used when EventConsumer is selected)")
-	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 21, 25, or 26 (non-interactive)")
+	initCmd.Flags().StringVar(&flagJavaVersion, "java-version", "21", "Java version: 21 or 24 (non-interactive)")
 	initCmd.Flags().StringVar(&flagAIAgents, "ai-agents", "", "Comma-separated AI agents: claude,cursor,copilot,codex (non-interactive)")
 	initCmd.Flags().StringVar(&flagCI, "ci", "", "CI provider to generate (github)")
 	initCmd.Flags().StringVar(&flagReview, "review", "full", "Review automation: full (subagents + hooks + skills), minimal (no Stop hook guard), off (no review artifacts). Only applies when Claude is among --ai-agents.")

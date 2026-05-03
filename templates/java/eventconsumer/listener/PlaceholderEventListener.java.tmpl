@@ -71,14 +71,21 @@ public class PlaceholderEventListener {
    * </ul>
    * </p>
    *
-   * <p><b>Pre-flight (autoCreateTopics=false):</b> the operator must
-   * pre-create {@code <topic>-retry-0..2} and {@code <topic>-dlt} on
-   * the broker before first deploy. Missing topics cause silent
-   * publish failures from {@code @RetryableTopic}'s internal
-   * {@code KafkaTemplate}. See {@code KafkaConfig#retryDltKafkaTemplate}
-   * for the full topic list. For non-prod environments where you
-   * trust the cluster to auto-create topics, set
-   * {@code autoCreateTopics="true"} below.
+   * <p><b>Pre-flight (autoCreateTopics=false):</b> Spring Kafka 3.x names
+   * retry topics by their <em>delay in milliseconds</em>, not by attempt
+   * index. With {@code @Backoff(delay=1000, multiplier=2.0)} below, the
+   * topics it expects on the broker before first deploy are:
+   * <ul>
+   *   <li>{@code <topic>-retry-1000} — 1st retry, 1s delay</li>
+   *   <li>{@code <topic>-retry-2000} — 2nd retry, 2s delay</li>
+   *   <li>{@code <topic>-retry-4000} — 3rd retry, 4s delay</li>
+   *   <li>{@code <topic>-dlt}        — dead-letter, after final attempt</li>
+   * </ul>
+   * Formula: {@code <topic>-retry-<delay × multiplier^(attempt-1)>}.
+   * Missing topics cause silent publish failures from {@code @RetryableTopic}'s
+   * internal {@code KafkaTemplate}. For non-prod environments where you
+   * trust the cluster to auto-create topics, set {@code autoCreateTopics="true"}
+   * below.
    */
   @RetryableTopic(
     attempts = "4",

@@ -31,7 +31,9 @@ spring:
     password: postgres
     driver-class-name: org.postgresql.Driver
 {{- else if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}
-    url: jdbc:mysql://localhost:3307/{{.ProjectNameSnake}}?useSSL=true&requireSSL=true
+    # useSSL=false so `mvn spring-boot:run` against the bundled docker-compose
+    # works out of the box. Production deployments set useSSL=true via DB_URL.
+    url: ${DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/{{.ProjectNameSnake}}?useSSL=false&requireSSL=false}
     username: root
     password: root
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -63,18 +65,22 @@ spring:
   # the Worker module can run independently and be configured separately.
   data:
     mongodb:
-      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
 {{- end}}
 
-# Server configuration (for actuator health endpoints)
+# Server configuration. Actuator endpoints share this port by default so a
+# fresh `mvn spring-boot:run` exposes /actuator/health at http://localhost:8081
+# without env-var tweaks. Operators who want a separate management port for
+# ingress isolation can set MANAGEMENT_SERVER_PORT to override.
 server:
-  port: 8081
+  port: ${SERVER_PORT:8081}
   shutdown: graceful
 
 # Management/Actuator endpoints
 management:
   server:
-    port: 8082
+    # Blank = same port as server.port above. Override for production isolation.
+    port: ${MANAGEMENT_SERVER_PORT:}
   endpoints:
     web:
       exposure:
@@ -145,6 +151,11 @@ jobrunr:
 {{- else if .JobRunrUsesMongoDB}}
     # Use MongoDB storage
     type: mongodb
+    # Store JobRunr collections in the project's MongoDB database (default
+    # behaviour without this property is to use a separate `jobrunr` database,
+    # which is surprising — operators look in {{.ProjectName}} and see nothing).
+    # Override JOBRUNR_MONGO_DB if you want to keep them isolated.
+    database-name: ${JOBRUNR_MONGO_DB:{{.ProjectName}}}
 {{- end}}
 
 # OpenTelemetry — see API/application.yml for the full configuration guide.
@@ -161,7 +172,7 @@ otel:
       endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}
       protocol: ${OTEL_EXPORTER_OTLP_PROTOCOL:http/protobuf}
   traces:
-    exporter: ${OTEL_TRACES_EXPORTER:logging}
+    exporter: ${OTEL_TRACES_EXPORTER:none}
   metrics:
     exporter: ${OTEL_METRICS_EXPORTER:none}
   logs:

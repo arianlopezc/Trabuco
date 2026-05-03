@@ -70,22 +70,38 @@ public class RecurringJobsConfig {
     // on registration failure), add a custom HealthIndicator that
     // tracks a member flag set in this catch block.
     try {
-      // Example: Run a job every hour using JobRequest pattern
-      // Uncomment to enable:
-      // jobScheduler.scheduleRecurrently(
+      // Demonstrates the recurring-job pattern using the placeholder request
+      // type. Replace this with your domain's recurring jobs (or delete it
+      // if you have none) — the placeholder request type and handler in
+      // Model/Worker are what you'll replace alongside it. Pairs with the
+      // on-demand path exposed by the API module's PlaceholderJobController:
+      // both routes funnel into ProcessPlaceholderJobRequestHandler, so
+      // replacing the request type updates both demo paths together.
+      //
+      // Note: BackgroundJobRequest.scheduleRecurrently takes the JobRequest
+      // directly. Wrapping it in a JobLambda (jobScheduler.scheduleRecurrently
+      // with a lambda calling BackgroundJobRequest.enqueue) breaks because
+      // JobRunr's IoC runner tries to look up BackgroundJobRequest as a bean.
+      BackgroundJobRequest.scheduleRecurrently(
+          "placeholder-recurring",
+          Cron.minutely(),
+          new ProcessPlaceholderJobRequest("recurring-demo tick"));
+
+      // More patterns — replace the demo above with your real schedule:
+      //
+      // Hourly:
+      // BackgroundJobRequest.scheduleRecurrently(
       //     "hourly-placeholder-job",
       //     Cron.hourly(),
-      //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Hourly job executed"))
-      // );
-
-      // Example: Run a job daily at 6 AM
-      // jobScheduler.scheduleRecurrently(
+      //     new ProcessPlaceholderJobRequest("Hourly job executed"));
+      //
+      // Daily at 6 AM:
+      // BackgroundJobRequest.scheduleRecurrently(
       //     "daily-morning-job",
       //     Cron.daily(6, 0),
-      //     () -> BackgroundJobRequest.enqueue(new ProcessPlaceholderJobRequest("Daily morning job executed"))
-      // );
+      //     new ProcessPlaceholderJobRequest("Daily morning job executed"));
 
-      log.info("Recurring jobs registered successfully");
+      log.info("Recurring jobs registered (placeholder-recurring runs every minute)");
     } catch (RuntimeException e) {
       log.error(
           "Failed to register recurring jobs — application is RUNNING but no "

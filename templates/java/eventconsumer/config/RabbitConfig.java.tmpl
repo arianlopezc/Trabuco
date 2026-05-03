@@ -1,6 +1,8 @@
 package {{.GroupID}}.eventconsumer.config;
 
+import {{.GroupID}}.model.events.PlaceholderCreatedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Declarables;
@@ -70,6 +72,14 @@ public class RabbitConfig {
     DefaultJackson2JavaTypeMapper typeMapper = new DefaultJackson2JavaTypeMapper();
     typeMapper.setTypePrecedence(TypePrecedence.INFERRED);
     typeMapper.setTrustedPackages("{{.GroupID}}.model.events");
+    // Allow publishers to use short class names in __TypeId__ headers
+    // (e.g. "PlaceholderCreatedEvent") instead of fully-qualified names.
+    // When a new event type is added to the sealed PlaceholderEvent
+    // interface, register it here too so the short-name shortcut keeps
+    // working alongside the listener's switch dispatch.
+    typeMapper.setIdClassMapping(Map.of(
+      "PlaceholderCreatedEvent", PlaceholderCreatedEvent.class
+    ));
     converter.setJavaTypeMapper(typeMapper);
     return converter;
   }

@@ -6,7 +6,7 @@ spring:
   data:
     mongodb:
       # Connection settings - override in environment or main application.yml
-      uri: ${MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
+      uri: ${MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
       # Auto-index creation: gated by env var so production deploys
       # don't rebuild indexes on every boot. With Spring Data MongoDB
       # 4.x, foreground index builds block reads and writes on the
@@ -23,7 +23,7 @@ spring:
     redis:
       # Connection settings - override in environment or main application.yml
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT:6380}
       # REDIS_PASSWORD is required for any non-loopback host.
       # An empty default works for local docker-compose Redis on
       # 127.0.0.1; production deployments must set a password and TLS

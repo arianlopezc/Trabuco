@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,7 +16,10 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
+import org.springframework.util.backoff.FixedBackOff;
 
 /**
  * Kafka consumer configuration.
@@ -26,13 +31,21 @@ import org.springframework.kafka.support.serializer.JsonDeserializer;
 @EnableKafka
 public class KafkaConfig {
 
+  private static final Logger log = LoggerFactory.getLogger(KafkaConfig.class);
+
   /**
    * Creates a consumer factory for PlaceholderEvent types.
    *
    * <p>Uses Spring Boot's KafkaProperties for base configuration and
-   * adds JSON deserialization. Hardening (since 1.12):
+   * adds JSON deserialization. Hardening:
    *
    * <ul>
+   *   <li>{@link ErrorHandlingDeserializer} wraps both the key and value
+   *       deserializers. A malformed message produces a
+   *       {@code DeserializationException} that the {@link DefaultErrorHandler}
+   *       can route to the {@code -dlt} topic via {@code @RetryableTopic} —
+   *       instead of throwing a raw {@code SerializationException} that
+   *       caused infinite consumer-restart loops in earlier templates.</li>
    *   <li>{@code TRUSTED_PACKAGES} is the narrow event package only;
    *       cross-module DTOs cannot be instantiated through the
    *       inbound type-id header.</li>
@@ -50,8 +63,14 @@ public class KafkaConfig {
   @Bean
   public ConsumerFactory<String, PlaceholderEvent> consumerFactory(KafkaProperties kafkaProperties) {
     Map<String, Object> props = new HashMap<>(kafkaProperties.buildConsumerProperties(null));
-    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-    props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
+    // Wrap real deserializers in ErrorHandlingDeserializer so deserialization
+    // failures become DeserializationException → DefaultErrorHandler routes to
+    // DLT instead of poison-looping the consumer.
+    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+    props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+    props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
+    props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
+    // JsonDeserializer settings (read by the wrapped delegate).
     props.put(JsonDeserializer.TRUSTED_PACKAGES, "{{.GroupID}}.model.events");
     props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
     props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, PlaceholderEvent.class.getName());
@@ -65,7 +84,11 @@ public class KafkaConfig {
    * <p>Configures:
    * <ul>
    *   <li>Concurrency of 3 consumer threads</li>
-   *   <li>Manual offset acknowledgment is handled by Spring</li>
+   *   <li>{@link DefaultErrorHandler} with {@code FixedBackOff(0,0)} — no
+   *       in-loop retry. The handler logs the failure and lets
+   *       {@code @RetryableTopic} on the listener route deserialization-
+   *       and processing-failures to the {@code -retry-*} topics and
+   *       finally to {@code -dlt}.</li>
    * </ul>
    * </p>
    */
@@ -76,6 +99,11 @@ public class KafkaConfig {
       new ConcurrentKafkaListenerContainerFactory<>();
     factory.setConsumerFactory(consumerFactory);
     factory.setConcurrency(3);
+    factory.setCommonErrorHandler(new DefaultErrorHandler(
+        (record, ex) -> log.error("Kafka listener error — record will route to retry/DLT topic. "
+            + "topic={}, partition={}, offset={}, key={}, error={}",
+            record.topic(), record.partition(), record.offset(), record.key(), ex.toString()),
+        new FixedBackOff(0L, 0L)));
     return factory;
   }
 
@@ -108,12 +136,13 @@ public class KafkaConfig {
    * topics in production. Before first deploy, ensure these topics
    * exist on the broker (or set {@code autoCreateTopics="true"} in
    * the listener's {@code @RetryableTopic} — non-prod environments
-   * only):
+   * only). Spring Kafka 3.x names retry topics by their delay in
+   * milliseconds:
    * <ul>
    *   <li>{@code <event-topic>} (e.g., {@code placeholder-events})</li>
-   *   <li>{@code <event-topic>-retry-0}</li>
-   *   <li>{@code <event-topic>-retry-1}</li>
-   *   <li>{@code <event-topic>-retry-2}</li>
+   *   <li>{@code <event-topic>-retry-1000}</li>
+   *   <li>{@code <event-topic>-retry-2000}</li>
+   *   <li>{@code <event-topic>-retry-4000}</li>
    *   <li>{@code <event-topic>-dlt}</li>
    * </ul>
    */

@@ -5,13 +5,18 @@
 spring:
   datasource:
 {{- if eq .Database "postgresql"}}
-    # sslmode defaults to `require` since 1.12 — refuses plaintext fallback.
-    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:require}}
+    # sslmode defaults to `disable` so `mvn spring-boot:run` against the bundled
+    # docker-compose works out of the box. Production deployments set
+    # DB_SSL_MODE=require (or verify-full).
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:disable}}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 {{- else if eq .Database "mysql"}}
-    url: ${DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectNameSnake}}}?useSSL=${DB_USE_SSL:true}&requireSSL=${DB_REQUIRE_SSL:false}&verifyServerCertificate=${DB_VERIFY_CERT:false}}
+    # useSSL defaults to false so `mvn spring-boot:run` against the bundled
+    # docker-compose works out of the box. Production deployments set
+    # DB_USE_SSL=true and DB_REQUIRE_SSL=true.
+    url: ${DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectNameSnake}}}?useSSL=${DB_USE_SSL:false}&requireSSL=${DB_REQUIRE_SSL:false}&verifyServerCertificate=${DB_VERIFY_CERT:false}}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver

@@ -1,5 +1,6 @@
 package {{.GroupID}}.api.config;
 
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
@@ -14,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -110,6 +112,39 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       problem.setProperty("globalErrors", globalErrors);
     }
     return ResponseEntity.status(status).body(problem);
+  }
+
+  /**
+   * Override the parent's default 400 for unparsable JSON to surface the
+   * specific unknown field when strict deserialization
+   * ({@code spring.jackson.deserialization.fail-on-unknown-properties=true})
+   * rejects the request. Without this override, the body is a generic
+   * "Failed to read request" — operators have to read server logs to find
+   * which field triggered the rejection.
+   */
+  @Override
+  protected ResponseEntity<Object> handleHttpMessageNotReadable(
+      HttpMessageNotReadableException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+        HttpStatus.BAD_REQUEST,
+        "Request body could not be parsed.");
+    problem.setTitle("Malformed Request");
+    problem.setType(URI.create("urn:problem-type:malformed-request"));
+
+    Throwable cause = ex.getCause();
+    if (cause instanceof UnrecognizedPropertyException unknown) {
+      problem.setDetail(
+          "Unknown field '" + unknown.getPropertyName()
+          + "'. Known fields: " + unknown.getKnownPropertyIds() + ".");
+      problem.setProperty("unknownField", unknown.getPropertyName());
+      logger.warn("Unknown JSON field: {}", unknown.getPropertyName());
+    } else {
+      logger.warn("Unparsable request body: {}", ex.getMostSpecificCause().getMessage());
+    }
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
   }
 {{- if .AuthEnabled}}
 
