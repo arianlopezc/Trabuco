@@ -67,8 +67,10 @@ class PlaceholderEventListenerTest {
 
   @Test
   void firstDelivery_callsTrackerWithEventId{{if or .UsesSQS .UsesPubSub}}_andAcksOnSuccess{{end}}() {
-    when(idempotencyTracker.checkAndMark("evt-1")).thenReturn(true);
-    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("evt-1", "First");
+    // PlaceholderCreatedEvent.create() generates a fresh UUID for eventId;
+    // stub against the actual eventId so the handler's checkAndMark call matches.
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("placeholder-1", "First");
+    when(idempotencyTracker.checkAndMark(event.eventId())).thenReturn(true);
 
 {{- if .UsesSQS}}
     listener.handlePlaceholderEvent(event, acknowledgement);
@@ -92,8 +94,8 @@ class PlaceholderEventListenerTest {
     // the switch{{if or .UsesSQS .UsesPubSub}} and acks so the broker stops redelivering this id.
     // Skipping the ack would put the dedup decision into a redelivery
     // loop until the message hits the DLQ{{end}}.
-    when(idempotencyTracker.checkAndMark("evt-1")).thenReturn(false);
-    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("evt-1", "First");
+    PlaceholderCreatedEvent event = PlaceholderCreatedEvent.create("placeholder-1", "First");
+    when(idempotencyTracker.checkAndMark(event.eventId())).thenReturn(false);
 
 {{- if .UsesSQS}}
     listener.handlePlaceholderEvent(event, acknowledgement);
@@ -119,10 +121,10 @@ class PlaceholderEventListenerTest {
   void distinctEventIds_areEachCheckedAgainstTracker() {
     // Catches a regression where the listener might pass a hardcoded
     // id (or a stale captured id) to checkAndMark across deliveries.
-    when(idempotencyTracker.checkAndMark("evt-1")).thenReturn(true);
-    when(idempotencyTracker.checkAndMark("evt-2")).thenReturn(true);
-    PlaceholderCreatedEvent first = PlaceholderCreatedEvent.create("evt-1", "First");
-    PlaceholderCreatedEvent second = PlaceholderCreatedEvent.create("evt-2", "Second");
+    PlaceholderCreatedEvent first = PlaceholderCreatedEvent.create("placeholder-1", "First");
+    PlaceholderCreatedEvent second = PlaceholderCreatedEvent.create("placeholder-2", "Second");
+    when(idempotencyTracker.checkAndMark(first.eventId())).thenReturn(true);
+    when(idempotencyTracker.checkAndMark(second.eventId())).thenReturn(true);
 
 {{- if .UsesSQS}}
     listener.handlePlaceholderEvent(first, acknowledgement);
@@ -135,7 +137,7 @@ class PlaceholderEventListenerTest {
     listener.handlePlaceholderEvent(second);
 {{- end}}
 
-    verify(idempotencyTracker).checkAndMark(eq("evt-1"));
-    verify(idempotencyTracker).checkAndMark(eq("evt-2"));
+    verify(idempotencyTracker).checkAndMark(eq(first.eventId()));
+    verify(idempotencyTracker).checkAndMark(eq(second.eventId()));
   }
 }

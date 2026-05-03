@@ -1035,11 +1035,17 @@ func (g *Generator) generateAIAgentModule() error {
 		// (KnowledgeTools), so emit unconditionally whenever AIAgent
 		// is selected — regardless of whether a vector store is wired.
 		{"java/aiagent/knowledge/FencingDocumentRetriever.java.tmpl", filepath.Join("knowledge", "FencingDocumentRetriever.java")},
+		// D1: TenantFilteringDocumentRetriever is referenced from
+		// PrimaryAgent.buildRagAdvisor unconditionally. The advisor
+		// path itself only fires when an Optional<VectorStore> bean
+		// resolves at runtime, but the source must compile in
+		// no-vector-store builds too — its only deps are Spring AI core
+		// types that ship with every AIAgent variant.
+		{"java/aiagent/knowledge/TenantFilteringDocumentRetriever.java.tmpl", filepath.Join("knowledge", "TenantFilteringDocumentRetriever.java")},
 	}
 	if g.config.HasVectorStore() {
 		knowledgeFiles = append(knowledgeFiles,
 			struct{ tmpl, out string }{"java/aiagent/knowledge/VectorKnowledgeRetriever.java.tmpl", filepath.Join("knowledge", "VectorKnowledgeRetriever.java")},
-			struct{ tmpl, out string }{"java/aiagent/knowledge/TenantFilteringDocumentRetriever.java.tmpl", filepath.Join("knowledge", "TenantFilteringDocumentRetriever.java")},
 			struct{ tmpl, out string }{"java/aiagent/knowledge/EmbeddingService.java.tmpl", filepath.Join("knowledge", "EmbeddingService.java")},
 			struct{ tmpl, out string }{"java/aiagent/knowledge/DocumentIngestionService.java.tmpl", filepath.Join("knowledge", "DocumentIngestionService.java")},
 		)
