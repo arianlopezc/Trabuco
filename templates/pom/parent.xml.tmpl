@@ -17,17 +17,11 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>{{.JavaVersion}}</maven.compiler.source>
         <maven.compiler.target>{{.JavaVersion}}</maven.compiler.target>
-        <!-- Spring Boot 3.5.x ships Spring Framework 6.2.x with ASM 9.8,
-             which adds Java 25 class-file support (major version 69).
-             3.4.2 used ASM 9.7.x and rejected Java 25 test classes during
-             classpath scan with "Incompatible class format". 3.5.x is
-             the minimum baseline for the JDK 25 entry of the supported
-             matrix. -->
-        <spring-boot.version>3.5.5</spring-boot.version>
-        <!-- Mockito: override Spring Boot's managed version which lags
-             on Java 25 class-file bytecode. Mockito 5.17+ adds Java 25
-             support; pinning to a newer 5.x keeps mocks working when
-             the developer's runtime JVM is newer than {{.JavaVersion}}. -->
+        <spring-boot.version>3.4.2</spring-boot.version>
+        <!-- Mockito: override Spring Boot's managed version (5.14.2) which does
+             not support Java 24/25 class-file bytecode. Mockito 5.17+ adds Java
+             25 support; pinning to a newer 5.x keeps mocks working when the
+             developer's runtime JVM is newer than {{.JavaVersion}}. -->
         <mockito.version>5.19.0</mockito.version>
         <testcontainers.version>1.20.5</testcontainers.version>
 {{- if or (.HasModule "Jobs") (.HasModule "Worker")}}
