@@ -282,6 +282,17 @@ func skillCatalog() []skillDef {
 			CursorGlobs:  []string{"AIAgent/**/agent/**/*.java", "AIAgent/**/config/ChatClientConfig.java"},
 		},
 		{
+			Name:         "extend-rag-ingestion",
+			Description:  "Extend the RAG ingestion pipeline: new HTTP endpoints, scheduled / event-driven paths, custom metadata fields with indexing. Preserves the 5 ingestion invariants (DocumentIngestionService routing, CallerContext on non-request threads, metadata allow-list / x-* namespace, indexing for filterable fields, rate-limit + scope gate).",
+			ArgumentHint: "[ingestion-name]",
+			Paths:        aiPaths,
+			BodyTmpl:     "skills/extend-rag-ingestion.body.md.tmpl",
+			RequiredModule: config.ModuleAIAgent,
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/knowledge/**/*.java", "AIAgent/**/protocol/Ingestion*.java", "AIAgent/**/db/vector-migration/*.sql"},
+		},
+		{
 			Name:         "add-a2a-skill",
 			Description:  "Expose an Agent-to-Agent (A2A) skill endpoint: JSON-RPC handler, async task manager wiring, A2AController registration.",
 			ArgumentHint: "[skill-name]",

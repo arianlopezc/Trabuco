@@ -1,0 +1,256 @@
+# Extend RAG ingestion
+
+## Overview
+
+Trabuco's RAG ingestion pipeline ships with two surfaces: `DocumentIngestionService` (the core: tenant_id stamping, chunking, vector store writes) and `IngestionController` (the REST surface: opt-in, scope-gated, rate-limited, metadata-sanitized). Adding a new ingestion entry point (HTTP, scheduled, event-driven) or a custom metadata field must preserve five non-negotiable invariants — every shortcut around them is a tenant leak, a silent data loss, or a slow retrieval.
+
+This is the long-form companion to `/extend-rag-ingestion`.
+
+## Architecture
+
+```
+HTTP request          Scheduled / Event-driven           CLI / programmatic
+     │                          │                                │
+     ▼                          ▼                                ▼
+@RequireScope("partner")  CallerContext.set(                  Same as
+RateLimiter.checkRate()   CallerIdentity.serviceAccount(      scheduled —
+sanitizeMetadata()         "<label>", "<tenant>"))            deliberate
+     │                    try { ... } finally { ... clear() }  CallerContext
+     ▼                          │                                │
+     └─────────── DocumentIngestionService.ingest(text, metadata) ─────────┘
+                          │
+                          │  stampTenantId(metadata) ← server-side, overrides caller-supplied
+                          │
+                          ▼
+                   TokenTextSplitter → chunks
+                          │
+                          ▼
+                   vectorStore.add(chunks)   ← ONLY DocumentIngestionService writes here
+                          │
+                          ▼
+                   PostgreSQL / pgvector
+                   • Index on (metadata->>'tenant_id')
+                   • Index on (metadata->>'<your-filter-field>') ← MUST add for new filter axes
+```
+
+## The 5 invariants (memorize these)
+
+1. **Route through `DocumentIngestionService.ingest(...)`.** Direct `vectorStore.add(...)` outside the service skips `stampTenantId(metadata)` — every chunk gets whatever `tenant_id` the caller-supplied metadata happens to have (likely none → retrieval misses; or worst case partner-A claims partner-B's tenant). The shipped `code-reviewer` agent greps for the regression.
+2. **`CallerContext` populated before every `ingest()` call.** On request threads, the auth filter does this. On scheduler / worker / event threads, you set it explicitly via `CallerIdentity.serviceAccount(...)`.
+3. **Metadata: allow-list OR `x-*` namespace.** Unknown keys are silently dropped by `sanitizeMetadata`. If your retrieval filters on a field that ingest stripped, the filter matches zero documents — looks like missing data, is actually a schema bug.
+4. **Index every filterable metadata field.** PostgreSQL JSONB filtering without an expression index is a linear scan. The shipped schema indexes only `tenant_id`.
+5. **`@RequireScope("partner")` + rate-limit-before-work + `@Size`-bounded payload** on every new HTTP entry point. The shipped controller has open audit findings F-AIAGENT-02 (no rate limit) and F-AIAGENT-03 (no per-byte cap) — your new endpoint should not inherit them.
+
+## Steps — Flavor A: new HTTP ingestion endpoint (worked example)
+
+Add `/ingest/policy` for regulatory / compliance documents. Demonstrates `x-*` metadata fields and the canonical security wrapping.
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/protocol/PolicyIngestionController.java`
+
+```java
+package {{.GroupID}}.aiagent.protocol;
+
+import {{.GroupID}}.aiagent.knowledge.DocumentIngestionService;
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import {{.GroupID}}.aiagent.security.RateLimiter;
+import {{.GroupID}}.aiagent.security.RequireScope;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/ingest/policy")
+@ConditionalOnProperty(value = "agent.ingest.enabled", havingValue = "true")
+public class PolicyIngestionController {
+
+    private static final Logger log = LoggerFactory.getLogger(PolicyIngestionController.class);
+    private static final int MAX_TEXT_BYTES = 500_000;
+
+    private final DocumentIngestionService ingestionService;
+    private final RateLimiter rateLimiter;
+
+    public PolicyIngestionController(DocumentIngestionService ingestionService, RateLimiter rateLimiter) {
+        this.ingestionService = ingestionService;
+        this.rateLimiter = rateLimiter;
+    }
+
+    @PostMapping
+    @RequireScope("partner")
+    public ResponseEntity<Map<String, Object>> ingestPolicy(@Valid @RequestBody PolicyIngestRequest req) {
+        CallerIdentity caller = CallerContext.get();
+        rateLimiter.checkRateLimit(caller);
+
+        Map<String, Object> metadata = buildPolicyMetadata(req);
+        log.info("Policy ingest: caller={}, policyType={}, textBytes={}",
+            caller.keyLabel(), req.policyType(), req.text().length());
+
+        ingestionService.ingest(req.text(), metadata);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(
+            Map.of("status", "ingested", "policyType", req.policyType()));
+    }
+
+    private static Map<String, Object> buildPolicyMetadata(PolicyIngestRequest req) {
+        // x-* namespace bypasses the IngestionController allow-list while
+        // still routing through DocumentIngestionService for tenant_id stamping.
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("source", req.source());                              // shipped allow-list field
+        meta.put("title", req.title());                                // shipped allow-list field
+        meta.put("x-policy-type", req.policyType());                   // x-* namespace, indexed below
+        meta.put("x-effective-date", req.effectiveDate().toString()); // x-* namespace
+        return meta;
+    }
+
+    public record PolicyIngestRequest(
+        @NotBlank @Size(max = MAX_TEXT_BYTES, message = "text exceeds 500KB cap") String text,
+        @NotBlank @Size(max = 256) String source,
+        @NotBlank @Size(max = 256) String title,
+        @NotBlank @Size(max = 64) String policyType,
+        @NotNull LocalDate effectiveDate) {}
+}
+```
+
+**Then add the index for the new filter axis**:
+
+**File**: `AIAgent/src/main/resources/db/vector-migration/V<next>__add_policy_type_index.sql`
+
+> Note the `vector-migration/` directory (NOT `migration/`). The shipped `V1__create_vector_schema.sql` lives there too — your new index migration must land in the same directory or Flyway will not pick it up.
+
+```sql
+-- Index for retrieval-time filtering by x-policy-type.
+-- Without this, FilterExpressionBuilder.eq("x-policy-type", ...)
+-- triggers a linear JSONB scan over the entire vector_store table.
+CREATE INDEX IF NOT EXISTS idx_vector_store_x_policy_type
+    ON vector_store ((metadata->>'x-policy-type'));
+```
+
+## Steps — Flavor B: scheduled / programmatic ingestion (worked example)
+
+Add a `@Scheduled` job that ingests a daily snapshot from S3 / partner SFTP / etc. Demonstrates the `CallerContext` discipline for non-request threads.
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/knowledge/ScheduledIngestionService.java`
+
+```java
+package {{.GroupID}}.aiagent.knowledge;
+
+import {{.GroupID}}.aiagent.security.CallerContext;
+import {{.GroupID}}.aiagent.security.CallerIdentity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.ai.document.Document;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+@ConditionalOnProperty(value = "agent.scheduled-ingestion.enabled", havingValue = "true")
+public class ScheduledIngestionService {
+
+    private static final Logger log = LoggerFactory.getLogger(ScheduledIngestionService.class);
+
+    private final DocumentIngestionService ingestionService;
+    private final CallerIdentity serviceIdentity;
+
+    public ScheduledIngestionService(DocumentIngestionService ingestionService,
+                                     @Value("${agent.scheduled-ingestion.tenant-id}") String serviceTenantId) {
+        this.ingestionService = ingestionService;
+        // Deliberate service identity for scheduler-driven ingestion.
+        // Configured tenant — NEVER falls back to anonymous.
+        this.serviceIdentity = CallerIdentity.serviceAccount("scheduled-ingestion", serviceTenantId);
+    }
+
+    @Scheduled(cron = "${agent.scheduled-ingestion.cron:0 0 2 * * *}")
+    public void ingestDailySnapshot() {
+        CallerContext.set(serviceIdentity);
+        try {
+            List<Document> docs = fetchSnapshot();
+            ingestionService.ingest(docs);
+            log.info("Scheduled ingest: tenant={}, count={}", serviceIdentity.tenantId(), docs.size());
+        } finally {
+            CallerContext.clear();
+        }
+    }
+
+    private List<Document> fetchSnapshot() {
+        // Fetch from S3 / partner SFTP / etc., construct Document list with x-* metadata.
+        // Source allow-list, content scanning, format validation belong here.
+        return List.of();
+    }
+}
+```
+
+The constructor builds `CallerIdentity.serviceAccount(label, tenantId)` once. The cron method sets it on the scheduler thread, calls `ingest()`, and clears on the finally branch. If you skip the `set` / `clear`, the next request handled on this Tomcat thread inherits the service identity → BOLA.
+
+The `@ConditionalOnProperty` gate keeps the bean dormant by default — operators flip the property after configuring the tenant.
+
+## Steps — Flavor C: extend metadata schema
+
+Pick one of two paths. The decision is whether the new field is **stable + indexable** (allow-list) or **caller-namespaced extension** (x-*).
+
+### C.1 — Caller-namespaced (`x-*`) — preferred
+
+No controller change. Use `metadata.put("x-<field>", value)` at ingest time. Filter retrieval with the same key. Add the index from Flavor A. Backwards-compatible — `IngestionController.sanitizeMetadata` already passes `x-*` through.
+
+### C.2 — First-class allow-list field
+
+Add the key to `IngestionController.ALLOWED_METADATA_KEYS` AND add a Flyway migration with an expression index. Suitable for fields that are domain-stable (will not be retired in the next 6 months).
+
+```diff
+ static final java.util.Set<String> ALLOWED_METADATA_KEYS = java.util.Set.of(
+     "source", "title", "author", "version", "language", "topic",
+-    "url", "category", "publishedAt", "summary");
++    "url", "category", "publishedAt", "summary", "policy_type");
+```
+
+## Project conventions you must follow
+
+- **Always route through `DocumentIngestionService.ingest(...)`.** Direct `vectorStore.add(...)` is the canonical regression — `code-reviewer` flags it.
+- **`@RequireScope("partner")` + rate-limit-before-work + `@Size`-bounded DTO** on every new HTTP entry point.
+- **`CallerIdentity.serviceAccount(label, tenantId)` for non-request threads.** Never default to `anonymous()` for ingestion — every chunk under "anonymous" tenant wedges retrieval for every legitimate caller.
+- **Sanitize metadata**: allow-list OR `x-*`, 1KB string cap, control-char stripping, primitives only (no maps / lists).
+- **`x-*` is the preferred extension.** Backwards-compatible, doesn't fork the canonical controller.
+- **Index every filterable metadata field.** Flyway migration with `CREATE INDEX IF NOT EXISTS ... ON vector_store ((metadata->>'<field>'))`.
+
+## Common mistakes
+
+- **Direct `vectorStore.add(chunks)`** — bypasses `DocumentIngestionService.stampTenantId`. Every chunk gets whatever tenant_id the caller supplied (or none). Cross-tenant leak.
+- **`@Scheduled` job without `CallerContext.set(...)`** — `CallerContext.get()` falls back to `anonymous()`. Every chunk under anonymous tenant. Retrieval for legitimate callers misses these chunks.
+- **Forgetting `CallerContext.clear()` in `finally`** — service identity leaks to whatever request the Tomcat thread handles next. BOLA via thread reuse.
+- **Ingesting with `metadata.policy_type`** (no `x-` prefix, not in allow-list) — silently stripped. Filter on `policy_type` at retrieval time matches zero documents. Looks like content gap; is schema bug.
+- **Filter on `policy_type` when ingest used `x-policy-type`** (mismatched key namespace) — retrieval returns nothing. Same bug, opposite direction.
+- **New filterable metadata field with no matching index** — table-scan at retrieval. Works fine on a 100-doc dev DB; fails at 100k docs in production.
+- **Rate-limit-after-work** — caller successfully DoSes; you charged your embedding API for the work; THEN you 429. Reverse the order.
+- **Lowering scope below `partner`** without explicit justification — F-AIAGENT-02 lineage. Audit log + property gate at minimum.
+- **No `@Size` cap on the request body** — F-AIAGENT-03 inherited. 1 MB cap is the shipped default.
+
+## Security checklist (before merging)
+
+- [ ] Routes through `DocumentIngestionService.ingest(...)`; no direct `vectorStore.add(...)`.
+- [ ] HTTP path: `@RequireScope("partner")` + `@ConditionalOnProperty("agent.ingest.enabled")` (or your gate).
+- [ ] HTTP path: `RateLimiter.checkRateLimit(caller)` BEFORE work.
+- [ ] HTTP path: request DTO `@Size`-bounded (text + metadata + collection sizes).
+- [ ] Metadata sanitization: allow-list OR `x-*`, 1KB string cap, control-char stripping.
+- [ ] Non-request thread: `CallerIdentity.serviceAccount(...)` + `CallerContext.set` / `try / finally clear`.
+- [ ] New filterable metadata field: matching Flyway expression index.
+- [ ] Test: caller-supplied `tenant_id` is server-side overridden (mirror `IngestionController` test).
+- [ ] Test: metadata field round-trips (ingest → retrieval-time filter returns the right docs).
+- [ ] Audit log line on each ingest (caller, payload size, key counts).
+
+> **Reference**: shipped `IngestionController.java` for the canonical HTTP shape. `DocumentIngestionService.java` for the tenant stamping and chunking. `V1__create_vector_schema.sql` for the indexing pattern. `.ai/security-audit/checklist-aiagent-java.md` F-AIAGENT-02 / F-AIAGENT-03 / F-AIAGENT-04 for the audit invariants.

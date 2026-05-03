@@ -199,6 +199,7 @@ Don't suggest "add a vector store" — three are wired and selected by classpath
 - Cross-tenant reads are impossible by construction — every `SearchRequest` is tenant-filtered.
 - A keyword fallback (`KeywordKnowledgeRetriever` over `KnowledgeBase.ENTRIES`) is selected automatically when no `VectorStore` is wired. Don't reinvent either path.
 - Retrieved chunks pass through `FencingDocumentRetriever`, which marks the trust boundary between prompt and document content. Don't bypass.
+- Extending ingestion (new endpoint, scheduled job, event listener, custom metadata field) goes through `/extend-rag-ingestion`. Direct `vectorStore.add(...)` outside `DocumentIngestionService` bypasses tenant_id stamping → cross-tenant leak. Non-request threads (`@Scheduled`, `@KafkaListener`) must build a `CallerIdentity.serviceAccount(label, tenantId)` and `CallerContext.set` / `try / finally clear` around `ingest()` — otherwise every chunk lands under the anonymous tenant. New filterable metadata fields need a Flyway migration in `db/vector-migration/` (NOT `db/migration/`).
 
 ## Async context propagation in AIAgent
 

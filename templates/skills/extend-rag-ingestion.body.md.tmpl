@@ -1,0 +1,63 @@
+# Extend RAG ingestion
+
+Adds a new ingestion entry point (HTTP endpoint, scheduled job, event listener, CLI tool) or extends the metadata schema. Every new path inherits five non-negotiable invariants — miss one and you ship a tenant leak, a silent data loss, or a slow retrieval.
+
+## Use this skill when
+
+- Adding a new ingestion HTTP endpoint (e.g. `/ingest/url`, `/ingest/policy`).
+- Adding a programmatic / scheduled / event-driven ingestion path (e.g. nightly fetch from S3, Kafka listener consumes documents).
+- Adding a domain-specific metadata field (e.g. `x-policy-type`, `x-effective-date`).
+- Adding pre-ingest content scanning, format validation, or transformation.
+
+For one-off content additions (FAQ entry), use `/add-knowledge-entry` instead — this skill is for *pipeline* extensions, not content.
+
+## The 5 invariants every ingestion path must preserve
+
+| # | Invariant | What goes wrong if you skip it |
+|---|---|---|
+| 1 | Route through `DocumentIngestionService.ingest(...)`, NEVER call `vectorStore.add(...)` directly | Bypasses server-side `tenant_id` stamping → cross-tenant leak |
+| 2 | Set `CallerContext` BEFORE calling `ingest()` on non-request threads (`@Scheduled`, `@KafkaListener`, JobRunr handlers) | Falls back to `CallerIdentity.anonymous()` → all chunks under the anonymous tenant |
+| 3 | Sanitize metadata against the allow-list OR use the `x-*` namespace consistently | Unknown fields silently stripped → retrieval filter mismatch |
+| 4 | Add an index for any filterable metadata field beyond `tenant_id` | Linear JSONB scan at retrieval time |
+| 5 | `@RequireScope("partner")` + `rateLimiter.checkRateLimit(caller)` + `@Size`-bounded payload on every new HTTP entry point | F-AIAGENT-02, F-AIAGENT-03 inherited by your new endpoint |
+
+## Three extension flavors (pick one)
+
+### A. New HTTP ingestion endpoint
+
+Modify or parallel `IngestionController`. Files: NEW `aiagent/protocol/<X>IngestionController.java`. Reuse `DocumentIngestionService` + `RateLimiter`. Apply `@RequireScope("partner")`, `@ConditionalOnProperty("agent.ingest.enabled")` (or your own gate), `@Size`-bounded request DTO, equivalent metadata sanitization.
+
+### B. Scheduled / programmatic / event-driven ingestion
+
+Create a `@Service` that injects `DocumentIngestionService` + a `CallerIdentity` for the scheduling principal (use `CallerIdentity.serviceAccount(label, tenantId)`). ALWAYS wrap calls to `ingestionService.ingest(...)` in `CallerContext.set(serviceIdentity)` / `try { ... } finally { CallerContext.clear(); }` — the scheduler / worker thread has no captured request identity.
+
+### C. Extend metadata schema
+
+Two paths:
+
+- **Caller-namespaced (`x-*`)** — no controller change needed. Use `metadata.put("x-policy-type", ...)` and filter retrieval with the same key. Backwards-compatible.
+- **First-class allow-list field** — add the key to `IngestionController.ALLOWED_METADATA_KEYS` AND add a Flyway migration under `db/vector-migration/` with an index on `(metadata->>'<field>')`.
+
+## Key steps (summary)
+
+1. **Pick the flavor** (A / B / C above).
+2. **For A (HTTP)**: build the controller. Always include `@RequireScope("partner")`, rate-limit-before-work, `@Size`-bounded DTO, metadata sanitization (reuse the rules in `IngestionController.sanitizeMetadata` — allow-list OR `x-*`, 1KB string cap, control-char stripping, primitives-only).
+3. **For B (scheduled / event)**: build `CallerIdentity.serviceAccount("<service-label>", "<tenant-id>")` once at construction. Set `CallerContext` BEFORE `ingest()`, clear in `finally`.
+4. **For C (metadata field)**: pick `x-*` (preferred — backwards-compatible) OR add to allow-list. If allow-list, also add a Flyway migration under `db/vector-migration/V<n>__add_<field>_index.sql` with an expression index on `(metadata->>'<field>')`.
+5. **Test** — for A: `MockMvc` with the request body schema + assert `tenant_id` is server-stamped (caller-supplied value overridden, see how `IngestionController` tests verify this). For B: assert `CallerContext` is set during the `ingest()` call (capture in a spy). For C: assert the field round-trips through ingest + retrieval.
+6. **Run `/audit`** — `checklist-aiagent-java` covers the RAG schema and F-AIAGENT-02/03/04 invariants.
+
+## Project conventions you must follow
+
+- **Always go through `DocumentIngestionService.ingest(...)`.** Never call `vectorStore.add(...)` from a new service — the tenant_id stamping lives in `stampTenantId(metadata)` inside the service. The shipped `code-reviewer` agent greps for `vectorStore.add(` outside `DocumentIngestionService.java` as a regression.
+- **`@RequireScope("partner")` is the default scope** for ingestion. Lower scope only with explicit justification (and add an audit log line for attribution).
+- **Always apply `RateLimiter.checkRateLimit(caller)`** before the work. Rate-limit-after-work means a successful DoS still costs you the work.
+- **Bound the payload size.** `@Size(max = ...)` on string fields, `@Size(max = ...)` on collections. The shipped controller caps text at 1 MB and metadata at 32 keys.
+- **Sanitize metadata.** Use the rules in `IngestionController.sanitizeMetadata` (allow-list / `x-*` namespace / 1KB string cap / no maps or lists / control-char stripping).
+- **`x-*` for caller-namespaced fields.** Prefer this over modifying `ALLOWED_METADATA_KEYS` — backwards-compatible, doesn't fork the canonical controller.
+- **Index every filterable metadata field.** Add a Flyway migration under `AIAgent/src/main/resources/db/vector-migration/V<n>__add_<field>_index.sql` with `CREATE INDEX IF NOT EXISTS ... ON vector_store ((metadata->>'<field>'))`. Note the `vector-migration/` directory — not `migration/` — so the index lives next to `V1__create_vector_schema.sql`.
+- **For non-request threads, set `CallerContext` deliberately.** Use `CallerIdentity.serviceAccount(label, tenantId)` for the service principal — never default to `anonymous()` for ingestion.
+
+## Full step-by-step
+
+See `.ai/prompts/extend-rag-ingestion.md` (full controller skeleton, scheduled-job pattern, metadata-field extension with Flyway migration, common mistakes, security checklist mirroring F-AIAGENT-02/03/04).

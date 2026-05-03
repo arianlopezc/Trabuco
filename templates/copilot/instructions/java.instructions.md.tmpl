@@ -133,6 +133,7 @@ Three vector stores are wired and selected by classpath dependency: PGVector (de
 - Ingestion: `DocumentIngestionService.ingest(text, metadata)` — stamps `metadata.tenant_id` from `CallerContext.get().tenantId()` server-side; caller-supplied `tenant_id` is stripped.
 - Tenant isolation is enforced at every read via `FilterExpressionBuilder.eq("tenant_id", caller.tenantId())`. Cross-tenant reads are impossible by construction.
 - Retrieved chunks pass through `FencingDocumentRetriever`. Don't bypass the fences.
+- Extending ingestion (new endpoint, scheduled job, event listener, custom metadata field): always route through `DocumentIngestionService.ingest(...)`. Direct `vectorStore.add(...)` outside that service bypasses tenant_id stamping. Non-request threads use `CallerIdentity.serviceAccount(label, tenantId)` + `CallerContext.set` / `try / finally clear`. New filterable metadata fields need a Flyway expression index on `(metadata->>'<field>')` placed in `db/vector-migration/` (NOT `db/migration/`). See `/extend-rag-ingestion`.
 
 ## Async context propagation (AIAgent)
 

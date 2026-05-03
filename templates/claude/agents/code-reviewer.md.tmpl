@@ -93,6 +93,12 @@ Run each grep across the changed files. Every match is a finding unless explicit
   ```bash
   rg -nP '@ConditionalOnBean\(\s*ChatModel\.class\s*\)' AIAgent/src/main/java
   ```
+- **Direct `vectorStore.add(...)` outside `DocumentIngestionService`** — the canonical ingestion path stamps `tenant_id` server-side via `DocumentIngestionService.stampTenantId`. Any class that calls `vectorStore.add(`, `vectorStore.delete(`, or any other mutating method bypasses the stamping → every written chunk gets whatever `tenant_id` the caller-supplied metadata happens to have (likely none → retrieval misses; or worst case partner-A claims partner-B's tenant). The shipped reads (`VectorKnowledgeRetriever`, `TenantFilteringDocumentRetriever`) are read-only and don't trigger this. Flag any new write site outside `DocumentIngestionService.java`. See `/extend-rag-ingestion`.
+  ```bash
+  rg -lP 'vectorStore\.(add|delete)\(' AIAgent/src/main/java | \
+    grep -v DocumentIngestionService.java
+  # Anything else is a finding.
+  ```
 - **`AgentMcpAuthorizationFilter` registered globally instead of inside the security chain** — the filter must run AFTER `ApiKeyAuthFilter` (or `BearerTokenAuthenticationFilter` in OAuth2 mode) so `CallerContext` is populated when the MCP scope check fires. Registration via `@Order` puts it in the global servlet chain ahead of the security chain → 403s every legitimate partner request in API-key-only mode. The canonical wiring is `addFilterAfter(... ApiKeyAuthFilter.class)` in `AgentSecurityConfig` plus a `FilterRegistrationBean` with `setEnabled(false)` to suppress global registration.
 - **Bounded resource without reaper** — `TaskManager` (10k task cap) and `RateLimiter` (100k bucket cap) are bounded ConcurrentMaps; without a `@Scheduled` reaper, they fill toward the cap and every new entry permanently throws / 429s. Any new bounded in-memory registry must follow the same shape: cap + `@Scheduled` eviction of terminal/idle entries + `@PreDestroy` for executor cleanup if applicable.
 - **`OncePerRequestFilter` clearing/auth filters not overriding `shouldNotFilterAsyncDispatch()`** — Spring's default skips ASYNC dispatches. A clearing filter that doesn't run on async dispatch leaks `CallerContext` / `RequestContextHolder` to whatever thread the carrier returns to. Filters touching identity must override `shouldNotFilterAsyncDispatch()` to return `false`.
