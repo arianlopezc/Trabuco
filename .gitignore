@@ -38,3 +38,4 @@ IMPLEMENTATION_PLAN.md
 # committed; everything in .security-audit/ is local-only working
 # material.
 .security-audit/
+bin/
