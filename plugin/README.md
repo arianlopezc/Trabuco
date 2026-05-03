@@ -48,8 +48,8 @@ Other install paths: download a prebuilt binary for your platform from
 or `go install github.com/arianlopezc/Trabuco/cmd/trabuco@latest` to build
 from source. There is no Homebrew formula.
 
-The `SessionStart` hook checks the CLI is at version 1.8.0 or newer and
-emits a clear message if it isn't.
+The `SessionStart` hook checks the CLI is recent enough and emits a
+clear message if it isn't.
 
 ## Install the plugin
 
@@ -97,7 +97,7 @@ Once installed, ask Claude Code things like:
 
 - *"Start a new payments service with Postgres and a worker."* → `/trabuco:new-project` walks the assistant through requirements, recommends the right modules, and runs `trabuco init` for you.
 - *"Design a system: user service, billing service, notifications worker."* → `/trabuco:design-system` decomposes it into independent Trabuco services.
-- *"Migrate this Spring Boot 2.7 monolith to Trabuco."* → `/trabuco:migrate` drives the 14-phase orchestrated flow with per-phase approval gates.
+- *"Migrate this Spring Boot monolith to Trabuco."* → `/trabuco:migrate` drives the 14-phase orchestrated flow with per-phase approval gates.
 - *"What should I add next to this Trabuco project?"* → `/trabuco:extend` reviews the project and proposes the next module.
 
 ## Compatibility
@@ -105,9 +105,9 @@ Once installed, ask Claude Code things like:
 | | Required |
 | - | - |
 | Claude Code | latest (anything that supports the `/plugin` command) |
-| `trabuco` CLI | ≥ 1.8.0 (latest is 1.12.3) |
-| Java (for projects) | 21+ |
-| Maven (for migration) | 3.9+ |
+| `trabuco` CLI | latest |
+| Java (for projects) | required |
+| Maven (for migration) | required |
 
 The CLI runs on macOS (arm64/amd64), Linux (arm64/amd64), and Windows
 (amd64). The plugin itself is platform-agnostic.

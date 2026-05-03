@@ -15,13 +15,13 @@ Starting a new Java project is slow — even with a coding agent helping. You se
 
 Trabuco is a command-line tool — and a [Claude Code plugin](#claude-code-plugin) — that generates both halves of a modern Java codebase: a complete, production-ready multi-module Maven project *and* the AI context that teaches coding agents how to work in it. Run `trabuco init` (or inside Claude Code, type `/trabuco:new-project` and describe what you need in plain English), answer a few prompts (or pass flags for automation), and you get a fully wired Spring Boot codebase alongside task-specific prompts, quality specifications, per-agent rule files, and workflow hooks already configured for Claude Code, Codex, Cursor, and GitHub Copilot. No templates to download, no manual setup, and no session spent bootstrapping your agent's understanding of the project.
 
-The generated code is production-grade by default. Spring Boot 3.4 with Spring Data JDBC (no JPA surprises), Flyway migrations, Testcontainers for real integration tests, Resilience4j circuit breakers, Google Java Format enforced by Spotless, ArchUnit rules that fail the build on layer violations, correlation-ID tracing, Prometheus metrics, OpenAPI + Swagger UI, and a global exception handler with sanitized responses. PostgreSQL, MySQL, MongoDB, or Redis — all configured with Docker Compose. JobRunr for background jobs; Kafka, RabbitMQ, AWS SQS, or GCP Pub/Sub for event-driven processing. The modular layout — **Model**, **SQLDatastore** / **NoSQLDatastore**, **Shared**, **API**, **Worker**, **EventConsumer** — has clean compile-time boundaries so `API` physically cannot import `Worker` code. Every opinion is deliberate: keyset pagination, no foreign-key constraints, Immutables at module boundaries, constructor injection only, bulk-bounded writes.
+The generated code is production-grade by default. Spring Boot with Spring Data JDBC (no JPA surprises), Flyway migrations, Testcontainers for real integration tests, Resilience4j circuit breakers, Google Java Format enforced by Spotless, ArchUnit rules that fail the build on layer violations, correlation-ID tracing, Prometheus metrics, OpenAPI + Swagger UI, and a global exception handler with sanitized responses. PostgreSQL, MySQL, MongoDB, or Redis — all configured with Docker Compose. JobRunr for background jobs; Kafka, RabbitMQ, AWS SQS, or GCP Pub/Sub for event-driven processing. The modular layout — **Model**, **SQLDatastore** / **NoSQLDatastore**, **Shared**, **API**, **Worker**, **EventConsumer** — has clean compile-time boundaries so `API` physically cannot import `Worker` code. Every opinion is deliberate: keyset pagination, no foreign-key constraints, Immutables at module boundaries, constructor injection only, bulk-bounded writes.
 
 Alongside the code, Trabuco lays down an AI collaboration layer that the major coding agents load natively. The `.ai/prompts/` directory ships task-specific guides (`add-entity`, `add-endpoint`, `add-service`, `add-event`, `add-job`, `add-tool`) plus `JAVA_CODE_QUALITY.md` — an authoritative specification covering architecture boundaries, exception handling, datastore performance (bulk I/O, keyset drain loops, denormalization), and testing standards. Per-agent rule files — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex, `.cursor/rules/java.mdc` for Cursor, `.github/instructions/java.instructions.md` for Copilot — wire those conventions into each tool's native discovery. Claude also gets `.claude/skills/` for commit, PR, and review workflows; Codex and Cursor get hooks; Copilot gets setup steps. Every architectural convention lives in two places: enforced by the generated code and explained to the agents that will extend it.
 
 Trabuco goes further. The **AI Agent module** ships production scaffolding for building AI agents *themselves* on Spring AI: tool calling, LLM input/output guardrails, multi-agent orchestration, knowledge-base integration, MCP server endpoint, the A2A (Agent-to-Agent) protocol, streaming responses, webhook callbacks, scope-based authorization, rate limiting, and correlation-ID tracing — wired, testable, and ready from the first commit. Trabuco itself is also an MCP server: run `trabuco mcp` and your coding agents invoke scaffolding operations natively (`init_project`, `add_module`, `design_system`, `suggest_architecture`).
 
-> **Migrating an existing Spring Boot project** is supported in **1.10** via `trabuco migrate`: an orchestrated 14-phase migration that transforms a Maven-based Spring Boot 2.x or 3.x repo in place into a Trabuco-shaped multi-module project. Each phase is owned by a specialist that proposes structured changes you approve at a gate before they're committed; per-phase git tags provide atomic rollback. Start with `trabuco migrate assess /path/to/repo`. Full guide: [`docs/migration-guide.md`](docs/migration-guide.md).
+> **Migrating an existing Spring Boot project** is supported via `trabuco migrate`: an orchestrated 14-phase migration that transforms a Maven-based Spring Boot repo in place into a Trabuco-shaped multi-module project. Each phase is owned by a specialist that proposes structured changes you approve at a gate before they're committed; per-phase git tags provide atomic rollback. Start with `trabuco migrate assess /path/to/repo`. Full guide: [`docs/migration-guide.md`](docs/migration-guide.md).
 
 ## Install
 
@@ -72,8 +72,8 @@ The plugin requires the `trabuco` CLI on PATH — install it first (or after; th
 ## Highlights
 
 - **Multi-module Maven** — clean compile-time boundaries between Model, SQLDatastore/NoSQLDatastore, Shared, API, Worker, EventConsumer, AIAgent.
-- **Spring Boot 3.4 + Java 21/25** — Spring Data JDBC (no JPA), Flyway migrations, virtual threads on by default, Testcontainers for real integration tests.
-- **OIDC Resource Server scaffolding (auto-generated for API/AIAgent)** — Spring Security 6 dual `SecurityFilterChain`, JWT validation, scope-mapped authorities, RFC 7807 ProblemDetail handlers, RSA-signed e2e tests. **Ships dormant** — flip `trabuco.auth.enabled=true` and set `OIDC_ISSUER_URI` to validate tokens from Keycloak / Auth0 / Okta / Cognito / generic OIDC. No CLI flag, no half-installed projects. Full guide: [`docs/auth.md`](docs/auth.md).
+- **Spring Boot + Java** — Spring Data JDBC (no JPA), Flyway migrations, virtual threads on by default, Testcontainers for real integration tests.
+- **OIDC Resource Server scaffolding (auto-generated for API/AIAgent)** — Spring Security dual `SecurityFilterChain`, JWT validation, scope-mapped authorities, RFC 7807 ProblemDetail handlers, RSA-signed e2e tests. **Ships dormant** — flip `trabuco.auth.enabled=true` and set `OIDC_ISSUER_URI` to validate tokens from Keycloak / Auth0 / Okta / Cognito / generic OIDC. No CLI flag, no half-installed projects. Full guide: [`docs/auth.md`](docs/auth.md).
 - **Production observability** — RFC 7807 Problem Details, OpenTelemetry auto-instrumentation, Prometheus metrics, correlation IDs, health probes.
 - **AI Agent module** — Spring AI with tools, LLM guardrails, MCP server, A2A protocol, multi-agent orchestration, knowledge base, webhooks. The OIDC chain coexists with the legacy `ApiKeyAuthFilter` (governed by an independent property) for incremental migration.
 - **AI collaboration layer** — `.ai/prompts/` task guides, `JAVA_CODE_QUALITY.md` spec, per-agent rule files for Claude Code / Codex / Cursor / GitHub Copilot.
@@ -86,14 +86,14 @@ For the full feature list, see [`docs/manual.md#features`](docs/manual.md#featur
 ## Documentation
 
 - **[`docs/manual.md`](docs/manual.md)** — full CLI reference (installation, modules, MCP server, code quality, configuration options, every flag).
-- **[`docs/migration-guide.md`](docs/migration-guide.md)** — migrating an existing Spring Boot 2.x/3.x project.
+- **[`docs/migration-guide.md`](docs/migration-guide.md)** — migrating an existing Spring Boot project.
 - **[`docs/README.md`](docs/README.md)** — full docs index, including design context (philosophy, pattern recipes, when not to use, limitations).
 - **[`plugin/README.md`](plugin/README.md)** — Claude Code plugin: skills, subagents, hooks, MCP server.
 
 ## Requirements
 
-- **Java 21+** (21, 25, or 26 — Trabuco auto-detects installed versions)
-- **Maven 3.8+**
+- **Java** (Trabuco auto-detects installed versions)
+- **Maven**
 - **Docker** (for Testcontainers and local development)
 
 ## Contributing

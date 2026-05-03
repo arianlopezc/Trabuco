@@ -23,7 +23,7 @@
              25 support; pinning to a newer 5.x keeps mocks working when the
              developer's runtime JVM is newer than {{.JavaVersion}}. -->
         <mockito.version>5.19.0</mockito.version>
-        <testcontainers.version>1.20.5</testcontainers.version>
+        <testcontainers.version>2.0.3</testcontainers.version>
 {{- if or (.HasModule "Jobs") (.HasModule "Worker")}}
         <jobrunr.version>8.4.0</jobrunr.version>
 {{- end}}
