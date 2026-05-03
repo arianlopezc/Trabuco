@@ -233,7 +233,7 @@ jobs:
           timeout 60 mvn spring-boot:run -Dspring-boot.run.profiles=local &
           WORKER_PID=$!
           sleep 30
-          curl -sf http://localhost:8082/actuator/health || (kill $WORKER_PID 2>/dev/null; exit 1)
+          curl -sf http://localhost:8081/actuator/health || (kill $WORKER_PID 2>/dev/null; exit 1)
           kill $WORKER_PID 2>/dev/null || true
           echo "Worker started successfully"
         env:
@@ -250,7 +250,7 @@ jobs:
           timeout 60 mvn spring-boot:run -Dspring-boot.run.profiles=local &
           CONSUMER_PID=$!
           sleep 30
-          curl -sf http://localhost:8084/actuator/health || (kill $CONSUMER_PID 2>/dev/null; exit 1)
+          curl -sf http://localhost:8083/actuator/health || (kill $CONSUMER_PID 2>/dev/null; exit 1)
           kill $CONSUMER_PID 2>/dev/null || true
           echo "EventConsumer started successfully"
         env:
