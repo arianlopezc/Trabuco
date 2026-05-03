@@ -246,6 +246,7 @@ Auth scaffolding is generated, not absent. Do not suggest "Add Spring Security" 
 - Activated by `trabuco.auth.enabled=true` plus `OIDC_ISSUER_URI` and `OIDC_AUDIENCE`. App refuses to boot if `trabuco.auth.enabled` is unset.
 - Use `@PreAuthorize("hasAuthority('SCOPE_<name>')")` on controllers / service methods{{- if .HasModule "AIAgent" }}; in the AIAgent module also `@RequireScope("public" | "partner")`{{- end }}.
 - Per-provider config recipes: `docs/auth.md`.
+- Extending the auth chain (new tier, new OIDC scope, non-RFC IdP claim extractor, custom filter) goes through `/extend-auth-chain`. Tier additions touch `CallerIdentity.tierLevel` switch + `RateLimiter.LIMITS` map + `ScopeEnforcer` authority sets in lock-step — missing any one is a silent regression. Custom `@Component` filters MUST have a paired `FilterRegistrationBean` with `setEnabled(false)` to prevent double-registration.
 {{- end}}
 
 ## Security baseline

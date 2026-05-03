@@ -127,7 +127,7 @@ func (g *Generator) writeParentPOM() error {
 func (g *Generator) writeRootFiles() error {
 	files := map[string]string{
 		".trabuco.json": fmt.Sprintf(`{
-  "version": "1.12.3",
+  "version": "1.13.0",
   "projectName": %q,
   "groupId": %q,
   "javaVersion": %q,

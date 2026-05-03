@@ -1,0 +1,344 @@
+# Extend the auth chain
+
+## Overview
+
+Trabuco's auth chain spans 8 surfaces (CallerIdentity tier ladder, ScopeEnforcer JWT bridge, RateLimiter LIMITS map, JwtClaimsExtractor + DefaultJwtClaimsExtractor, ApiKeyAuthFilter, AgentMcpAuthorizationFilter, RequestContextClearingFilter, security configs in API + AIAgent). Extending it (new tier, new scope, non-RFC IdP, custom filter) demands cross-module coordination. This is the long-form companion to `/extend-auth-chain`.
+
+## Architecture
+
+```
+HTTP Request
+     │
+     ▼
+SecurityFilterChain (API or AIAgent)
+     │
+     ├─ ApiKeyAuthFilter (legacy path)               ← addFilterBefore(BearerTokenAuthenticationFilter.class)
+     │    └─ populates CallerContext via API-key match
+     │
+     ├─ BearerTokenAuthenticationFilter (Spring built-in)
+     │    └─ JWT signature + iss + aud validation
+     │       └─ JwtAuthenticationConverter
+     │              └─ JwtClaimsExtractor.extract(jwt)  ← Default vs Auth0/Cognito/Keycloak
+     │                     └─ IdentityClaims (subject, tenantId, scopes)
+     │
+     ├─ AgentMcpAuthorizationFilter (AIAgent /mcp)    ← addFilterAfter(ApiKeyAuthFilter.class)
+     │    └─ MCP scope check
+     │
+     ├─ <Your custom filter>                          ← addFilterBefore/After + FilterRegistrationBean disable
+     │
+     └─ Controller: @RequireScope("partner") / @PreAuthorize("hasAuthority('SCOPE_*')")
+            │
+            ▼
+       ScopeEnforcer.requireScope(tier)
+            │  combines: CallerContext (API-key path) + SecurityContextHolder (JWT path)
+            │  takes the higher tier
+            │
+            ▼
+       CallerIdentity.isAtLeast(requiredTier)
+            │
+            ▼
+       tierLevel(tier)
+            │  switch:
+            │    "anonymous" → 0
+            │    "public" → 1
+            │    "partner" → 2
+            │    "<your-new-tier>" → 3   ← Flavor A
+            │
+            ▼
+       RateLimiter.checkRateLimit(caller)
+            │
+            ▼
+       LIMITS.getOrDefault(tier, 10)
+            │  map:
+            │    anonymous → 10/min
+            │    public → 60/min
+            │    partner → 200/min
+            │    <your-new-tier> → ?   ← Flavor A
+```
+
+## The 4 silent-failure modes (memorize these)
+
+1. **Tier in `tierLevel` switch but missing from `LIMITS`** — `LIMITS.getOrDefault(caller.tier(), 10)` returns 10 (anonymous rate). A `partner` user upgraded to your `enterprise` tier silently gets *worse* rate limits than partner.
+2. **Tier in `tierLevel` but missing from `ScopeEnforcer` authority set** — JWT path's `jwtDerivedCaller()` falls through to `public`. Partner-issued JWTs with `SCOPE_enterprise:admin` claim end up at `public` tier; API-key path sees `enterprise`. Mismatched coverage.
+3. **`@Component` filter + `addFilterBefore`/`After` without `FilterRegistrationBean.setEnabled(false)`** — filter runs once globally (Spring auto-register) AND once in the chain (manual register). Canonical v1.12.3 C2 regression.
+4. **Custom `JwtClaimsExtractor` skips audience claim verification** — the `OIDC_AUDIENCE` boot guard is in `SecurityConfig`, not the extractor; replacing the security config without the guard reopens F-AUTH-02 (audience-claim spoofing).
+
+## Steps — Flavor A: add a new tier (worked example: `enterprise`)
+
+Demonstrates the 4-file lock-step update.
+
+### A.1. CallerIdentity.tierLevel switch
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/security/CallerIdentity.java`
+
+```java
+private static int tierLevel(String tier) {
+    return switch (tier) {
+        case "enterprise" -> 3;       // ← NEW (above partner)
+        case "partner" -> 2;
+        case "public" -> 1;
+        case "anonymous" -> 0;
+        default -> -1;
+    };
+}
+```
+
+The `validateTier()` `@Value.Check` (already shipped) catches typos. Once `tierLevel` knows `enterprise`, any `CallerIdentity.builder().tier("enterprise").build()` succeeds; `tier("enterprize")` fails fast at construction.
+
+### A.2. RateLimiter.LIMITS map
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/security/RateLimiter.java`
+
+```java
+private static final Map<String, Integer> LIMITS = Map.of(
+    "anonymous", 10,
+    "public", 60,
+    "partner", 200,
+    "enterprise", 500       // ← NEW
+);
+```
+
+### A.3. ScopeEnforcer authority set
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/security/ScopeEnforcer.java`
+
+Add the authority set + branch in `jwtDerivedCaller`:
+
+```java
+private static final Set<String> ENTERPRISE_AUTHORITIES = Set.of(
+    "SCOPE_enterprise", "SCOPE_agent:enterprise:admin");
+
+private static final Set<String> PARTNER_AUTHORITIES = Set.of(
+    "SCOPE_partner", "SCOPE_agent:write", "SCOPE_agent:admin");
+
+private static final Set<String> PUBLIC_AUTHORITIES = Set.of(
+    "SCOPE_public", "SCOPE_agent:read");
+
+// In jwtDerivedCaller():
+String tier;
+if (!Collections.disjoint(authorities, ENTERPRISE_AUTHORITIES)) {
+    tier = "enterprise";
+} else if (!Collections.disjoint(authorities, PARTNER_AUTHORITIES)) {
+    tier = "partner";
+} else if (!Collections.disjoint(authorities, PUBLIC_AUTHORITIES)) {
+    tier = "public";
+} else {
+    tier = "public";  // authenticated JWT, no recognized scope
+}
+```
+
+### A.4. docs/auth.md tier ladder
+
+**File**: `docs/auth.md`
+
+```diff
+| Tier | Description |
+|---|---|
+| `anonymous` | No credential. Lowest rate limit. |
+| `public` | Authenticated, baseline access. |
+| `partner` | Trusted partner; ingestion + privileged tools. |
++| `enterprise` | Top tier; expanded rate limits + dedicated SLAs. |
+```
+
+## Steps — Flavor B: add a new OIDC scope mapping
+
+Demonstrates extending the existing tier's authority set without adding a tier.
+
+**File**: `ScopeEnforcer.java`
+
+```java
+private static final Set<String> PARTNER_AUTHORITIES = Set.of(
+    "SCOPE_partner", "SCOPE_agent:write", "SCOPE_agent:admin",
+    "SCOPE_rag:write");                                              // ← NEW
+```
+
+Update `ScopeEnforcerTest`:
+
+```java
+@Test
+void jwtDerivedCaller_ragWriteScope_mapsToPartnerTier() {
+    Authentication auth = jwtAuth("user-id", Set.of("SCOPE_rag:write"));
+    SecurityContextHolder.getContext().setAuthentication(auth);
+    CallerIdentity caller = ScopeEnforcer.jwtDerivedCaller();
+    assertThat(caller.tier()).isEqualTo("partner");
+}
+```
+
+## Steps — Flavor C: custom JwtClaimsExtractor for non-RFC IdP (worked example: Auth0)
+
+Auth0 namespaces custom claims (must be HTTPS URIs per Auth0 policy). `tenant_id` arrives as `https://<your-domain>/tenant_id`. Scopes use the standard space-delimited `scope` string.
+
+### C.1. Auth0JwtClaimsExtractor
+
+**File**: `Shared/src/main/java/{{.PackagePath}}/shared/auth/Auth0JwtClaimsExtractor.java`
+
+```java
+package {{.GroupID}}.shared.auth;
+
+import org.springframework.security.oauth2.jwt.Jwt;
+
+import java.util.Set;
+
+/**
+ * Auth0-specific {@link JwtClaimsExtractor}. Auth0 namespaces custom
+ * claims (must be HTTPS URI per their policy), so {@code tenant_id}
+ * arrives as {@code https://<your-domain>/tenant_id}. Scopes use the
+ * standard space-delimited {@code scope} string per RFC 8693.
+ *
+ * <p>Audience validation is NOT performed here — that's
+ * {@code SecurityConfig}'s responsibility (the {@code OIDC_AUDIENCE}
+ * boot guard refuses to start when the env var is unset). This
+ * extractor only translates claims after the token has already been
+ * verified by Spring Security upstream.
+ */
+public class Auth0JwtClaimsExtractor implements JwtClaimsExtractor {
+
+    private final String tenantClaimName;
+
+    public Auth0JwtClaimsExtractor(String tenantClaimName) {
+        this.tenantClaimName = tenantClaimName;
+    }
+
+    @Override
+    public IdentityClaims extract(Jwt jwt) {
+        String subject = jwt.getSubject();
+        String tenantId = jwt.getClaimAsString(tenantClaimName);
+        String scope = jwt.getClaimAsString("scope");
+        Set<String> scopes = scope == null
+            ? Set.of()
+            : Set.of(scope.split("\\s+"));
+        return ImmutableIdentityClaims.builder()
+            .subject(subject)
+            .tenantId(tenantId == null ? "jwt:" + subject : tenantId)
+            .scopes(scopes)
+            .build();
+    }
+}
+```
+
+### C.2. Bean override in SecurityConfig
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/config/security/AgentSecurityConfig.java` (and the parallel `SecurityConfig.java` for API)
+
+```java
+@Bean
+public JwtClaimsExtractor jwtClaimsExtractor(
+        @Value("${trabuco.auth.idp:default}") String idpType,
+        @Value("${trabuco.auth.auth0.tenant-claim:}") String auth0TenantClaim) {
+    return switch (idpType) {
+        case "auth0" -> new Auth0JwtClaimsExtractor(auth0TenantClaim);
+        default -> new DefaultJwtClaimsExtractor();
+    };
+}
+```
+
+Operators set `trabuco.auth.idp=auth0` + `trabuco.auth.auth0.tenant-claim=https://yourapp.example.com/tenant_id` in `application.yml` to activate the extractor.
+
+## Adjacent operation: custom filter (worked example: correlation ID)
+
+Demonstrates the FilterRegistrationBean disable pattern — without it, the filter runs twice.
+
+**File**: `AIAgent/src/main/java/{{.PackagePath}}/aiagent/security/CorrelationIdFilter.java`
+
+```java
+package {{.GroupID}}.aiagent.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.MDC;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.UUID;
+
+@Component
+public class CorrelationIdFilter extends OncePerRequestFilter {
+
+    private static final String HEADER = "X-Correlation-ID";
+    private static final String MDC_KEY = "correlationId";
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req,
+                                     HttpServletResponse res,
+                                     FilterChain chain) throws ServletException, IOException {
+        String id = req.getHeader(HEADER);
+        if (id == null || id.isBlank()) {
+            id = UUID.randomUUID().toString();
+        }
+        MDC.put(MDC_KEY, id);
+        res.setHeader(HEADER, id);
+        try {
+            chain.doFilter(req, res);
+        } finally {
+            MDC.remove(MDC_KEY);
+        }
+    }
+
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        // Filter must run on async dispatches too — MDC is thread-local
+        // and async carrier threads need the correlation ID set.
+        return false;
+    }
+}
+```
+
+**Modify `AgentSecurityConfig.java`**:
+
+```java
+/**
+ * Disable Spring's auto-global registration of CorrelationIdFilter.
+ * Without this, Spring's ServletContextInitializer registers the @Component
+ * filter into the global servlet chain, AND addFilterBefore registers it
+ * into the SecurityFilterChain — both fire on every request → MDC value
+ * set twice, header set twice.
+ */
+@Bean
+public FilterRegistrationBean<CorrelationIdFilter> disableCorrelationIdFilterAutoRegistration(
+        CorrelationIdFilter filter) {
+    FilterRegistrationBean<CorrelationIdFilter> reg = new FilterRegistrationBean<>(filter);
+    reg.setEnabled(false);
+    return reg;
+}
+
+// In the SecurityFilterChain @Bean method, after http.addFilterBefore(apiKey, ...):
+http.addFilterBefore(correlationIdFilter, ApiKeyAuthFilter.class);
+```
+
+The `setEnabled(false)` keeps the bean in the context (so `addFilterBefore` can resolve it) but removes it from the global servlet chain. Spring's docs call this the "disable auto-registration but preserve bean" idiom.
+
+## Project conventions you must follow
+
+- **Tier names lowercase, single word.** The `validateTier()` `@Value.Check` rejects unknown values.
+- **Update ALL 4 sites for a new tier.** Switch + LIMITS + authority set + docs.
+- **`SCOPE_*` prefix on JWT scope authorities.** `JwtAuthenticationConverter` adds it.
+- **`FilterRegistrationBean.setEnabled(false)` is mandatory** for any `@Component` filter that's also added via `addFilterBefore`/`After`.
+- **`shouldNotFilterAsyncDispatch() = false`** for filters touching identity / MDC state.
+- **Custom IdP extractors live in `shared/auth/`** alongside `DefaultJwtClaimsExtractor`.
+- **Never disable audience validation.** `OIDC_AUDIENCE` boot guard is in `SecurityConfig`, not the extractor.
+- **`@RequireScope` or `@PreAuthorize` on every endpoint.** F-AUTH-01 closure.
+
+## Common mistakes
+
+- **Add tier to `tierLevel` switch only** — silent rate-limit downgrade. The new tier defaults to `LIMITS.getOrDefault(tier, 10)` = 10/min (worse than `public`).
+- **Add tier to `tierLevel` and `LIMITS` only** — JWT path can't reach the tier. API-key callers see `enterprise`; JWT callers fall back to `public` even with `SCOPE_enterprise`.
+- **`@Component` filter without `FilterRegistrationBean` disable** — filter runs twice (once globally, once in chain). Doubled MDC writes, doubled headers, doubled side effects.
+- **`shouldNotFilterAsyncDispatch()` defaults to `true`** — async dispatch carrier thread inherits stale MDC / `CallerContext`. Override to `false` for any filter touching identity.
+- **Custom IdP extractor with audience validation logic in the extractor itself** — `SecurityConfig`'s `OIDC_AUDIENCE` boot guard is the canonical defense; redundant validation in the extractor is fine, but skipping `SecurityConfig`'s guard reopens F-AUTH-02.
+- **Forgetting to update `ScopeEnforcerTest`** for a new scope — passes silently in CI; first JWT-path call surfaces the gap in production.
+- **Using `tier("Enterprise")` (capitalized)** — `validateTier()` `@Value.Check` rejects it (only registered lowercase tiers pass). Caught at construction time, not runtime.
+
+## Security checklist (before merging)
+
+- [ ] **Flavor A**: `tierLevel` switch + `LIMITS` map + `ScopeEnforcer` authority set + `docs/auth.md` ALL updated.
+- [ ] **Flavor B**: `ScopeEnforcer` authority set + `ScopeEnforcerTest` cover the new scope.
+- [ ] **Flavor C**: extractor in `shared/auth/`, bean override in `SecurityConfig`, audience guard in `SecurityConfig` preserved.
+- [ ] **Custom filter**: `@Component` + `FilterRegistrationBean.setEnabled(false)` + `addFilterBefore`/`After` + `shouldNotFilterAsyncDispatch()` override.
+- [ ] **Tests**: `RateLimiter` test for new tier limit; `ScopeEnforcerTest` for new mapping; integration test for custom IdP claim shape.
+- [ ] **No new permitAll endpoints.** Every controller method has `@RequireScope` or `@PreAuthorize`.
+- [ ] **`OIDC_AUDIENCE` env var still required at boot** (not silently disabled).
+
+> **Reference**: shipped `CallerIdentity.java`, `ScopeEnforcer.java`, `DefaultJwtClaimsExtractor.java`, `AgentSecurityConfig.java`. `.ai/security-audit/checklist-auth.md` for F-AUTH-01 (default permitAll), F-AUTH-02 (audience guard), F-AUTH-09 (tierLevel correctness, fixed in v1.12.3), F-AUTH-11 (rate-limit keying).

@@ -206,7 +206,7 @@ The app refuses to boot if the property itself is unset — a deliberate guardra
 
 Use `@PreAuthorize("hasAuthority('SCOPE_<name>')")` for fine-grained access control on controllers and service methods.{{- if .HasModule "AIAgent" }} The AIAgent module additionally ships a legacy API-key path (`app.aiagent.api-key.enabled`, default `true`) that coexists with the JWT chain — operators populate `agent.auth.keys.*` or activate the `local-dev` profile. Use `@RequireScope("public" | "partner")` on AIAgent controllers — the interceptor reads both API-key and JWT identity.{{- end }}
 
-Per-provider recipes (Keycloak / Auth0 / Okta / Cognito / generic OIDC) live in `docs/auth.md`.
+Per-provider recipes (Keycloak / Auth0 / Okta / Cognito / generic OIDC) live in `docs/auth.md`. Extending the auth chain (new tier, OIDC scope mapping, non-RFC IdP claim extractor, custom servlet filter) goes through `.ai/prompts/extend-auth-chain.md` — tier additions touch `CallerIdentity.tierLevel` + `RateLimiter.LIMITS` + `ScopeEnforcer` authority sets in lock-step; custom `@Component` filters MUST have a paired `FilterRegistrationBean` with `setEnabled(false)` to prevent double-registration.
 {{- end}}
 {{- if .HasModule "AIAgent"}}
 

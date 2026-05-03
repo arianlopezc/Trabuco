@@ -271,6 +271,19 @@ func (g *Generator) generateAIDirectory() error {
 		}
 	}
 
+	// Auth-chain prompt — applies whenever the auth chain ships, i.e.
+	// either the API or the AIAgent module is selected. Both modules
+	// generate a SecurityConfig + filter chain.
+	if g.config.HasModule(config.ModuleAPI) || g.config.HasModule(config.ModuleAIAgent) {
+		if err := g.writeTemplateWithData(
+			"ai/prompts/extend-auth-chain.md.tmpl",
+			".ai/prompts/extend-auth-chain.md",
+			aiData,
+		); err != nil {
+			return fmt.Errorf("failed to generate extend-auth-chain.md: %w", err)
+		}
+	}
+
 	// Shared module prompts
 	if g.config.HasModule(config.ModuleShared) {
 		if err := g.writeTemplateWithData(

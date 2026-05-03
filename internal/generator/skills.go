@@ -293,6 +293,17 @@ func skillCatalog() []skillDef {
 			CursorGlobs:  []string{"AIAgent/**/knowledge/**/*.java", "AIAgent/**/protocol/Ingestion*.java", "AIAgent/**/db/vector-migration/*.sql"},
 		},
 		{
+			Name:         "extend-auth-chain",
+			Description:  "Extend Trabuco's auth chain: add a new tier, OIDC scope mapping, non-RFC IdP claim extractor, or custom security filter. Cross-module pattern preserves the 4 silent-failure invariants (tier → tierLevel + LIMITS + ScopeEnforcer; filter @Component + FilterRegistrationBean disable; OIDC_AUDIENCE boot guard).",
+			ArgumentHint: "[extension-name]",
+			Paths:        []string{"AIAgent/**/*.java", "API/**/*.java", "Shared/**/*.java"},
+			BodyTmpl:     "skills/extend-auth-chain.body.md.tmpl",
+			RequiredModule: "anyAuthChain",
+			Invocable:    true,
+			CursorPort:   true,
+			CursorGlobs:  []string{"AIAgent/**/security/**/*.java", "AIAgent/**/config/security/**/*.java", "API/**/config/security/**/*.java", "Shared/**/auth/**/*.java"},
+		},
+		{
 			Name:         "add-a2a-skill",
 			Description:  "Expose an Agent-to-Agent (A2A) skill endpoint: JSON-RPC handler, async task manager wiring, A2AController registration.",
 			ArgumentHint: "[skill-name]",
@@ -313,6 +324,10 @@ func (s skillDef) shouldEmit(cfg *config.ProjectConfig) bool {
 		return true
 	case "anyDatastore":
 		return cfg.HasAnyDatastore()
+	case "anyAuthChain":
+		// Auth-chain extension is meaningful when either the API
+		// security config or the AIAgent security config is generated.
+		return cfg.HasModule(config.ModuleAPI) || cfg.HasModule(config.ModuleAIAgent)
 	default:
 		return cfg.HasModule(s.RequiredModule)
 	}

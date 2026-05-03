@@ -100,6 +100,18 @@ Run each grep across the changed files. Every match is a finding unless explicit
   # Anything else is a finding.
   ```
 - **`AgentMcpAuthorizationFilter` registered globally instead of inside the security chain** — the filter must run AFTER `ApiKeyAuthFilter` (or `BearerTokenAuthenticationFilter` in OAuth2 mode) so `CallerContext` is populated when the MCP scope check fires. Registration via `@Order` puts it in the global servlet chain ahead of the security chain → 403s every legitimate partner request in API-key-only mode. The canonical wiring is `addFilterAfter(... ApiKeyAuthFilter.class)` in `AgentSecurityConfig` plus a `FilterRegistrationBean` with `setEnabled(false)` to suppress global registration.
+- **Custom servlet filter `@Component` + `addFilterBefore`/`addFilterAfter` without `FilterRegistrationBean.setEnabled(false)`** — Spring auto-registers any `@Component` that implements `Filter` into the global servlet chain. The `SecurityFilterChain` then registers it manually via `addFilterBefore` / `addFilterAfter`. Both fire on every request → duplicate work, often duplicate side effects (correlation IDs added twice, identity state cleared between the two passes, request context flapping). The shipped `ApiKeyAuthFilter` and `AgentMcpAuthorizationFilter` declare a paired `FilterRegistrationBean<...>` `@Bean` with `setEnabled(false)` — every custom filter must follow the same shape. Filters touching `CallerContext` / `RequestContextHolder` / MDC must also override `shouldNotFilterAsyncDispatch()` to return `false`. See `/extend-auth-chain`.
+  ```bash
+  # Custom filters in security/ packages must have a paired FilterRegistrationBean disable.
+  rg -lP 'extends OncePerRequestFilter|implements Filter\b' \
+    AIAgent/src/main/java API/src/main/java 2>/dev/null | \
+    while read filter_path; do
+      filter_class=$(basename "$filter_path" .java)
+      rg -L "FilterRegistrationBean<${filter_class}>.*setEnabled\(false\)" \
+        AIAgent/src/main/java API/src/main/java 2>/dev/null \
+        && echo "MISSING FilterRegistrationBean disable for $filter_class"
+    done
+  ```
 - **Bounded resource without reaper** — `TaskManager` (10k task cap) and `RateLimiter` (100k bucket cap) are bounded ConcurrentMaps; without a `@Scheduled` reaper, they fill toward the cap and every new entry permanently throws / 429s. Any new bounded in-memory registry must follow the same shape: cap + `@Scheduled` eviction of terminal/idle entries + `@PreDestroy` for executor cleanup if applicable.
 - **`OncePerRequestFilter` clearing/auth filters not overriding `shouldNotFilterAsyncDispatch()`** — Spring's default skips ASYNC dispatches. A clearing filter that doesn't run on async dispatch leaks `CallerContext` / `RequestContextHolder` to whatever thread the carrier returns to. Filters touching identity must override `shouldNotFilterAsyncDispatch()` to return `false`.
 {{- end}}

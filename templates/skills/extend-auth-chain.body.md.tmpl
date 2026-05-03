@@ -1,0 +1,72 @@
+# Extend the auth chain
+
+Adds a new tier (e.g. `enterprise` above `partner`), a new OIDC scope mapping, a non-RFC IdP claim extractor, or a custom security filter. The auth chain is cross-module — every flavor demands updating multiple files in lock-step.
+
+## Use this skill when
+
+- Adding a new tier to the ladder (`anonymous` < `public` < `partner` < `<your-new-tier>`).
+- Adding a new OIDC scope name (e.g. `SCOPE_rag:write`) and mapping it to a tier.
+- Adding support for a non-RFC IdP (Auth0 namespaced claims, Cognito `cognito:groups`, Keycloak `realm_access.roles`).
+- Adding a custom servlet filter that touches `CallerContext` / `RequestContextHolder` / authentication.
+
+For one-off endpoint-level scope checks, the existing `@RequireScope` / `@PreAuthorize` annotations suffice — this skill is for *chain* extensions.
+
+## The 4 silent-failure modes (memorize these)
+
+| # | Failure | Where it bites |
+|---|---|---|
+| 1 | New tier in `CallerIdentity.tierLevel` switch but NOT in `RateLimiter.LIMITS` map | `LIMITS.getOrDefault(caller.tier(), 10)` falls back to anonymous rate — silent downgrade |
+| 2 | New tier in `tierLevel` but NOT in `ScopeEnforcer.PARTNER_AUTHORITIES` / `PUBLIC_AUTHORITIES` | JWT path can't reach the tier; API-key path works (mismatched coverage) |
+| 3 | Custom filter added via `addFilterBefore` / `addFilterAfter` without paired `FilterRegistrationBean.setEnabled(false)` | Spring auto-registers `@Component` filters globally → runs twice |
+| 4 | Custom `JwtClaimsExtractor` replaces `DefaultJwtClaimsExtractor` without preserving the `OIDC_AUDIENCE` boot guard | F-AUTH-02 closure reopens — audience-claim spoofing |
+
+## Three extension flavors (pick one)
+
+### A. Add a new tier
+
+Files (4): `CallerIdentity.java` (tierLevel switch) + `RateLimiter.java` (LIMITS map) + `ScopeEnforcer.java` (authority sets) + `docs/auth.md` (tier ladder docs).
+
+The `validateTier()` `@Value.Check` already enforces tier-name correctness — once `tierLevel` knows the new name, typos at construction sites fail fast.
+
+### B. Add a new OIDC scope mapping
+
+Files (1-2): `ScopeEnforcer.java` (add to `PARTNER_AUTHORITIES` or `PUBLIC_AUTHORITIES` set), optionally `docs/auth.md`.
+
+The shipped scope authorities: `SCOPE_partner`, `SCOPE_agent:write`, `SCOPE_agent:admin` (partner tier); `SCOPE_public`, `SCOPE_agent:read` (public tier). New scope names follow the same `SCOPE_*` prefix convention.
+
+### C. Custom JwtClaimsExtractor for non-RFC IdP
+
+Files (1-2): new `<Provider>JwtClaimsExtractor.java` in `shared/auth/` implementing the `JwtClaimsExtractor` interface, bean override in `SecurityConfig`. The `OIDC_ISSUER_URI` + `OIDC_AUDIENCE` validation is provided by Spring Security upstream; your extractor only translates claims.
+
+## Adjacent operation: custom filter
+
+If you're adding a new servlet filter (correlation-id, custom auth, audit logging):
+
+- Mark as `@Component` so Spring constructs it.
+- In `AgentSecurityConfig` (and `SecurityConfig` for the API chain), add a `FilterRegistrationBean<YourFilter>` `@Bean` that calls `setEnabled(false)` — disables Spring's auto-global registration. The shipped `ApiKeyAuthFilter` and `AgentMcpAuthorizationFilter` are the canonical pattern.
+- Add the filter to the chain via `addFilterBefore` / `addFilterAfter` at the right position relative to `ApiKeyAuthFilter` / `BearerTokenAuthenticationFilter`.
+- If the filter touches `CallerContext` / `RequestContextHolder`, override `shouldNotFilterAsyncDispatch()` to return `false` (per JCQ §6.1.1) so it runs on async dispatches too.
+
+## Key steps (summary)
+
+1. **Pick the flavor.** A / B / C above.
+2. **Flavor A (new tier)**: update all 4 files — `tierLevel` switch + `LIMITS` map + `ScopeEnforcer` authority set + `docs/auth.md` ladder. The `@Value.Check` catches typos automatically once `tierLevel` knows the name.
+3. **Flavor B (scope mapping)**: 1-2 files. Add the scope string to the appropriate authority set in `ScopeEnforcer`. Update `ScopeEnforcerTest` to cover the new mapping.
+4. **Flavor C (custom IdP)**: implement `JwtClaimsExtractor`, bean-override in `SecurityConfig`. Preserve `OIDC_AUDIENCE` validation (the boot guard is in `SecurityConfig`, not the extractor — no action needed if you don't touch the security config's audience guard).
+5. **Custom filter**: `@Component` + `FilterRegistrationBean.setEnabled(false)` + `addFilterBefore`/`After` + `shouldNotFilterAsyncDispatch()` override if needed.
+6. **Test** — for A: `RateLimiter` integration test that asserts the new tier gets the configured limit (catches missing LIMITS entry). For B: `ScopeEnforcerTest` adds a JWT-path test for the new scope. For C: integration test with a JWT carrying the IdP's claim shape.
+
+## Project conventions you must follow
+
+- **Tier names lowercase, single word.** `anonymous` / `public` / `partner` / `<new-tier>`. The `validateTier()` `@Value.Check` rejects unknown values at construction time.
+- **Update ALL 4 sites for a new tier.** `tierLevel` switch + `LIMITS` map + `ScopeEnforcer` authorities + `docs/auth.md`. Missing any one is a silent regression.
+- **`SCOPE_*` prefix on JWT scope authorities.** `JwtAuthenticationConverter` adds the prefix; your authority set in `ScopeEnforcer` must include it.
+- **Custom filters: `FilterRegistrationBean.setEnabled(false)` is mandatory.** Without it, the `@Component` auto-registers globally; the chain registers manually; both fire. Canonical C2 regression from v1.12.3.
+- **`shouldNotFilterAsyncDispatch()` returns `false`** for filters touching identity state. JCQ §6.1.1.
+- **Custom IdP extractors live in `shared/auth/`.** Mirror `DefaultJwtClaimsExtractor`'s shape — implements `JwtClaimsExtractor`, bean override in `SecurityConfig`.
+- **Never disable audience validation** (`OIDC_AUDIENCE` boot guard) — F-AUTH-02 closure. The guard is in `SecurityConfig`, not the extractor; preserve it on any security-config edit.
+- **`@RequireScope` / `@PreAuthorize` on every new endpoint.** F-AUTH-01 closure. The shipped `controllerHandlersMustDeclareAuthorization` ArchUnit guard catches missing ones.
+
+## Full step-by-step
+
+See `.ai/prompts/extend-auth-chain.md` (full code skeleton for the 3 flavors with worked enterprise-tier example, the custom filter pattern, an Auth0 `JwtClaimsExtractor` template, common mistakes, security checklist mirroring F-AUTH-01/02/09/11).
