@@ -121,15 +121,12 @@ public class AgentSecurityConfig {
      */
     @PostConstruct
     void validateAuthDecisionMade() {
-        if (trabucoAuthEnabled == null || trabucoAuthEnabled.isBlank()) {
-            throw new IllegalStateException(
-                "trabuco.auth.enabled is required and must be set explicitly. " +
-                "Set 'true' (with OIDC_ISSUER_URI and OIDC_AUDIENCE configured) for any deployed environment, " +
-                "or 'false' explicitly to operate on the legacy API-key path only " +
-                "(see app.aiagent.api-key.enabled). " +
-                "See docs/auth.md for per-provider recipes.");
-        }
-        if (!"true".equalsIgnoreCase(trabucoAuthEnabled) && !"false".equalsIgnoreCase(trabucoAuthEnabled)) {
+        // The property defaults to "false" in application.yml so `mvn spring-boot:run`
+        // works out of the box. When operators turn it on for production, the OIDC
+        // discovery values must be present — that's the only check below.
+        if (trabucoAuthEnabled != null
+                && !"true".equalsIgnoreCase(trabucoAuthEnabled)
+                && !"false".equalsIgnoreCase(trabucoAuthEnabled)) {
             throw new IllegalStateException(
                 "trabuco.auth.enabled must be 'true' or 'false', got: '" + trabucoAuthEnabled + "'.");
         }

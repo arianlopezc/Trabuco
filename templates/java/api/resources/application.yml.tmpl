@@ -58,6 +58,13 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  # Strict JSON deserialization — unknown fields in request bodies return 400
+  # via GlobalExceptionHandler. A typo like {"namee":"x"} produces an explicit
+  # error instead of being silently ignored, which is the behavior every
+  # production API should default to.
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
 {{- if .AuthEnabled}}
   # OAuth2 Resource Server — JWT validation against an external OIDC issuer.
   # Active when trabuco.auth.enabled=true (below). SecurityConfig#validateAuthDecisionMade
@@ -110,17 +117,18 @@ spring:
   # Use docker-compose up -d to start the database container
   datasource:
 {{- if eq .Database "postgresql"}}
-    # sslmode defaults to `require` since 1.12 (was `prefer`).
-    # `prefer` silently downgrades to plaintext if the server doesn't
-    # advertise TLS — masking misconfigured deployments. `require`
-    # refuses to connect over plaintext. For local Postgres without
-    # TLS (docker-compose), set DB_SSL_MODE=disable explicitly.
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:require}
+    # sslmode defaults to `disable` so `mvn spring-boot:run` against the bundled
+    # docker-compose works out of the box. Production deployments set
+    # DB_SSL_MODE=require (or verify-full) — both refuse plaintext fallback.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:{{.ProjectName}}}?sslmode=${DB_SSL_MODE:disable}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 {{- else if eq .Database "mysql"}}
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectNameSnake}}}?useSSL=${DB_USE_SSL:true}&requireSSL=${DB_REQUIRE_SSL:false}&verifyServerCertificate=${DB_VERIFY_CERT:false}
+    # useSSL defaults to false so `mvn spring-boot:run` against the bundled
+    # docker-compose works out of the box. Production deployments set
+    # DB_USE_SSL=true and DB_REQUIRE_SSL=true.
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:{{.ProjectNameSnake}}}?useSSL=${DB_USE_SSL:false}&requireSSL=${DB_REQUIRE_SSL:false}&verifyServerCertificate=${DB_VERIFY_CERT:false}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -171,7 +179,7 @@ spring:
   # Use docker-compose up -d to start the MongoDB container
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/{{.ProjectName}}}
+      uri: ${MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
       auto-index-creation: true
 {{- else if eq .NoSQLDatabase "redis"}}
 
@@ -180,7 +188,7 @@ spring:
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT:6380}
       timeout: 2000ms
       lettuce:
         pool:
@@ -211,7 +219,7 @@ spring:
   # opt-in for SASL_SSL/SSL in production; PLAINTEXT default for local
   # docker-compose only.
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9093}
     properties:
       security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
     producer:
@@ -229,7 +237,7 @@ spring:
   # localhost-only in modern RabbitMQ; production must set creds + TLS.
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
+    port: ${RABBITMQ_PORT:5673}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
@@ -279,19 +287,19 @@ resilience4j:
 
 # Trabuco runtime feature flags
 # Auth scaffolding ships in source for both filter chains. The active
-# chain is selected by trabuco.auth.enabled, which MUST be set
-# explicitly — there is no implicit default. The SecurityConfig
-# @PostConstruct hook refuses to boot if this property is unset, so
-# Every deployment makes a deliberate choice between:
+# chain is selected by trabuco.auth.enabled:
 #   - true:  JWT validation enforced (set OIDC_ISSUER_URI above and
 #            configure provider-specific claims via JwtClaimsExtractor)
 #   - false: open chain (local development, or — for AIAgent — to run
 #            on the legacy API-key path only)
-# Always set TRABUCO_AUTH_ENABLED at runtime; do not provide a default
-# here (the missing default is the boot-time guardrail).
+#
+# Default is false so that `mvn spring-boot:run` against the bundled
+# docker-compose works out of the box. Production deployments set
+# TRABUCO_AUTH_ENABLED=true alongside OIDC_ISSUER_URI and OIDC_AUDIENCE.
+# See docs/auth.md for the deployment checklist.
 trabuco:
   auth:
-    enabled: ${TRABUCO_AUTH_ENABLED:}
+    enabled: ${TRABUCO_AUTH_ENABLED:false}
 {{- end}}
 
 # CORS configuration
@@ -419,6 +427,10 @@ jobrunr:
     type: sql
 {{- else if .JobRunrUsesMongoDB}}
     type: mongodb
+    # Must match the Worker module's setting so both apps share the same
+    # JobRunr collections (jobs, recurring_jobs, background_job_servers).
+    # Default: the project's MongoDB database (set via JOBRUNR_MONGO_DB).
+    database-name: ${JOBRUNR_MONGO_DB:{{.ProjectName}}}
 {{- end}}
 {{- end}}
 {{- if and (.HasModule "EventConsumer") (.UsesKafka)}}
@@ -479,7 +491,7 @@ otel:
       endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}
       protocol: ${OTEL_EXPORTER_OTLP_PROTOCOL:http/protobuf}
   traces:
-    exporter: ${OTEL_TRACES_EXPORTER:logging}
+    exporter: ${OTEL_TRACES_EXPORTER:none}
   metrics:
     exporter: ${OTEL_METRICS_EXPORTER:none}
   logs:

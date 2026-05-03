@@ -16,7 +16,7 @@ spring:
 {{- if .UsesKafka}}
 
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9093}
     # Kafka security defaults to PLAINTEXT for local
     # docker-compose. Production must set KAFKA_SECURITY_PROTOCOL to
     # SASL_SSL (or SSL) and configure SASL credentials via standard
@@ -63,7 +63,7 @@ app:
   # to a dedicated service account, and enable TLS via ssl: enabled=true.
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
+    port: ${RABBITMQ_PORT:5673}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
@@ -129,7 +129,10 @@ server:
 
 management:
   server:
-    port: ${MANAGEMENT_PORT:8084}
+    # Blank = same port as server.port. A fresh `mvn spring-boot:run` exposes
+    # /actuator/health on the application port without env-var tweaks. Operators
+    # who want a separate management port for ingress isolation override MANAGEMENT_PORT.
+    port: ${MANAGEMENT_PORT:}
   endpoints:
     web:
       exposure:
@@ -172,7 +175,7 @@ otel:
       endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}
       protocol: ${OTEL_EXPORTER_OTLP_PROTOCOL:http/protobuf}
   traces:
-    exporter: ${OTEL_TRACES_EXPORTER:logging}
+    exporter: ${OTEL_TRACES_EXPORTER:none}
   metrics:
     exporter: ${OTEL_METRICS_EXPORTER:none}
   logs:

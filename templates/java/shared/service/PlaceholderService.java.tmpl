@@ -226,15 +226,17 @@ public class PlaceholderService {
   /**
    * Create a new placeholder.
    * Note: NoSQL uses String IDs, so we generate one or let the database assign it.
+   * updatedAt is set equal to createdAt on creation, matching the SQL variant.
    */
   @CircuitBreaker(name = "default")
   public ImmutablePlaceholder createDocument(ImmutablePlaceholderRequest request) {
+    Instant now = Instant.now();
     PlaceholderDocument saved = repository.save(new PlaceholderDocument(
       null,
       request.name(),
       request.description(),
-      Instant.now(),
-      null
+      now,
+      now
     ));
     return ImmutablePlaceholder.builder()
       .documentId(saved.id())

@@ -650,9 +650,11 @@ func TestModelTemplates(t *testing.T) {
 	if !strings.Contains(result, "@Value.Immutable") {
 		t.Error("PlaceholderResponse should have @Value.Immutable annotation")
 	}
-	// PlaceholderResponse uses builder pattern, no factory methods
-	if !strings.Contains(result, "Long id()") {
-		t.Error("PlaceholderResponse should have id() method")
+	// PlaceholderResponse uses builder pattern, no factory methods.
+	// Since the F5 unification, id() is String regardless of datastore so the
+	// API contract stays stable when the underlying store changes.
+	if !strings.Contains(result, "String id()") {
+		t.Error("PlaceholderResponse should have a String id() method")
 	}
 }
 

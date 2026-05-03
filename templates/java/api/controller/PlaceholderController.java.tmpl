@@ -91,7 +91,7 @@ public class PlaceholderController {
     var created = service.create(request);
     return ResponseEntity.status(HttpStatus.CREATED)
       .body(ImmutablePlaceholderResponse.builder()
-        .id(created.id())
+        .id(String.valueOf(created.id()))
         .name(created.name())
         .description(created.description())
         .createdAt(created.createdAt())
@@ -104,7 +104,7 @@ public class PlaceholderController {
   public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable Long id) {
     return service.findById(id)
       .map(p -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
-        .id(p.id())
+        .id(String.valueOf(p.id()))
         .name(p.name())
         .description(p.description())
         .createdAt(p.createdAt())
@@ -121,7 +121,7 @@ public class PlaceholderController {
     // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with paginated endpoint)
     var placeholders = service.findAll().stream()
       .map(p -> ImmutablePlaceholderResponse.builder()
-        .id(p.id())
+        .id(String.valueOf(p.id()))
         .name(p.name())
         .description(p.description())
         .createdAt(p.createdAt())
@@ -138,7 +138,7 @@ public class PlaceholderController {
       @Valid @RequestBody ImmutablePlaceholderRequest request) {
     return service.update(id, request)
       .map(p -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
-        .id(p.id())
+        .id(String.valueOf(p.id()))
         .name(p.name())
         .description(p.description())
         .createdAt(p.createdAt())
@@ -169,7 +169,7 @@ public class PlaceholderController {
     var created = service.createDocument(request);
     return ResponseEntity.status(HttpStatus.CREATED)
       .body(ImmutablePlaceholderResponse.builder()
-        .documentId(created.documentId())
+        .id(created.documentId())
         .name(created.name())
         .description(created.description())
         .createdAt(created.createdAt())
@@ -182,7 +182,7 @@ public class PlaceholderController {
   public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable String id) {
     return service.findByDocumentId(id)
       .map(p -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
-        .documentId(p.documentId())
+        .id(p.documentId())
         .name(p.name())
         .description(p.description())
         .createdAt(p.createdAt())
@@ -199,7 +199,7 @@ public class PlaceholderController {
     // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with paginated endpoint)
     var placeholders = service.findAll().stream()
       .map(p -> ImmutablePlaceholderResponse.builder()
-        .documentId(p.documentId())
+        .id(p.documentId())
         .name(p.name())
         .description(p.description())
         .createdAt(p.createdAt())
@@ -216,7 +216,7 @@ public class PlaceholderController {
       @Valid @RequestBody ImmutablePlaceholderRequest request) {
     return service.updateDocument(id, request)
       .map(p -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
-        .documentId(p.documentId())
+        .id(p.documentId())
         .name(p.name())
         .description(p.description())
         .createdAt(p.createdAt())
@@ -286,7 +286,7 @@ public class PlaceholderController {
     ));
     return ResponseEntity.status(HttpStatus.CREATED)
       .body(ImmutablePlaceholderResponse.builder()
-        .id(saved.id())
+        .id(String.valueOf(saved.id()))
         .name(saved.name())
         .description(saved.description())
         .createdAt(saved.createdAt())
@@ -299,7 +299,7 @@ public class PlaceholderController {
   public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable Long id) {
     return repository.findById(id)
       .map(record -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
-        .id(record.id())
+        .id(String.valueOf(record.id()))
         .name(record.name())
         .description(record.description())
         .createdAt(record.createdAt())
@@ -316,7 +316,7 @@ public class PlaceholderController {
     // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with paginated endpoint)
     var placeholders = StreamSupport.stream(repository.findAll().spliterator(), false)
       .map(record -> ImmutablePlaceholderResponse.builder()
-        .id(record.id())
+        .id(String.valueOf(record.id()))
         .name(record.name())
         .description(record.description())
         .createdAt(record.createdAt())
@@ -337,7 +337,7 @@ public class PlaceholderController {
           request.name(), request.description()
         ));
         return ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
-          .id(saved.id())
+          .id(String.valueOf(saved.id()))
           .name(saved.name())
           .description(saved.description())
           .createdAt(saved.createdAt())
@@ -372,7 +372,7 @@ public class PlaceholderController {
     ));
     return ResponseEntity.status(HttpStatus.CREATED)
       .body(ImmutablePlaceholderResponse.builder()
-        .documentId(saved.id())
+        .id(saved.id())
         .name(saved.name())
         .description(saved.description())
         .createdAt(saved.createdAt())
@@ -385,7 +385,7 @@ public class PlaceholderController {
   public ResponseEntity<ImmutablePlaceholderResponse> getById(@PathVariable String id) {
     return repository.findById(id)
       .map(doc -> ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
-        .documentId(doc.id())
+        .id(doc.id())
         .name(doc.name())
         .description(doc.description())
         .createdAt(doc.createdAt())
@@ -402,7 +402,7 @@ public class PlaceholderController {
     // trabuco-allow: perf.unbounded-scan (placeholder demo — replace with paginated endpoint)
     var placeholders = StreamSupport.stream(repository.findAll().spliterator(), false)
       .map(doc -> ImmutablePlaceholderResponse.builder()
-        .documentId(doc.id())
+        .id(doc.id())
         .name(doc.name())
         .description(doc.description())
         .createdAt(doc.createdAt())
@@ -423,7 +423,7 @@ public class PlaceholderController {
           request.name(), request.description()
         ));
         return ResponseEntity.ok(ImmutablePlaceholderResponse.builder()
-          .documentId(saved.id())
+          .id(saved.id())
           .name(saved.name())
           .description(saved.description())
           .createdAt(saved.createdAt())

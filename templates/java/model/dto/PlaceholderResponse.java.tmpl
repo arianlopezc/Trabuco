@@ -21,23 +21,17 @@ import org.immutables.value.Value;
 @JsonDeserialize(as = ImmutablePlaceholderResponse.class)
 public interface PlaceholderResponse {
 
-{{- if .HasModule "SQLDatastore"}}
-  /** SQL database ID (Long). */
+  /**
+   * Placeholder identifier as a string.
+   *
+   * <p>The wire shape is the same regardless of datastore — SQL surrogate
+   * keys are stringified, MongoDB ObjectIds use their hex representation,
+   * Redis entries use their UUID. This keeps the API contract stable when
+   * the underlying datastore changes; clients and OpenAPI consumers don't
+   * special-case per-store payloads.
+   */
   @Nullable
-  Long id();
-{{- end}}
-
-{{- if .HasModule "NoSQLDatastore"}}
-  /** NoSQL document ID (String). */
-  @Nullable
-  String documentId();
-{{- end}}
-
-{{- if not .HasAnyDatastore}}
-  /** Placeholder ID (add a datastore module). */
-  @Nullable
-  Long id();
-{{- end}}
+  String id();
 
   String name();
 

@@ -9,8 +9,14 @@ import (
 // MinSupportedVersion is the minimum Java version supported by Trabuco
 const MinSupportedVersion = 21
 
-// SupportedVersions lists all Java versions supported by this tool
-var SupportedVersions = []int{21, 25, 26}
+// SupportedVersions lists all Java versions supported by this tool.
+//
+// Note (1.13.x): Java 25 and 26 are deliberately not on this list. Spring
+// Boot 3.4.x's bundled ASM does not understand class-file version 69 (Java
+// 25) — projects compile but crash at component scan with
+// "Unsupported class file major version 69". Re-add 25/26 when Trabuco
+// upgrades the templates to Spring Boot 3.5.x (which ships ASM 9.9+).
+var SupportedVersions = []int{21, 24}
 
 // ParseVersion extracts the major version and full version string from various formats.
 // Handles formats like:
