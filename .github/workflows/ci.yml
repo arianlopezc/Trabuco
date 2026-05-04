@@ -574,6 +574,110 @@ jobs:
           echo "All prompts contain expected module-specific content ✓"
 
   # ─────────────────────────────────────────────────────────────────────────
+  # `trabuco add <type>` smoke test: generate a project, run each of the
+  # 8 add-commands in sequence (migration, entity, service, endpoint, job,
+  # event, streaming-endpoint, test), then `mvn install` to confirm the
+  # generated bundle compiles cleanly with the rest of the project.
+  #
+  # Unit tests for the addgen package run as part of the existing `build`
+  # job (`go test -v ./...`); this job is the integration layer that
+  # catches regressions where individual generators look fine in isolation
+  # but produce code that doesn't link against the surrounding project.
+  # ─────────────────────────────────────────────────────────────────────────
+  add-commands-smoke:
+    name: trabuco add smoke (compile + boot + Flyway + CRUD)
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      # Service container for the runtime-smoke section of the E2E script.
+      # The script consumes POSTGRES_URL/USER/PASSWORD/DB env vars; when
+      # set, it skips Docker spin-up and uses this container directly.
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trabuco-cli
+
+      - name: Make CLI executable
+        run: chmod +x ./trabuco
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Run E2E add-commands script (compile + runtime smoke)
+        # The script generates a project, runs each of the 8 add-commands,
+        # asserts every expected file at its canonical path with the
+        # expected content, runs `mvn install`, then boots the API against
+        # the postgres service container above and verifies:
+        #   - /actuator/health = UP
+        #   - Flyway applied V1+V2+V3 (V2 from add migration, V3 from add entity)
+        #   - POST /api/orders returns 5xx (new controller registered)
+        #   - POST /api/placeholders round-trips (DB end-to-end works)
+        # See scripts/e2e/test_add_commands.sh.
+        env:
+          TRABUCO_BIN: ${{ github.workspace }}/trabuco
+          POSTGRES_URL: jdbc:postgresql://localhost:5432/test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        run: bash scripts/e2e/test_add_commands.sh
+
+      - name: Verify --json output is parseable (success + refuse-clobber)
+        env:
+          TRABUCO_BIN: ${{ github.workspace }}/trabuco
+        run: |
+          # Generate a fresh project. First call to `add entity` succeeds
+          # and emits parseable JSON to stdout. Second call to the SAME
+          # entity name must trigger refuse-clobber (entity name is the
+          # disambiguator — unlike `add migration` which auto-picks the
+          # next V{N} and can never collide naturally).
+          tmp=$(mktemp -d)
+          cd "$tmp"
+          "$TRABUCO_BIN" init --name=jsoncheck --group-id=com.test.jsoncheck \
+              --modules=Model,SQLDatastore,Shared,API \
+              --database=postgresql --java-version=21 --skip-build > /dev/null
+          cd jsoncheck
+
+          # Success path
+          ok_out=$("$TRABUCO_BIN" add entity Widget --fields="name:string,total:decimal" --json)
+          echo "$ok_out"
+          echo "$ok_out" | jq -e '.status == "success"' > /dev/null
+          echo "$ok_out" | jq -e '.created | length >= 4' > /dev/null
+          echo "Success-path JSON verified ✓"
+
+          # Refuse-clobber path
+          set +e
+          err_out=$("$TRABUCO_BIN" add entity Widget --fields="name:string" --json 2>&1)
+          rc=$?
+          set -e
+          echo "$err_out"
+          if [ $rc -eq 0 ]; then
+            echo "Expected non-zero exit on refuse-clobber, got 0"
+            exit 1
+          fi
+          echo "$err_out" | jq -e '.status == "error"' > /dev/null
+          echo "$err_out" | jq -e '.error | contains("refusing to overwrite")' > /dev/null
+          echo "Refuse-clobber JSON verified ✓"
+
+  # ─────────────────────────────────────────────────────────────────────────
   # Archetype × JDK matrix: generate representative project shapes on the
   # JDKs users actually run, then execute `mvn clean install` with the full
   # test suite (no -DskipTests). Existing jobs above compile with -DskipTests

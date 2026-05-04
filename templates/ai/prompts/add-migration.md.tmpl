@@ -4,6 +4,16 @@
 
 Create a standalone Flyway migration for schema changes: adding columns, indexes, data transformations, or modifying existing tables.
 
+## CLI shortcut for the skeleton
+
+```bash
+trabuco add migration --description="add orders index"
+```
+
+Generates the file at the next `V{N}__{snake_desc}.sql` automatically. The body is a TODO header — you fill in the DDL using the conventions documented further down. CLI is **addition-only**; it never edits an existing migration.
+
+The full step-by-step recipe below covers what to put in the file (DDL semantics, no FKs, indexes, bounded DML) — the CLI handles the file creation, you handle the content.
+
 ## Prerequisites
 
 - Project compiles successfully (`mvn clean compile`)

@@ -2,6 +2,18 @@
 
 Adds a Server-Sent Events endpoint that streams task or event updates to the caller. The 5-part lifecycle is non-negotiable — every part defends a specific silent failure mode.
 
+## CLI scaffolding (run first)
+
+```bash
+trabuco add streaming-endpoint Conversation
+# optionally pin the URL path:
+trabuco add streaming-endpoint Suggestion --path=/api/agent/suggest
+```
+
+Generates `AIAgent/.../protocol/{Name}StreamController.java` — a `@RestController` with a `SseEmitter` + virtual-thread skeleton. The skeleton is **deliberately minimal**: it does NOT include the 5-part lifecycle (rate limit, slot accounting, BOLA defense, named listener, all-three-hooks unsubscribe). You must edit the generated file to wire those in using the references below.
+
+The CLI is **addition-only**. The 5-part lifecycle is the agent's job — copy it from the shipped `StreamingController` reference.
+
 ## Use this skill when
 
 - Adding a stream for a different resource type (e.g. `/conversations/{convId}/stream`, `/agents/{agentId}/stream`).

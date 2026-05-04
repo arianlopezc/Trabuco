@@ -2,6 +2,16 @@
 
 Create a new versioned SQL migration under `SQLDatastore/src/main/resources/db/migration/`.
 
+## CLI scaffolding (run first)
+
+```bash
+trabuco add migration --description="<short summary>"
+```
+
+Generates the empty file at the next `V{N}__<snake_desc>.sql` (auto-numbered). Body is a TODO header — you fill in the DDL.
+
+The CLI is **addition-only**: it picks the next version, refuses to clobber existing migrations, and never edits anything. The conventions below tell you what to put IN the file.
+
 ## Key steps (summary)
 
 1. **File name**: `V<next>__<summary>.sql` — e.g., `V3__add_orders_index.sql`. Versions are monotonic integers; don't skip, don't renumber existing.

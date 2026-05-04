@@ -4,6 +4,18 @@
 
 Create a new business logic service in the Shared module. Use this guide for services that are NOT auto-generated from entities (e.g., PaymentService, NotificationService, IntegrationService).
 
+## CLI shortcut for the skeleton
+
+```bash
+trabuco add service OrderService --entity=Order
+# or, no repository injection:
+trabuco add service NotificationService
+```
+
+Generates `Shared/.../service/{Name}.java` with constructor injection. With `--entity=X`, the constructor wires in `XRepository` (SQL) or `XDocumentRepository` (Mongo). The `doSomething()` body is a stub for you to replace.
+
+CLI is **addition-only**. The conventions below cover what to put in the body — circuit-breaker placement, transactional boundaries, test patterns.
+
 ## Prerequisites
 
 - Project compiles successfully (`mvn clean compile`)

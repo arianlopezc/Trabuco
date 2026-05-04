@@ -2,6 +2,22 @@
 
 Create a JobRunr job: request class in Jobs module, handler in Worker module.
 
+## CLI scaffolding (run first)
+
+```bash
+trabuco add job ProcessShipment --payload="orderId:string,priority:integer"
+```
+
+Generates the three-file bundle:
+
+- `Model/.../jobs/ProcessShipmentJobRequest.java` (record implementing `JobRequest`)
+- `Model/.../jobs/ProcessShipmentJobRequestHandler.java` (no-op base — exists so JobRunr's enqueue-time validation finds a class)
+- `Worker/.../handler/ProcessShipmentJobRequestHandler.java` (`@Component` subclass with TODO body)
+
+Payload field types: same as `trabuco add entity`'s `--fields` (string, decimal, instant, etc.).
+
+The CLI is **addition-only**. Replace the TODO body with your business logic, register recurring jobs in `RecurringJobsConfig`, and wire `IdentityClaims` into the request payload by editing the generated files — see conventions below.
+
 ## Key steps (summary)
 
 1. **Jobs module** (`Jobs/src/main/java/.../jobs/`): a `JobRequest` implementation. Immutable payload; Jackson-serializable.

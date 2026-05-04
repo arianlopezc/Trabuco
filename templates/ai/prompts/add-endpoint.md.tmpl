@@ -4,6 +4,18 @@
 
 Create a new REST API endpoint with proper request/response handling, validation, and error handling.
 
+## CLI shortcut for the skeleton
+
+```bash
+trabuco add endpoint Order --type=crud
+# or, single non-CRUD endpoint:
+trabuco add endpoint Health --path=/healthz
+```
+
+Generates `API/.../controller/{Name}Controller.java` with `@RestController` + `@RequestMapping`. `--type=crud` adds five CRUD method stubs at `/api/{plural}`; `--type=plain` (default) is empty.
+
+CLI is **addition-only**. Replace `UnsupportedOperationException` stubs with real service calls; add `@PreAuthorize`, Bean Validation, request/response DTOs by editing the file. The full step-by-step below covers DTOs, validation, and pagination conventions.
+
 ## Prerequisites
 
 - Entity and service already exist (see `add-entity.md` if needed)

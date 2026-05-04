@@ -6,6 +6,18 @@ Server-Sent Events (SSE) endpoints stream task / event updates from the AIAgent 
 
 This is the long-form companion to `/add-streaming-endpoint`.
 
+## CLI shortcut for the skeleton
+
+```bash
+trabuco add streaming-endpoint Conversation
+# or pin the URL path:
+trabuco add streaming-endpoint Suggestion --path=/api/agent/suggest
+```
+
+Generates `AIAgent/.../protocol/{Name}StreamController.java` with a virtual-thread emitter skeleton. The skeleton is **deliberately minimal** — it does NOT include the 5-part lifecycle (rate limit, slot accounting, BOLA defense, named listener, all-three-hooks unsubscribe).
+
+Wire in the lifecycle by editing the generated file using the procedure below. The CLI is addition-only; the lifecycle wiring is the agent's job.
+
 ## Architecture
 
 ```

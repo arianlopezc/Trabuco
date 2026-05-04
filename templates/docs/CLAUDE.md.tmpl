@@ -319,6 +319,15 @@ Repository tests use Testcontainers — Docker must be running.
 
 Each task below has a slash-command skill (invoke as `/add-X`) AND a full step-by-step guide under `{{.TaskGuidesDir}}/`. The skill is the quick entry point; the guide under `.ai/prompts/` is the authoritative reference with code templates.
 
+### Addition policy: prefer `trabuco add` for the file-creation step
+
+For tasks that ADD new files (entity, migration, service, job, endpoint, streaming-endpoint, event, test), invoke the corresponding `trabuco add <type> ...` CLI command. It generates byte-deterministic skeletons at the canonical paths, refuses to clobber, and never edits existing files. After scaffolding, edit the generated files to fill in the actual content (DDL, business logic, real test assertions, sealed-permits wiring, etc.).
+
+The CLI is **addition-only**. For tasks that EDIT or DELETE — extending an existing entity with a new field, modifying a sealed event hierarchy, removing dead code, refactoring — work directly on the files. The skill bodies under each `/add-X` slash command document both paths.
+
+Same surface is also exposed as MCP tools (`mcp__trabuco__add_*`) for headless agent use.
+
+
 | Task | Slash command | Full guide | When to Use |
 |------|--------------|-----------|-------------|
 | **Code quality spec** | — | `{{.PromptsDir}}/JAVA_CODE_QUALITY.md` | Reference; read before/after writing ANY Java code |

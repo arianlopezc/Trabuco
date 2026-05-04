@@ -2,6 +2,23 @@
 
 Write tests for an existing or newly-added Java class, following this project's conventions. Picks unit vs Testcontainers-integration based on the dependencies involved.
 
+## CLI scaffolding (run first)
+
+```bash
+# Unit test (default): @ExtendWith(MockitoExtension.class)
+trabuco add test OrderService --module=Shared
+
+# Integration test: @SpringBootTest, file ends *IT.java for Failsafe
+trabuco add test OrderController --module=API --type=integration
+
+# Repository test: @DataJdbcTest + Postgres/MySQL container, or @DataMongoTest + Mongo container
+trabuco add test OrderRepository --module=SQLDatastore --type=repository
+```
+
+Generates the right test class skeleton with the correct annotations and Testcontainers wiring (matching the project's `--database` choice). The subpackage is inferred from the target's suffix (`*Service` → `service/`, `*Controller` → `controller/`, etc.) — override with `--subpackage`.
+
+The CLI is **addition-only**. Replace `TODO_addAssertions` with real test methods following the conventions below.
+
 ## Decision tree
 
 - **Pure unit test** — class has no datastore / no Spring context / no broker. Use `@ExtendWith(MockitoExtension.class)` + `@Mock` + `@BeforeEach` for instantiation.
