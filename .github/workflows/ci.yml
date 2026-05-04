@@ -640,31 +640,42 @@ jobs:
           POSTGRES_DB: test
         run: bash scripts/e2e/test_add_commands.sh
 
-      - name: Verify --json output is parseable (refuse-clobber path)
+      - name: Verify --json output is parseable (success + refuse-clobber)
         env:
           TRABUCO_BIN: ${{ github.workspace }}/trabuco
         run: |
-          # Generate a fresh project, run a migration command, then re-run
-          # the same command to trigger refuse-clobber. The second call
-          # must exit non-zero AND emit parseable JSON when --json is set.
+          # Generate a fresh project. First call to `add entity` succeeds
+          # and emits parseable JSON to stdout. Second call to the SAME
+          # entity name must trigger refuse-clobber (entity name is the
+          # disambiguator — unlike `add migration` which auto-picks the
+          # next V{N} and can never collide naturally).
           tmp=$(mktemp -d)
           cd "$tmp"
           "$TRABUCO_BIN" init --name=jsoncheck --group-id=com.test.jsoncheck \
               --modules=Model,SQLDatastore,Shared,API \
               --database=postgresql --java-version=21 --skip-build > /dev/null
           cd jsoncheck
-          "$TRABUCO_BIN" add migration --description="add orders" > /dev/null
+
+          # Success path
+          ok_out=$("$TRABUCO_BIN" add entity Widget --fields="name:string,total:decimal" --json)
+          echo "$ok_out"
+          echo "$ok_out" | jq -e '.status == "success"' > /dev/null
+          echo "$ok_out" | jq -e '.created | length >= 4' > /dev/null
+          echo "Success-path JSON verified ✓"
+
+          # Refuse-clobber path
           set +e
-          out=$("$TRABUCO_BIN" add migration --description="add orders" --json 2>&1)
+          err_out=$("$TRABUCO_BIN" add entity Widget --fields="name:string" --json 2>&1)
           rc=$?
           set -e
-          echo "$out"
-          echo "$out" | jq -e '.status' > /dev/null
+          echo "$err_out"
           if [ $rc -eq 0 ]; then
-            echo "Expected refuse-clobber exit, got success"
+            echo "Expected non-zero exit on refuse-clobber, got 0"
             exit 1
           fi
-          echo "JSON output verified ✓"
+          echo "$err_out" | jq -e '.status == "error"' > /dev/null
+          echo "$err_out" | jq -e '.error | contains("refusing to overwrite")' > /dev/null
+          echo "Refuse-clobber JSON verified ✓"
 
   # ─────────────────────────────────────────────────────────────────────────
   # Archetype × JDK matrix: generate representative project shapes on the
