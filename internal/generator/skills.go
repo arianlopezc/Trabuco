@@ -129,7 +129,7 @@ func skillCatalog() []skillDef {
 		// ─── Add-production-code workflows (always available) ─────────────
 		{
 			Name:         "add-entity",
-			Description:  "Add a new domain entity. Creates immutable entity, request DTO, datastore record, repository wiring, and tests following project conventions.",
+			Description:  "Add a new domain entity. Run `trabuco add entity <Name> --fields=...` for the deterministic skeleton (Immutables interface, JDBC record/Mongo doc, repository, Flyway migration, enum stubs); then edit for indexes/queries.",
 			ArgumentHint: "[entity-name]",
 			Paths:        javaPaths,
 			BodyTmpl:     "skills/add-entity.body.md.tmpl",
@@ -139,7 +139,7 @@ func skillCatalog() []skillDef {
 		},
 		{
 			Name:         "add-endpoint",
-			Description:  "Add a new REST endpoint. Creates controller method, request/response DTOs, service logic, validation, and tests following API conventions.",
+			Description:  "Add a new REST endpoint. Run `trabuco add endpoint <Name> --type=plain|crud` for the deterministic controller skeleton; then wire DTOs, validation, @PreAuthorize, and service calls.",
 			ArgumentHint: "[endpoint-path]",
 			Paths:        javaPaths,
 			BodyTmpl:     "skills/add-endpoint.body.md.tmpl",
@@ -149,7 +149,7 @@ func skillCatalog() []skillDef {
 		},
 		{
 			Name:         "add-service",
-			Description:  "Add a new business logic service. Creates the service class with circuit breaker, constructor injection, immutable request/response types, and unit tests.",
+			Description:  "Add a new business logic service. Run `trabuco add service <Name> [--entity=X]` for the deterministic @Service skeleton with constructor injection; then add real operations + circuit breaker.",
 			ArgumentHint: "[service-name]",
 			Paths:        javaPaths,
 			BodyTmpl:     "skills/add-service.body.md.tmpl",
@@ -159,7 +159,7 @@ func skillCatalog() []skillDef {
 		},
 		{
 			Name:         "add-migration",
-			Description:  "Add a new Flyway database migration. Generates a versioned SQL file with project conventions: no foreign keys, indexes for foreign-key columns, backward compatibility.",
+			Description:  "Add a new Flyway migration. Run `trabuco add migration --description=...` for the auto-numbered V{N}__name.sql file; then edit DDL respecting project conventions (no FKs, indexes, bounded DML).",
 			ArgumentHint: "[migration-summary]",
 			Paths:        []string{"SQLDatastore/**/db/migration/*.sql"},
 			BodyTmpl:     "skills/add-migration.body.md.tmpl",
@@ -181,7 +181,7 @@ func skillCatalog() []skillDef {
 		},
 		{
 			Name:         "add-event",
-			Description:  "Add a new event type for async processing. Creates event class in Events module, publisher wiring, and consumer/listener in EventConsumer.",
+			Description:  "Add a new event type. Run `trabuco add event <Name> --fields=...` for the record skeleton; then wire it into the sealed permits clause + listener switch + publisher (CLI is addition-only).",
 			ArgumentHint: "[event-name]",
 			Paths:        javaPaths,
 			BodyTmpl:     "skills/add-event.body.md.tmpl",
@@ -192,7 +192,7 @@ func skillCatalog() []skillDef {
 		},
 		{
 			Name:         "add-job",
-			Description:  "Add a new background job. JobRunr JobRequest + handler in Worker module with retry config, testing, and observability.",
+			Description:  "Add a JobRunr background job. Run `trabuco add job <Name> --payload=...` for the 3-file skeleton (request + base handler + Worker @Component); then implement run() and register recurring schedules.",
 			ArgumentHint: "[job-name]",
 			Paths:        javaPaths,
 			BodyTmpl:     "skills/add-job.body.md.tmpl",
@@ -205,7 +205,7 @@ func skillCatalog() []skillDef {
 		// ─── Add-test (new skill, universal) ──────────────────────────────
 		{
 			Name:         "add-test",
-			Description:  "Add tests for existing or new code. Picks unit vs Testcontainers integration based on dependencies; applies project conventions (MockitoExtension, no field injection, Java 25 gotchas).",
+			Description:  "Add tests for existing code. Run `trabuco add test <Target> --module=... --type=unit|integration|repository` for the right skeleton (Mockito / @SpringBootTest / @DataJdbcTest+Testcontainers); then write real assertions.",
 			ArgumentHint: "[target-file]",
 			Paths:        []string{"**/src/**/*.java"},
 			BodyTmpl:     "skills/add-test.body.md.tmpl",
@@ -261,7 +261,7 @@ func skillCatalog() []skillDef {
 		},
 		{
 			Name:         "add-streaming-endpoint",
-			Description:  "Add an SSE streaming endpoint with the canonical 5-part lifecycle (rate-limit, per-caller cap, BOLA-safe ownership, named listener with paired unsubscribe in all 3 emitter hooks).",
+			Description:  "Add an SSE streaming endpoint. Run `trabuco add streaming-endpoint <Name>` for the controller skeleton with virtual-thread emitter; then wire the canonical 5-part lifecycle (rate-limit, slot cap, BOLA-safe ownership, named listener + paired unsubscribe).",
 			ArgumentHint: "[endpoint-name]",
 			Paths:        aiPaths,
 			BodyTmpl:     "skills/add-streaming-endpoint.body.md.tmpl",

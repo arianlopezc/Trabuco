@@ -4,6 +4,16 @@
 
 Create a new background job using JobRunr for async processing. Jobs are defined in the `Model` module and handlers in the `Worker` module.
 
+## CLI shortcut for the skeleton
+
+```bash
+trabuco add job ProcessShipment --payload="orderId:string,priority:integer"
+```
+
+Generates the three-file bundle (request record + base handler in Model + concrete @Component in Worker) at the canonical paths. The Worker concrete handler's `run()` body is a TODO for you to replace.
+
+CLI is **addition-only** — recurring schedule registration in `RecurringJobsConfig` and identity-claim wiring in the request payload are agent edits, covered in the conventions below.
+
 ## Prerequisites
 
 - Worker module is included in the project

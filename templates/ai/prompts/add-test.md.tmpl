@@ -2,6 +2,21 @@
 
 Full step-by-step recipe for adding tests to this project. Invocable as the `/add-test` skill in Claude Code, Codex CLI, and Copilot; referenced by the `add-test` Cursor rule.
 
+## CLI shortcut for the skeleton
+
+```bash
+# Unit (default): @ExtendWith(MockitoExtension.class)
+trabuco add test OrderService --module=Shared
+
+# Integration: @SpringBootTest, file ends *IT.java for Failsafe
+trabuco add test OrderController --module=API --type=integration
+
+# Repository: @DataJdbcTest + Postgres/MySQL container, or @DataMongoTest + Mongo container
+trabuco add test OrderRepository --module=SQLDatastore --type=repository
+```
+
+The CLI picks the right annotations + Testcontainers wiring (matching the project's `--database` choice) and infers the subpackage from the target name's suffix. Replace the `TODO_addAssertions` stub with real test methods following the conventions below.
+
 ## Prerequisites
 
 - You know what class you're testing (repository, service, controller, listener, handler, tool, guardrail, ...).

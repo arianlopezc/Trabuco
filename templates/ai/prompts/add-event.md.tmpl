@@ -4,6 +4,22 @@
 
 Create a new event type for event-driven processing. Events are defined in the `Model` module, published via the `Events` module, and consumed by the `EventConsumer` module.
 
+## CLI shortcut for the skeleton
+
+```bash
+trabuco add event OrderShipped --fields="orderId:string,shippedAt:instant,carrierRef:string?"
+```
+
+Generates `Model/.../events/{Name}.java` — a Java record with `@NotNull`/`@Nullable` annotations matching the field spec.
+
+CLI is **addition-only**, and explicitly does NOT modify the sealed event hierarchy:
+
+- It does NOT add `OrderShipped` to the parent's `permits` clause.
+- It does NOT add a `case OrderShipped` to the listener's `switch (event)`.
+- It does NOT register the publisher.
+
+Those edits stay with the agent — see the steps below.
+
 ## Prerequisites
 
 - EventConsumer module is included in the project

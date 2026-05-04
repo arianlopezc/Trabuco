@@ -2,6 +2,48 @@ package utils
 
 import "testing"
 
+func TestToSnakeCase(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"order", "order"},
+		{"Order", "order"},
+		{"OrderItem", "order_item"},
+		{"orderItem", "order_item"},
+		{"URLConfig", "url_config"},
+		{"HTTPRequest", "http_request"},
+		{"already_snake", "already_snake"},
+		{"customerId", "customer_id"},
+		{"v2Migration", "v2_migration"},
+		{"kebab-case", "kebab_case"},
+	}
+	for _, tc := range cases {
+		got := ToSnakeCase(tc.in)
+		if got != tc.want {
+			t.Errorf("ToSnakeCase(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestPluralLowerSnake(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"Order", "orders"},
+		{"OrderItem", "order_items"},
+		{"Customer", "customers"},
+		{"Currency", "currencies"},
+		{"Box", "boxes"},
+		{"Branch", "branches"},
+		{"Wish", "wishes"},
+		{"Day", "days"}, // vowel before y → just +s
+	}
+	for _, tc := range cases {
+		got := PluralLowerSnake(tc.in)
+		if got != tc.want {
+			t.Errorf("PluralLowerSnake(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestToPascalCase(t *testing.T) {
 	tests := []struct {
 		input    string

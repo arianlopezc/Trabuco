@@ -2,6 +2,25 @@
 
 Create a new domain object: immutable entity + request DTO + datastore record + repository wiring + tests. All following this project's conventions (ImmutableX builder pattern, constructor injection, no field injection).
 
+## CLI scaffolding (run first)
+
+```bash
+trabuco add entity Order \
+    --fields="customerId:string,total:decimal,placedAt:instant,notes:text?,status:enum:Status"
+```
+
+Generates the full bundle in one shot:
+
+- `Model/.../entities/Order.java` (Immutables interface)
+- `Model/.../entities/OrderRecord.java` (JDBC record) **or** `OrderDocument.java` (Mongo)
+- `SQLDatastore/.../repository/OrderRepository.java` **or** `NoSQLDatastore/.../repository/OrderDocumentRepository.java`
+- `SQLDatastore/.../db/migration/V{N}__create_orders.sql` (SQL flavor only)
+- `Model/.../entities/Status.java` (placeholder enum, one per distinct enum field)
+
+Field types: `string text integer long decimal boolean instant localdate uuid json bytes enum:Name`. Suffix `?` marks nullable.
+
+The CLI is **addition-only**. After it runs, edit the migration to add indexes (no `FOREIGN KEY` — index instead) and the repository to add custom `@Query` methods. To extend an existing entity (add a field), edit the files by hand — the CLI refuses to re-emit.
+
 ## Key steps (summary)
 
 1. **Model**: add `ImmutableEntity` + `ImmutablePlaceholderRequest`-style DTO under `Model/src/main/java/{{.GroupID | packagePath}}/model/`.

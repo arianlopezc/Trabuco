@@ -2,6 +2,18 @@
 
 Add a new HTTP endpoint to the API module. One controller method + request/response DTOs + service method + tests.
 
+## CLI scaffolding (run first)
+
+```bash
+trabuco add endpoint Order --type=crud
+# or, for a single non-CRUD endpoint:
+trabuco add endpoint Health --path=/healthz
+```
+
+Generates `API/.../controller/{Name}Controller.java` with the `@RestController` + `@RequestMapping` wiring. `--type=crud` adds five CRUD method stubs (POST, GET-by-id, GET-list, PUT, DELETE) at `/api/{plural}`; `--type=plain` (default) is empty.
+
+The CLI is **addition-only**. Replace `UnsupportedOperationException` stubs with real service calls, add `@PreAuthorize`, Bean Validation (`@Valid`, `@NotBlank`, `@Size`), and request/response DTOs by editing the generated file.
+
 ## Key steps (summary)
 
 1. **Controller** (`API/src/main/java/.../api/controller/`): define the method signature, `@RequestMapping`, `@Valid` the request DTO.

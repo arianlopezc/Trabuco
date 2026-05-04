@@ -2,6 +2,16 @@
 
 Create a new Spring `@Service` in the Shared module. Single responsibility, constructor injection, immutable I/O types.
 
+## CLI scaffolding (run first)
+
+```bash
+trabuco add service OrderService --entity=Order
+```
+
+Generates `Shared/.../service/OrderService.java` with the right repository constructor-injected (`OrderRepository` for SQL projects, `OrderDocumentRepository` for Mongo). Drop `--entity` for a service with no repository.
+
+The CLI is **addition-only**. Replace the `doSomething()` stub with your real operations and let the conventions below shape the implementation. Editing an existing service is the agent's job (the CLI refuses to clobber).
+
 ## Key steps (summary)
 
 1. **Package**: `Shared/src/main/java/{{.GroupID | packagePath}}/shared/service/NewService.java`

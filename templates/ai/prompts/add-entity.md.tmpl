@@ -4,6 +4,17 @@
 
 Create a new domain entity with all required layers: entity definition, repository, service, and optionally a REST endpoint.
 
+## CLI shortcut for the skeleton
+
+```bash
+trabuco add entity Order \
+    --fields="customerId:string,total:decimal,placedAt:instant,notes:text?,status:enum:Status"
+```
+
+Generates the full bundle (Immutables interface + JDBC record/Mongo doc + repository + Flyway migration + enum stubs) at the canonical paths in one shot. Field types: `string text integer long decimal boolean instant localdate uuid json bytes enum:Name`; `?` suffix marks nullable.
+
+CLI is **addition-only** — it does not edit an existing entity, modify the migration after creation, or wire the entity into your service layer. After scaffolding, edit the generated migration to add indexes (no `FOREIGN KEY` — index instead), the repository to add custom `@Query` methods, and a service to invoke the Immutable builder. The denormalization + repository-method conventions below describe what the agent fills in.
+
 ## Prerequisites
 
 - Project compiles successfully (`mvn clean compile`)

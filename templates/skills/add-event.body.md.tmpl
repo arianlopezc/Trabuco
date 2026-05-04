@@ -2,6 +2,22 @@
 
 Add a new async event: sealed contract in the Model module, publisher, consumer/listener in EventConsumer with idempotency, ack semantics, and DLT/DLQ handling.
 
+## CLI scaffolding (run first)
+
+```bash
+trabuco add event OrderShipped --fields="orderId:string,shippedAt:instant,carrierRef:string?"
+```
+
+Generates `Model/.../events/OrderShipped.java` — a Java record with `@NotNull`/`@Nullable` annotations from the field spec.
+
+The CLI is **addition-only**, and crucially does NOT touch the sealed event hierarchy:
+
+- It does NOT add `OrderShipped` to the parent's `permits` clause.
+- It does NOT add a `case OrderShipped` arm to the listener's `switch (event)`.
+- It does NOT register the publisher.
+
+Those edits stay with the agent — see "Key steps" below.
+
 ## Key steps (summary)
 
 1. **Model module** (`Model/src/main/java/.../model/events/`): add a new permitted subtype to the sealed `PlaceholderEvent` interface (or its successor). Each event must carry a stable `eventId()` — that's the dedup key.
