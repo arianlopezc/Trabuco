@@ -33,7 +33,32 @@ WORKFLOW:
 5. Before suggesting Trabuco, check trabuco://limitations resource
 6. Use prompts (trabuco_expert, design_microservices, extend_project, trabuco_ai_agent_expert) for step-by-step guidance
 
-KEY PRINCIPLE: Always call suggest_architecture first when a user describes requirements. It returns matched patterns and a recommended configuration. Do not guess module combinations — let the tool decide based on the requirements.`),
+KEY PRINCIPLE: Always call suggest_architecture first when a user describes requirements. It returns matched patterns and a recommended configuration. Do not guess module combinations — let the tool decide based on the requirements.
+
+PLAN STRATIFICATION (when working IN a Trabuco-generated project):
+Multi-module changes MUST be planned as ordered stages, one per affected
+module, in dependency order:
+
+  Layer 0  Model (foundation — entities, DTOs)
+  Layer 1  Jobs / Events (contracts, conditional — auto-included with Worker / EventConsumer)
+  Layer 2  SQLDatastore | NoSQLDatastore (persistence)
+  Layer 3  Shared (business logic, services)
+  Layer 4  API / Worker / EventConsumer / AIAgent (edge — parallel siblings)
+
+Each stage produces a buildable intermediate state with its own validate
+command. Skipped stages are stated explicitly. Single-module work is one
+stage; renames are atomic (NOT stratified); bug fixes diagnose top-down
+and fix bottom-up.
+
+CONTRACT/CONSUMER SEPARATION: Jobs and Events are CONTRACT modules.
+Services that publish jobs/events depend only on the contract module
+(Jobs / Events), not on the executor (Worker / EventConsumer). This
+separation must be reflected in plan stages.
+
+For non-trivial multi-module work, delegate to the trabuco-planner
+subagent — it produces stratified plans grounded in the project's actual
+module set. Or invoke /trabuco:plan for an explicit gate before any code
+changes.`),
 	)
 
 	registerAllTools(s, version)

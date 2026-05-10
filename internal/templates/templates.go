@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/arianlopezc/Trabuco/internal/architecture"
 	"github.com/arianlopezc/Trabuco/internal/config"
 	"github.com/arianlopezc/Trabuco/internal/utils"
 	embeddedTemplates "github.com/arianlopezc/Trabuco/templates"
@@ -58,7 +59,44 @@ func createFuncMap() template.FuncMap {
 		"inList": inList,
 		"first":  first,
 		"last":   last,
+
+		// Architecture hierarchy (Trabuco's module dependency layers).
+		// Templates use these to render module-stratified planning
+		// guidance grounded in the project's actual module set.
+		"architectureLayers": architectureLayers,
+		"architectureStages": architectureStages,
+		"architectureModule": architectureModule,
 	}
+}
+
+// architectureLayers returns the layers (with their member modules)
+// that exist in the supplied module set. Used by AGENTS.md / CLAUDE.md
+// to render the dependency-hierarchy table for THIS project — empty
+// layers (e.g. Persistence with neither datastore selected) drop out.
+func architectureLayers(modules []string) []architecture.Layer {
+	return architecture.FilterFor(modules).Layers
+}
+
+// architectureStages returns the canonical stage labels (e.g. "Stage 1
+// — Model", "Stage 5 — API | Worker") for a project. Each layer with
+// at least one selected module produces one stage; sibling modules
+// within a layer are pipe-joined.
+func architectureStages(modules []string) []string {
+	return architecture.StagesFor(modules)
+}
+
+// architectureModule returns the structured Module entry for a given
+// name (or nil if not in any layer). Templates use this to surface
+// per-module stage hints when rendering plan-stratification examples.
+func architectureModule(name string) *architecture.Module {
+	for _, layer := range architecture.All().Layers {
+		for i := range layer.Modules {
+			if layer.Modules[i].Name == name {
+				return &layer.Modules[i]
+			}
+		}
+	}
+	return nil
 }
 
 // Execute renders a template with the given data

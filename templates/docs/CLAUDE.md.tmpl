@@ -152,16 +152,92 @@ Shared             → Model{{if .HasModule "SQLDatastore"}}, SQLDatastore{{end}
 {{- if .HasModule "API"}}
 API                → Model{{if .HasModule "Shared"}}, Shared{{end}}
 {{- end}}
+{{- if .HasModule "Jobs"}}
+Jobs               → Model
+{{- end}}
+{{- if .HasModule "Events"}}
+Events             → Model
+{{- end}}
 {{- if .HasModule "Worker"}}
-Worker             → Model{{if .HasModule "Shared"}}, Shared{{end}}
+Worker             → Model{{if .HasModule "Jobs"}}, Jobs{{end}}{{if .HasModule "Shared"}}, Shared{{end}}
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-EventConsumer      → Model{{if .HasModule "Shared"}}, Shared{{end}}
+EventConsumer      → Model{{if .HasModule "Events"}}, Events{{end}}{{if .HasModule "Shared"}}, Shared{{end}}
+{{- end}}
+{{- if .HasModule "AIAgent"}}
+AIAgent            → Model{{if .HasModule "Shared"}}, Shared{{end}}
 {{- end}}
 ```
 {{- if or (.HasModule "API") (or (.HasModule "Worker") (.HasModule "EventConsumer"))}}
 
 Never import from API in Worker/EventConsumer or vice versa.
+{{- end}}
+
+## Architecture Hierarchy & Plan Stratification
+
+Trabuco modules form a dependency hierarchy with five layers. Multi-module
+work in this project MUST be planned as ordered stages, one per affected
+layer, in dependency order. Each stage produces a buildable intermediate
+state.
+
+**The hierarchy in this project:**
+
+| Layer | Modules | What lives here |
+|-------|---------|-----------------|
+{{- range architectureLayers .Modules}}
+| **{{.Name}}** | {{range $i, $m := .Modules}}{{if $i}} · {{end}}{{$m.Name}}{{end}} | {{.Description}} |
+{{- end}}
+
+**Canonical stage outline for any plan in this project:**
+
+```
+{{- range architectureStages .Modules}}
+{{.}}
+{{- end}}
+```
+
+### How to plan multi-module changes
+
+For features touching more than one module, structure your plan as ordered
+stages following the outline above. Each stage MUST include:
+
+- **Files added or modified** in that module
+- **Validate command** that proves the stage landed (typically `mvn -pl <Module> -am test`)
+- **Depends-on rationale** — what from previous stages this stage uses
+- Skipped stages stated **explicitly** ("Stage 3 — Shared: no changes; using existing service")
+
+A reviewer reads the plan top-to-bottom; the project compiles cleanly at
+the end of every stage; failure at stage N never invalidates stages 1..N-1.
+
+### When the rule does NOT apply
+
+- **Single-module work** — a one-stage plan (e.g. extracting a private
+  method in `OrderService` is one stage in Shared, not five)
+- **Cross-cutting renames** — atomic edit across all references at once,
+  not stage-by-stage (intermediate states would not compile)
+- **Bug fixes** — diagnose top-down (API → Service → Repository), then
+  fix bottom-up; both directions explicit in the plan
+{{- if .HasModule "Worker"}}
+- **Job features** — Stage 2 belongs to **Jobs** (the contract module),
+  Stage 5 to **Worker** (the executor). Services that ENQUEUE jobs depend
+  only on Jobs, not Worker; this contract/consumer separation should
+  appear explicitly in the plan
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+- **Event features** — Stage 2 belongs to **Events** (the contract
+  module + EventPublisher), Stage 5 to **EventConsumer** (the listener).
+  Services that PUBLISH events depend only on Events, not EventConsumer
+{{- end}}
+
+### Where to read more
+
+- Full archetypes (additive, rename, bug-fix, migration, single-module),
+  per-stage validate recipes, and anti-patterns:
+  `{{.PromptsDir}}/architecture-and-planning.md`
+{{- if eq .Agent "claude"}}
+- Delegate non-trivial plans to **`@trabuco-planner`** — the persona
+  produces stratified plans grounded in this project's actual module
+  set, with optional persistence to `.trabuco/plans/` for review
 {{- end}}
 
 ## Code Patterns

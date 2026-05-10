@@ -55,5 +55,14 @@ if [ "$lowest" != "$MIN_VERSION" ]; then
   exit 0
 fi
 
-emit_context "Trabuco plugin ready: \`trabuco\` ${version} detected (>= ${MIN_VERSION}). MCP tools under mcp__trabuco__* are available. Skills available: /trabuco:new-project, /trabuco:design-system, /trabuco:add-module, /trabuco:extend, /trabuco:doctor, /trabuco:suggest, /trabuco:migrate. Specialist subagents: trabuco-architect, trabuco-ai-agent-expert, trabuco-migration-orchestrator."
+# Detect whether we're in a Trabuco-generated project. If so, surface
+# the plan-stratification rule + planner availability so the agent has
+# project-specific guidance loaded at session start, not just the
+# generic plugin context.
+in_trabuco_project=""
+if [ -f ".trabuco.json" ]; then
+  in_trabuco_project=" Working directory IS a Trabuco-generated project — multi-module changes MUST be planned in stages by module dependency layer (Foundation → Contracts → Persistence → BusinessLogic → Edge). Delegate non-trivial multi-module work to the trabuco-planner subagent (or invoke /trabuco:plan explicitly). The .claude/rules/architecture-and-planning.md file (auto-loaded on Java edits) is the deep reference."
+fi
+
+emit_context "Trabuco plugin ready: \`trabuco\` ${version} detected (>= ${MIN_VERSION}). MCP tools under mcp__trabuco__* are available. Skills available: /trabuco:new-project, /trabuco:design-system, /trabuco:add-module, /trabuco:extend, /trabuco:plan, /trabuco:doctor, /trabuco:suggest, /trabuco:migrate. Specialist subagents: trabuco-architect, trabuco-planner, trabuco-ai-agent-expert, trabuco-migration-orchestrator.${in_trabuco_project}"
 exit 0

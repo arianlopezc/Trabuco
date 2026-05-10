@@ -21,6 +21,8 @@ Field types: `string text integer long decimal boolean instant localdate uuid js
 
 The CLI is **addition-only**. After it runs, edit the migration to add indexes (no `FOREIGN KEY` — index instead) and the repository to add custom `@Query` methods. To extend an existing entity (add a field), edit the files by hand — the CLI refuses to re-emit.
 
+> **Multi-module change?** If this task touches multiple Trabuco modules (e.g. entity + service + endpoint + tests), delegate to `@trabuco-planner` first for a stratified plan grounded in this project. The planner picks the right archetype (additive feature, job/event contract-consumer split, etc.), then hands back to the main agent for execution.
+
 ## Key steps (summary)
 
 1. **Model**: add `ImmutableEntity` + `ImmutablePlaceholderRequest`-style DTO under `Model/src/main/java/{{.GroupID | packagePath}}/model/`.

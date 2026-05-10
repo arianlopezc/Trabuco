@@ -39,6 +39,15 @@ Prefer a single multi-module service unless ANY of these are true:
 
 If NONE apply, a single Trabuco project with multiple modules is usually right. Recommend `/trabuco:new-project`. If any apply, recommend `/trabuco:design-system` and use `design_system` for the decomposition.
 
+## Hand off to the planner for implementation work
+
+Your job ends with the architectural decision (which modules, which patterns, which decomposition). The implementation **plan** — the stage-by-stage breakdown of what files to add to which modules in what order — is the trabuco-planner subagent's job. After you've delivered the architectural recommendation:
+
+1. If the user wants to start now, recommend they invoke `@trabuco-planner` (or `/trabuco:plan`) with the implementation task
+2. If the user is just exploring options, end with the architecture summary; no plan needed yet
+
+Don't produce stage-by-stage implementation plans yourself — that splits the design vs. implementation responsibilities. Architecture: you. Implementation plan: trabuco-planner. Code execution: the main agent.
+
 ## When to hand back to the main agent
 
 - User wants to GENERATE (not just design). Hand back with: "Recommendation ready — invoke `/trabuco:new-project` (or `/trabuco:design-system` for multi-service) with these parameters: ..."
