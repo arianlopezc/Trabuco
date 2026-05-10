@@ -12,6 +12,8 @@ Generates `Shared/.../service/OrderService.java` with the right repository const
 
 The CLI is **addition-only**. Replace the `doSomething()` stub with your real operations and let the conventions below shape the implementation. Editing an existing service is the agent's job (the CLI refuses to clobber).
 
+> **Multi-module change?** If this task touches multiple Trabuco modules (e.g. entity + service + endpoint + tests), delegate to `@trabuco-planner` first for a stratified plan grounded in this project. The planner picks the right archetype (additive feature, job/event contract-consumer split, etc.), then hands back to the main agent for execution.
+
 ## Key steps (summary)
 
 1. **Package**: `Shared/src/main/java/{{.GroupID | packagePath}}/shared/service/NewService.java`

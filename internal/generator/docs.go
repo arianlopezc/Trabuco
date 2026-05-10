@@ -215,6 +215,18 @@ func (g *Generator) generateAIDirectory() error {
 		return err
 	}
 
+	// Generate architecture-and-planning reference (always — universal,
+	// drives module-stratified plan generation. Loaded on demand via
+	// CLAUDE.md/AGENTS.md references; always-loaded into Claude rules
+	// via the .claude/rules/ emission below).
+	if err := g.writeTemplateWithData(
+		"ai/prompts/architecture-and-planning.md.tmpl",
+		".ai/prompts/architecture-and-planning.md",
+		aiData,
+	); err != nil {
+		return err
+	}
+
 	// Generate testing guide — universal, not module-gated. /add-test
 	// applies to any Java module, so the reference prompt ships always.
 	if err := g.writeTemplateWithData("ai/prompts/add-test.md.tmpl", ".ai/prompts/add-test.md", aiData); err != nil {
@@ -360,6 +372,34 @@ func (g *Generator) generateClaudeCodeFiles() error {
 	}
 
 	if err := g.writeTemplateWithData("ai/prompts/testing-guide.md.tmpl", ".claude/rules/testing-guide.md", testRuleData); err != nil {
+		return err
+	}
+
+	// Architecture-and-planning rule loads on every Java file edit so
+	// Claude has the hierarchy + plan-stratification rule in context
+	// whenever it's about to plan a code change. Same content as
+	// .ai/prompts/architecture-and-planning.md but with paths frontmatter
+	// for Claude's auto-discovery.
+	planningRuleData := &templateData{
+		ProjectConfig: g.config,
+		PromptsDir:    ".claude/rules",
+		RulePaths:     `  - "**/*.java"` + "\n  - \"**/*.sql\"\n  - \"**/pom.xml\"",
+	}
+	if err := g.writeTemplateWithData(
+		"ai/prompts/architecture-and-planning.md.tmpl",
+		".claude/rules/architecture-and-planning.md",
+		planningRuleData,
+	); err != nil {
+		return err
+	}
+
+	// trabuco-planner subagent — invoked automatically for non-trivial
+	// multi-module work. Produces stratified plans grounded in this
+	// project's actual module set.
+	if err := g.writeTemplate(
+		"claude/agents/trabuco-planner.md.tmpl",
+		".claude/agents/trabuco-planner.md",
+	); err != nil {
 		return err
 	}
 

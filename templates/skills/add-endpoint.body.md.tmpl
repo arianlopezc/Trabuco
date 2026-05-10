@@ -14,6 +14,8 @@ Generates `API/.../controller/{Name}Controller.java` with the `@RestController` 
 
 The CLI is **addition-only**. Replace `UnsupportedOperationException` stubs with real service calls, add `@PreAuthorize`, Bean Validation (`@Valid`, `@NotBlank`, `@Size`), and request/response DTOs by editing the generated file.
 
+> **Multi-module change?** If this task touches multiple Trabuco modules (e.g. entity + service + endpoint + tests), delegate to `@trabuco-planner` first for a stratified plan grounded in this project. The planner picks the right archetype (additive feature, job/event contract-consumer split, etc.), then hands back to the main agent for execution.
+
 ## Key steps (summary)
 
 1. **Controller** (`API/src/main/java/.../api/controller/`): define the method signature, `@RequestMapping`, `@Valid` the request DTO.

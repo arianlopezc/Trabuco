@@ -88,6 +88,12 @@ Disable: `trabuco review disable` (persistent) or `TRABUCO_REVIEW_HOOK=off` (ses
 
 ```
 Model -> (none)
+{{- if .HasModule "Jobs"}}
+Jobs -> Model
+{{- end}}
+{{- if .HasModule "Events"}}
+Events -> Model
+{{- end}}
 {{- if .HasModule "SQLDatastore"}}
 SQLDatastore -> Model
 {{- end}}
@@ -101,14 +107,47 @@ Shared -> Model{{if .HasModule "SQLDatastore"}}, SQLDatastore{{end}}{{if .HasMod
 API -> Model, Shared
 {{- end}}
 {{- if .HasModule "Worker"}}
-Worker -> Model, Shared, Jobs
+Worker -> Model{{if .HasModule "Jobs"}}, Jobs{{end}}{{if .HasModule "Shared"}}, Shared{{end}}
 {{- end}}
 {{- if .HasModule "EventConsumer"}}
-EventConsumer -> Model, Shared, Events
+EventConsumer -> Model{{if .HasModule "Events"}}, Events{{end}}{{if .HasModule "Shared"}}, Shared{{end}}
+{{- end}}
+{{- if .HasModule "AIAgent"}}
+AIAgent -> Model, Shared
 {{- end}}
 ```
 
 Never import from API in Worker/EventConsumer or vice versa.
+
+## Architecture Hierarchy & Plan Stratification
+
+Modules form a layered hierarchy. Multi-module changes MUST be planned in
+ordered stages, one per affected layer, in dependency order:
+
+```
+{{- range architectureStages .Modules}}
+{{.}}
+{{- end}}
+```
+
+Each stage produces a buildable intermediate state. Each stage lists files
+modified, validate command (`mvn -pl <Module> -am test`), and what it
+depends on from previous stages. Skipped stages are stated explicitly.
+
+**Contract/consumer separation:**
+{{- if .HasModule "Worker"}}
+- Job features: contracts in **Jobs**, executor in **Worker**. Services
+  that enqueue jobs depend only on Jobs.
+{{- end}}
+{{- if .HasModule "EventConsumer"}}
+- Event features: contracts in **Events** (with EventPublisher), listeners
+  in **EventConsumer**. Services that publish events depend only on Events.
+{{- end}}
+
+**When NOT to stratify:** single-module work (one stage), cross-cutting
+renames (atomic edit), bug fixes (top-down diagnosis + bottom-up fix).
+
+Full archetypes + per-stage validate recipes: `.ai/prompts/architecture-and-planning.md`.
 
 ## Key Patterns
 

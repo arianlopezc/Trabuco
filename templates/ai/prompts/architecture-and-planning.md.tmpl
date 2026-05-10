@@ -1,0 +1,416 @@
+{{- if .Frontmatter -}}
+---
+{{.Frontmatter}}---
+
+{{end -}}
+{{- if .RulePaths -}}
+---
+description: Module hierarchy and plan-stratification rules for any change to this project.
+paths:
+{{.RulePaths}}
+---
+
+{{end -}}
+# Architecture & Plan Stratification
+
+The reference for how to plan and execute changes in this Trabuco project.
+The always-on rule lives in `CLAUDE.md` (and the equivalent agent rule
+files); this document is the **how**.
+
+## Why stratify
+
+Trabuco modules form a strict dependency hierarchy. A multi-module change
+that doesn't respect that hierarchy produces:
+
+- Intermediate states that don't compile (Stage 1 broke the project; you
+  can't run tests at the gate; you can't ship a partial PR)
+- Reviews that fan out to unrelated areas (Module A's reviewer must
+  understand Modules B-D to follow your change)
+- Failure recovery that requires manual rollback (no clean rollback
+  point per stage)
+
+A stratified plan eliminates all three. Each stage is one module, the
+project compiles cleanly at every stage boundary, and a stage failure
+leaves the prior stages cleanly committable.
+
+## The hierarchy in this project
+
+| Layer | Modules in this project | Purpose |
+|-------|------------------------|---------|
+{{- range architectureLayers .Modules}}
+| **{{.Name}}** | {{range $i, $m := .Modules}}{{if $i}} · {{end}}`{{$m.Name}}`{{end}} | {{.Description}} |
+{{- end}}
+
+### Per-module stage hints
+
+{{- range architectureLayers .Modules}}
+{{range .Modules}}
+**`{{.Name}}`** — {{.Purpose}}
+- {{.StageHint}}
+{{- if .SubPackages}}
+- Sub-packages: `{{range $i, $p := .SubPackages}}{{if $i}}`, `{{end}}{{$p}}{{end}}`
+{{- end}}
+{{- if .AutoIncluded}}
+- Auto-included with `{{.AutoIncluded}}` (you don't add this module
+  explicitly; it appears when its consumer is selected)
+{{- end}}
+{{- end}}
+{{- end}}
+
+## Canonical stage outline
+
+Every multi-module plan in this project follows this shape:
+
+```
+{{- range architectureStages .Modules}}
+{{.}}
+{{- end}}
+```
+
+A given change touches a SUBSET of these stages. List skipped stages
+explicitly so a reader knows the change scope:
+
+```
+Stage 1 — Model: add Order entity (Order.java, OrderRecord.java)
+Stage 2 — SQLDatastore: add OrderRepository, V2__create_orders.sql
+Stage 3 — Shared: no changes (using OrderRepository directly from API)
+Stage 4 — API: add OrderController with CRUD methods
+```
+
+## Plan archetypes
+
+Different change types take different plan shapes. Pick the archetype
+before writing the plan.
+
+### Archetype 1 — Additive feature (the default)
+
+A new feature touching multiple modules. Stages flow bottom-up through
+the hierarchy. Each stage produces a buildable intermediate state.
+
+```markdown
+# Plan: add Order CRUD feature
+
+## Stage 1 — Model
+- Add `Order.java` (Immutables interface) + `OrderRecord.java` (JDBC record)
+- Add `OrderRequest`, `OrderResponse` DTOs
+**Validate:** `mvn -pl Model install`
+
+{{- if .HasModule "SQLDatastore"}}
+
+## Stage 2 — SQLDatastore
+- Add `OrderRepository extends CrudRepository<OrderRecord, Long>`
+- Add `V2__create_orders.sql` migration
+**Validate:** `mvn -pl SQLDatastore -am test`
+**Depends on:** Stage 1 (Order, OrderRecord types)
+{{- end}}
+
+{{- if .HasModule "Shared"}}
+
+## Stage 3 — Shared
+- Add `OrderService` with constructor-injected `OrderRepository`
+- Add `OrderServiceTest` (unit, MockitoExtension)
+**Validate:** `mvn -pl Shared -am test`
+**Depends on:** Stage 2 (OrderRepository)
+{{- end}}
+
+{{- if .HasModule "API"}}
+
+## Stage 4 — API
+- Add `OrderController` with `@PostMapping`, `@GetMapping("/{id}")`, etc.
+- Add `OrderControllerIT` (integration, against Testcontainers)
+**Validate:** `mvn -pl API -am verify`
+**Depends on:** Stage 3 (OrderService)
+{{- end}}
+
+## Final verification
+- [ ] `mvn install` succeeds across all modules
+- [ ] `trabuco doctor` reports clean
+```
+
+### Archetype 2 — Job feature
+
+Special shape because of the **contract/consumer separation**. Job
+contracts live in `Jobs` (a contract module); the executor lives in
+`Worker`. Services that ENQUEUE jobs depend on `Jobs` only — not Worker.
+
+{{- if and (.HasModule "Jobs") (.HasModule "Worker")}}
+
+```markdown
+# Plan: add ProcessShipment background job
+
+## Stage 1 — Model: no changes (using existing types)
+
+## Stage 2 — Jobs
+- Add `ProcessShipmentJobRequest` (record implementing JobRequest)
+- Add `ProcessShipmentJobRequestHandler` (no-op base class)
+**Validate:** `mvn -pl Jobs -am install`
+**Depends on:** Stage 1 entities (if payload references domain types)
+
+{{- if .HasModule "Shared"}}
+
+## Stage 4 — Shared
+- Update `OrderService.placeOrder` to enqueue:
+  `BackgroundJobRequest.enqueue(new ProcessShipmentJobRequest(order.id()))`
+- Note: Shared depends on Jobs (contract), NOT Worker (executor) —
+  this is the loose-coupling payoff of the separate Jobs module
+**Validate:** `mvn -pl Shared -am test`
+**Depends on:** Stage 2 (JobRequest type)
+{{- end}}
+
+## Stage 5 — Worker
+- Add concrete `@Component ProcessShipmentJobRequestHandler` extending
+  the abstract handler from Jobs
+- Replace `throw new UnsupportedOperationException` with real logic
+**Validate:** `mvn -pl Worker -am verify`
+**Depends on:** Stage 2 (abstract handler base)
+
+## Final verification
+- [ ] `mvn install`
+- [ ] Manually enqueue a job and observe the handler executing
+```
+{{- else}}
+
+(This project does not include the Worker module — job features are
+not applicable. Add the Worker module via `trabuco add Worker` if you
+need background processing.)
+{{- end}}
+
+### Archetype 3 — Event feature
+
+Same shape as Job features: contract/consumer separation between
+`Events` (contract module + EventPublisher) and `EventConsumer` (the
+listener). Services that PUBLISH events depend only on `Events`.
+
+{{- if and (.HasModule "Events") (.HasModule "EventConsumer")}}
+
+```markdown
+# Plan: add OrderShipped domain event
+
+## Stage 1 — Model: no changes
+
+## Stage 2 — Events
+- Add `OrderShipped` record to the sealed event hierarchy
+- Update parent's `permits` clause to include `OrderShipped`
+- Note: this is one of the rare ATOMIC edits within stratified planning —
+  the record + permits clause must change together; partial state breaks
+  the seal
+**Validate:** `mvn -pl Events -am install`
+
+{{- if .HasModule "Shared"}}
+
+## Stage 4 — Shared
+- Update `OrderService.shipOrder` to call `eventPublisher.publish(new OrderShipped(...))`
+- Shared depends on Events (contract), NOT EventConsumer (listener)
+**Validate:** `mvn -pl Shared -am test`
+{{- end}}
+
+## Stage 5 — EventConsumer
+- Add `case OrderShipped` to the listener `switch (event)` block
+- Idempotency: call `idempotencyTracker.checkAndMark(event.eventId())` first
+- Default arm `throw` is preserved (sealed-switch invariant)
+**Validate:** `mvn -pl EventConsumer -am verify`
+**Depends on:** Stage 2 (OrderShipped permits update)
+
+## Final verification
+- [ ] `mvn install`
+- [ ] Publish an OrderShipped event in tests; assert listener fires
+- [ ] DLT/DLQ wiring exercises happy path
+```
+{{- else}}
+
+(This project does not include the EventConsumer module — event
+features are not applicable. Add via `trabuco add EventConsumer` if
+you need event-driven processing.)
+{{- end}}
+
+### Archetype 4 — Rename / cross-cutting refactor (NOT stratified)
+
+Renames must be **atomic** across all modules. Stratified ordering would
+leave intermediate stages that don't compile (Stage 1 renames in Model;
+Stages 2-5 still reference the old name).
+
+```markdown
+# Plan: rename Order → PurchaseOrder across the project
+
+## Single atomic stage
+- Update Order.java → PurchaseOrder.java (and all related files: Record,
+  Repository, Service, Controller, Tests)
+- Update all imports and type references in one pass
+- Update @Table("orders") → @Table("purchase_orders") in record
+- Add migration: `V<N>__rename_orders_to_purchase_orders.sql`
+**Validate:** `mvn install` after the entire rename completes
+
+**Plan archetype:** atomic, not stratified — partial states would not compile.
+```
+
+For renames that affect a database table, the migration is part of the
+same atomic change but applied at runtime by Flyway after deploy.
+
+### Archetype 5 — Bug fix (dual direction)
+
+Bugs travel top-down through the call stack but must be fixed bottom-up
+to keep stages buildable. The plan should show both directions.
+
+```markdown
+# Plan: fix 500 on GET /api/orders/{id} — root cause: missing repository method
+
+## Diagnosis (top-down)
+1. `OrderController.getById` returns 500 on missing IDs
+2. `OrderService.findOrFail` throws `NoSuchElementException`
+3. `OrderRepository` has `findById` but no `findOrFail` helper
+4. Root cause: missing `findOrFail` repository method
+
+## Fix (bottom-up)
+{{- if .HasModule "SQLDatastore"}}
+
+### Stage 1 — SQLDatastore (add helper, fix root cause)
+- Add `default OrderRecord findOrFail(Long id)` calling `findById`/orElseThrow
+**Validate:** `mvn -pl SQLDatastore -am test`
+{{- end}}
+
+{{- if .HasModule "Shared"}}
+
+### Stage 2 — Shared (use the helper)
+- Update `OrderService.findOrFail` to call `repository.findOrFail`
+**Validate:** `mvn -pl Shared -am test`
+{{- end}}
+
+{{- if .HasModule "API"}}
+
+### Stage 3 — API (verify the fix surfaces correctly)
+- Add `@ExceptionHandler(NoSuchElementException.class)` returning 404
+- Add IT covering both the 200 happy path and 404 not-found path
+**Validate:** `mvn -pl API -am verify`
+{{- end}}
+```
+
+### Archetype 6 — Single-module work
+
+Refactors / small fixes that touch one module are one stage. Don't pad
+the plan with empty stages.
+
+```markdown
+# Plan: extract validation in OrderService.create into private validate()
+
+## Stage 1 — Shared (only stage)
+- Move 3 validation blocks from create() into `private void validate(OrderRequest)`
+- Update create() to call validate() at the top
+**Validate:** `mvn -pl Shared -am test`
+```
+
+### Archetype 7 — Migration-only (Flyway)
+
+Pure schema change with no Java code. One stage in `SQLDatastore`.
+{{if .HasModule "SQLDatastore"}}
+
+```markdown
+# Plan: add index on orders.customer_id
+
+## Stage 1 — SQLDatastore (only stage)
+- Add `V<N>__add_index_on_customer_id.sql`:
+  ```sql
+  CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders (customer_id);
+  ```
+**Validate:** `mvn -pl SQLDatastore -am test` (Flyway picks up the new V{N})
+```
+{{else}}
+
+(This project does not include SQLDatastore — Flyway migrations are
+not applicable.)
+{{end}}
+
+## Per-stage validate recipes
+
+Use these as the "Validate:" line for each stage. The `-am` flag pulls
+in transitive dependencies; `-pl <Module>` scopes the build.
+
+| Stage / Module | Validate command | Notes |
+|---------------|------------------|-------|
+{{- range architectureLayers .Modules}}
+{{- range .Modules}}
+| {{.Name}} | `mvn -pl {{.Name}} -am test` | {{if eq .Name "SQLDatastore"}}Requires Docker (Testcontainers){{else if eq .Name "NoSQLDatastore"}}Requires Docker (MongoDB Testcontainers){{else if eq .Name "API"}}Use `verify` for integration tests; Docker required{{else if eq .Name "AIAgent"}}Use `verify` for integration tests; Docker required for vector store ITs{{else if eq .Name "Worker"}}Use `verify` for integration tests; Docker required{{else if eq .Name "EventConsumer"}}Use `verify` for integration tests; Docker required for broker ITs{{else}}Pure unit tests{{end}} |
+{{- end}}
+{{- end}}
+
+For the final cross-module gate after all stages complete:
+
+```bash
+mvn install                    # Builds and installs all modules to local repo
+trabuco doctor                 # Validates project structural health
+```
+
+## Anti-patterns
+
+These are common mistakes the planner subagent (and your own review)
+should catch.
+
+**Flat 10-bullet list.** "Add Entity, add Record, add Repository,
+add migration, add Service, add Test, add Controller, add IT, ..." —
+the order may be correct but the layered structure is invisible. The
+reviewer can't tell which stage produces which intermediate state.
+
+**Forced stratification on single-module work.** A 5-stage plan where
+4 stages say "no changes" is noise. Use the single-module archetype
+(Archetype 6).
+
+**Skipped stages stated implicitly.** If your plan jumps from Stage 1
+to Stage 4, a reader doesn't know whether Stages 2-3 are intentionally
+empty or you forgot them. State the skip explicitly.
+
+**Missing "Depends on" rationale.** A reviewer reading the plan should
+understand why Stage 4 needs Stage 3, not just that they're in order.
+Without rationale, there's no way to assess whether stages can run in
+parallel or be reordered.
+
+**Validate command omitted.** Without a per-stage validate, a stage
+"completes" via vibes. The reviewer can't reproduce the gate.
+
+**Mixing rename with additive changes in one plan.** Renames are
+atomic; additive changes are stratified. If you must do both, ship the
+rename first as its own atomic change (Archetype 4), then the additive
+plan against the renamed surface (Archetype 1).
+
+**`add_entity` for an existing entity (refuse-clobber trap).** "Add a
+field to the existing Order entity" is an EDIT, not an addition. Don't
+call `mcp__trabuco__add_entity` — it refuses to overwrite. The right
+shape is: edit `Order.java` + `OrderRecord.java` directly, then
+`mcp__trabuco__add_migration` to scaffold the new column migration.
+
+**Foreign keys in migrations.** Trabuco forbids `FOREIGN KEY` /
+`REFERENCES`. Index the column instead. The architecture-aware
+planner subagent flags this on review.
+
+## Plan-as-artifact convention
+
+Persistent plans become design documentation. Save plans for non-trivial
+features at `.trabuco/plans/{date}-{slug}.md`:
+
+```
+.trabuco/plans/
+├── 2026-05-12-add-order-feature.md
+├── 2026-05-15-rename-order-to-purchase-order.md
+└── 2026-05-20-fix-getById-500-bug.md
+```
+
+When to save:
+- **Save**: multi-stage features, architectural changes, anything a
+  future engineer might need to reference
+- **Skip**: single-stage refactors, typo fixes, dependency bumps
+
+The PR description should reference the plan file. Reviewers compare
+the diff to the plan: did the implementation match the plan? Drift
+caught at review time is cheaper than drift caught months later.
+
+## Delegation
+{{if eq .Agent "claude"}}
+For non-trivial multi-module work, delegate to the **`@trabuco-planner`**
+subagent. It produces stratified plans grounded in this project's actual
+module set, picks the right archetype, and saves persistent plans to
+`.trabuco/plans/`. The planner is invoked automatically when CLAUDE.md's
+delegation rule matches your task; you can also invoke it explicitly via
+`@trabuco-planner` or via the `/trabuco:plan` slash command.
+{{else}}
+For non-trivial multi-module work, follow the archetypes above directly.
+The full hierarchy + planning rule is in CLAUDE.md (loaded into your
+context at session start), and this document is the deep reference.
+{{end}}
