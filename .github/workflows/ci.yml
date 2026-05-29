@@ -128,7 +128,12 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15-alpine
+        # pgvector/pgvector:pg16 = PostgreSQL 16 + the `vector` extension.
+        # The AIAgent module (vector-store=pgvector) runs `CREATE EXTENSION
+        # vector` via Flyway at boot, which a plain postgres image lacks. This
+        # image is a superset of postgres, so API/Worker/EventConsumer (which
+        # also use this service) are unaffected.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -183,9 +188,11 @@ jobs:
           ../trabuco init \
             --name=full-project \
             --group-id=com.test.fullproject \
-            --modules=Model,SQLDatastore,Shared,API,Worker,EventConsumer \
+            --modules=Model,SQLDatastore,Shared,API,Worker,EventConsumer,AIAgent \
             --database=postgresql \
-            --message-broker=kafka
+            --message-broker=kafka \
+            --vector-store=pgvector \
+            --ai-agents=claude
 
       - name: Display generated structure
         run: |
@@ -255,6 +262,36 @@ jobs:
           echo "EventConsumer started successfully"
         env:
           SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          TRABUCO_AUTH_ENABLED: "false"
+
+      - name: Verify AIAgent module starts
+        working-directory: test-comprehensive/full-project/AIAgent
+        run: |
+          # local-dev profile loads demo API keys so ApiKeyAuthFilter passes its
+          # @PostConstruct key-presence check — without a profile the AIAgent app
+          # fail-fasts at startup ("ApiKeyAuthFilter is enabled ... but no keys
+          # are configured"). The pgvector postgres service supplies the `vector`
+          # extension the boot-time Flyway migration needs. AIAgent shares port
+          # 8080 with API, which has already been stopped by the step above.
+          timeout 300 mvn spring-boot:run -Dspring-boot.run.profiles=local-dev &
+          AIAGENT_PID=$!
+          # First boot downloads the transformer embedding model, so poll health
+          # for up to ~180s rather than a fixed sleep.
+          STARTED=0
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/actuator/health >/dev/null 2>&1; then STARTED=1; break; fi
+            kill -0 $AIAGENT_PID 2>/dev/null || break
+            sleep 3
+          done
+          kill $AIAGENT_PID 2>/dev/null || true
+          if [ "$STARTED" != "1" ]; then echo "AIAgent failed to start"; exit 1; fi
+          echo "AIAgent started successfully"
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          # Dummy key — smoke test only boots the context, never calls the LLM.
+          ANTHROPIC_API_KEY: "smoke-test-not-used"
           TRABUCO_AUTH_ENABLED: "false"
 
   test-minimal-project:

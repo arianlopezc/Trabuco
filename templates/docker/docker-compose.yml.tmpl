@@ -17,7 +17,11 @@
 services:
 {{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
   postgres:
-    image: postgres:15-alpine
+    # When the AIAgent vector store is PGVector, the datasource must ship the
+    # `vector` extension: the AIAgent module's Flyway migration runs
+    # `CREATE EXTENSION vector` at startup, which plain `postgres:*` images lack.
+    # pgvector/pgvector:pg16 is the same image the AIAgent integration tests use.
+    image: {{if .VectorStoreIsPgVector}}pgvector/pgvector:pg16{{else}}postgres:15-alpine{{end}}
     container_name: {{.ProjectName}}-postgres
     environment:
       POSTGRES_DB: {{.ProjectName}}
