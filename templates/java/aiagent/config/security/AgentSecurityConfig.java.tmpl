@@ -159,20 +159,26 @@ public class AgentSecurityConfig {
      * {@link FilterRegistrationBean} the filter would run twice on
      * Every request — once outside the chain, once inside.
      *
-     * <p>{@link ObjectProvider} keeps this bean wirable even when
-     * {@code app.aiagent.api-key.enabled=false} drops the underlying
-     * filter from the context. {@link FilterRegistrationBean#setEnabled}
-     * with {@code false} disables Spring Boot's global registration
-     * but leaves the bean present for {@code addFilterBefore} use.
+     * <p>Gated on the SAME {@code @ConditionalOnProperty} as
+     * {@link ApiKeyAuthFilter} itself, so this suppression bean exists if
+     * and only if the filter bean exists. That keeps the injected filter
+     * non-null. The previous approach (an {@code ObjectProvider} that returned
+     * {@code null} when the filter was absent) crashed servlet-context startup:
+     * a {@link FilterRegistrationBean} with a null filter trips
+     * {@code RegistrationBean#onStartup}, which calls {@code getDescription()}
+     * — asserting a non-null filter — BEFORE honoring {@code setEnabled(false)};
+     * and returning {@code null} from the {@code @Bean} method instead left a
+     * {@code NullBean} that Spring Boot rejected when collecting
+     * {@code ServletContextInitializer} beans.
      */
     @Bean
+    @ConditionalOnProperty(
+            name = "app.aiagent.api-key.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
     public FilterRegistrationBean<ApiKeyAuthFilter> disableApiKeyFilterAutoRegistration(
-            ObjectProvider<ApiKeyAuthFilter> filterProvider) {
-        FilterRegistrationBean<ApiKeyAuthFilter> reg = new FilterRegistrationBean<>();
-        ApiKeyAuthFilter filter = filterProvider.getIfAvailable();
-        if (filter != null) {
-            reg.setFilter(filter);
-        }
+            ApiKeyAuthFilter filter) {
+        FilterRegistrationBean<ApiKeyAuthFilter> reg = new FilterRegistrationBean<>(filter);
         reg.setEnabled(false);
         return reg;
     }
@@ -188,15 +194,20 @@ public class AgentSecurityConfig {
      * and 403-ing every legitimate MCP request in API-key-only mode.
      * Disabling auto-registration here and adding via {@code addFilterAfter}
      * in the chains below puts it in the right place exactly once.
+     *
+     * <p>Gated on the SAME {@code @ConditionalOnProperty} as
+     * {@link AgentMcpAuthorizationFilter} itself. Because the MCP server is
+     * OFF by default ({@code spring.ai.mcp.server.enabled=false}), the filter
+     * bean is normally absent — so this suppression bean must be absent too.
+     * Previously it was always defined and received a null filter, which
+     * crashed servlet-context startup and prevented the AIAgent app from
+     * booting in its default configuration.
      */
     @Bean
+    @ConditionalOnProperty(name = "spring.ai.mcp.server.enabled", havingValue = "true")
     public FilterRegistrationBean<AgentMcpAuthorizationFilter> disableMcpAuthorizationFilterAutoRegistration(
-            ObjectProvider<AgentMcpAuthorizationFilter> filterProvider) {
-        FilterRegistrationBean<AgentMcpAuthorizationFilter> reg = new FilterRegistrationBean<>();
-        AgentMcpAuthorizationFilter filter = filterProvider.getIfAvailable();
-        if (filter != null) {
-            reg.setFilter(filter);
-        }
+            AgentMcpAuthorizationFilter filter) {
+        FilterRegistrationBean<AgentMcpAuthorizationFilter> reg = new FilterRegistrationBean<>(filter);
         reg.setEnabled(false);
         return reg;
     }

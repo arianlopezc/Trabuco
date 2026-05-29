@@ -145,6 +145,29 @@ The EventConsumer listens for events from {{if .UsesKafka}}Kafka{{else if .UsesR
 
 - **Health check:** http://localhost:8084/actuator/health (management port)
 {{- end}}
+{{- if .HasModule "AIAgent"}}
+
+### {{if .HasModule "EventConsumer"}}{{if and (and .NeedsDockerCompose (.HasModule "API")) (.HasModule "Worker")}}6{{else if and .NeedsDockerCompose (or (.HasModule "API") (.HasModule "Worker"))}}5{{else if or (or .NeedsDockerCompose (.HasModule "API")) (.HasModule "Worker")}}4{{else}}3{{end}}{{else}}{{if and (and .NeedsDockerCompose (.HasModule "API")) (.HasModule "Worker")}}5{{else if and .NeedsDockerCompose (or (.HasModule "API") (.HasModule "Worker"))}}4{{else if or (or .NeedsDockerCompose (.HasModule "API")) (.HasModule "Worker")}}3{{else}}2{{end}}{{end}}. Run the AIAgent
+
+```bash
+cd AIAgent
+mvn spring-boot:run -Dspring-boot.run.profiles=local-dev
+```
+
+The AIAgent exposes the agent's HTTP surface (chat, A2A, and — when enabled — an MCP server).
+{{if .HasModule "API"}}
+> **Note:** the AIAgent and the API both default to port 8080. Run them one at a
+> time locally, or start one with an overridden `SERVER_PORT` (e.g. `SERVER_PORT=8090`).
+{{end}}
+> **The `local-dev` profile is required for local runs.** `ApiKeyAuthFilter` is
+> enabled by default and fail-fasts at startup unless API keys are configured;
+> `local-dev` supplies demo keys (`application-local-dev.yml`). Without a profile
+> the app exits with *"ApiKeyAuthFilter is enabled … but no keys are configured"*.
+> For deployed environments, configure real keys (or set
+> `app.aiagent.api-key.enabled=false`) instead of using this profile.
+
+- **Health check:** http://localhost:8080/actuator/health
+{{- end}}
 
 ## Build Commands
 

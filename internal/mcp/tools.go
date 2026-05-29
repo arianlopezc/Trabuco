@@ -92,7 +92,10 @@ func registerInitProject(s *server.MCPServer, version string) {
 			mcp.Description("Vector RAG backend for AIAgent: pgvector, qdrant, mongodb, or none. Default: none (keyword retrieval). pgvector auto-adds SQLDatastore + forces postgresql; mongodb requires Atlas (see docs/vector-rag.md)"),
 		),
 		mcp.WithString("java_version",
-			mcp.Description("Java version: 21, 25, or 26 (default: 21)"),
+			// Derived from the single source of truth (java.SupportedVersions)
+			// so this description can't drift out of sync with what the tool
+			// actually accepts — passing an unsupported version is rejected below.
+			mcp.Description(fmt.Sprintf("Java version: %s (default: 21)", java.FormatDetectedVersions(java.SupportedVersions))),
 		),
 		mcp.WithString("ai_agents",
 			mcp.Description("Comma-separated AI agent configs to include: claude, cursor, copilot, codex"),
