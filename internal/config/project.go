@@ -10,7 +10,7 @@ type ProjectConfig struct {
 	ArtifactID  string // e.g., "my-platform" (usually same as ProjectName)
 
 	// Java
-	JavaVersion         string // "21" or "24" (25/26 deferred until Spring Boot 3.5.x bump)
+	JavaVersion         string // one of java.SupportedVersions ("21", "24", "25", "26", "27")
 	JavaVersionDetected bool   // Whether the selected Java version was detected on the system
 
 	// Modules

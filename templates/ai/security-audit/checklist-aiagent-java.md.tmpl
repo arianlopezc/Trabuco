@@ -1465,7 +1465,7 @@ public interface ChatRequest {
 
 ### Why it matters
 
-Current state is safe — Hibernate Validator 8.x (Spring Boot 3.4.2 BOM) does not implement regex timeout, but there are no user-controllable regex inputs in the current generated code. The platform-level concern is preventive: the skill `add-endpoint` doesn't say "if you add `@Pattern`, the regex string must be a compile-time constant; never `@Pattern(regexp = "${user.supplied.regex:}")` — the resulting `Pattern.compile` is unbounded and `(a+)+b`-style adversarial inputs cause catastrophic backtracking with no timeout."
+Current state is safe — Hibernate Validator 8.x (Spring Boot 3.5.16 BOM) does not implement regex timeout, but there are no user-controllable regex inputs in the current generated code. The platform-level concern is preventive: the skill `add-endpoint` doesn't say "if you add `@Pattern`, the regex string must be a compile-time constant; never `@Pattern(regexp = "${user.supplied.regex:}")` — the resulting `Pattern.compile` is unbounded and `(a+)+b`-style adversarial inputs cause catastrophic backtracking with no timeout."
 
 ### Suggested fix
 
@@ -1480,8 +1480,8 @@ Add a paragraph to the `add-endpoint` and `code-quality-guide` skills warning ag
 - **`UUID.randomUUID()` for correlation/task/webhook IDs is not insecure.** Java's `UUID.randomUUID()` is backed by `SecureRandom` (`SecureRandom.next` for the 122 random bits). Sufficient for non-secret identifiers. Flagged in F-JAVA-07 only as a *teaching-by-example* concern when integrators copy the pattern for actual secrets.
 - **No `ObjectInputStream` / `readObject` / RMI / JMX endpoints anywhere.** `grep -rn "ObjectInputStream\|readObject\|RMI\|JMX"` returns no hits in user-scanned packages. JAVA-003 (Java native serialization) is genuinely absent.
 - **No XML parsing surface.** No `DocumentBuilderFactory`, `SAXParserFactory`, `TransformerFactory`, `JAXBContext`, `XMLInputFactory`, or `XMLReader` usages anywhere. JAVA-002 / JAVA-010 (XML billion-laughs) is genuinely absent — Trabuco emits JSON-only controllers.
-- **No JNDI / Logback `JndiLookup`.** No `InitialContext`, `JndiTemplate`, `ctx.lookup`, or `jndi:` literal anywhere. Logback configuration files contain no JNDI receivers and no socket-receiver. Logback 1.5.x via Spring Boot 3.4.2 BOM is post-CVE-2023-6378. JAVA-004 is genuinely absent.
-- **No SnakeYAML usages.** `new Yaml(...)` not present in any module. Spring Boot 3.4.2 includes SnakeYAML 2.x by transitive dep, with `SafeConstructor` as the default. JAVA-005 is genuinely absent.
+- **No JNDI / Logback `JndiLookup`.** No `InitialContext`, `JndiTemplate`, `ctx.lookup`, or `jndi:` literal anywhere. Logback configuration files contain no JNDI receivers and no socket-receiver. Logback 1.5.x via Spring Boot 3.5.16 BOM is post-CVE-2023-6378. JAVA-004 is genuinely absent.
+- **No SnakeYAML usages.** `new Yaml(...)` not present in any module. Spring Boot 3.5.16 includes SnakeYAML 2.x by transitive dep, with `SafeConstructor` as the default. JAVA-005 is genuinely absent.
 - **No TrustAll SSL / `X509TrustManager` / `HostnameVerifier` overrides.** `grep -rn "TrustManager\|HostnameVerifier\|trustAll\|InsecureTrustManager\|HttpsURLConnection\.setDefault"` returns zero hits in generated code. JAVA-008 (TrustAll) is genuinely absent. (F-JAVA-13 is the *related* concern of "no positive TLS hardening shipped, so an integrator might add TrustAll later.")
 - **No ZIP/TAR extraction.** `grep -rn "ZipInputStream\|ZipFile\|TarInputStream\|getNextEntry"` returns zero hits. JAVA-009 (Zip Slip) is genuinely absent — `DocumentIngestionService.ingest(String text, ...)` accepts plain text only.
 - **No `Runtime.exec` / `ProcessBuilder`.** Genuinely absent in generated Java code. (`localstack-init.sh` is shell, not JVM.)

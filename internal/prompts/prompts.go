@@ -381,11 +381,14 @@ func promptJavaVersion(detection *java.DetectionResult) (version string, detecte
 // buildJavaOptions creates Java version options from detected supported versions only.
 // Returns options sorted by preference: 21 (recommended) first, then others descending.
 func buildJavaOptions(detection *java.DetectionResult) []string {
-	// Labels for known versions
+	// Labels for known versions. LTS end dates are Oracle extended-support
+	// dates; feature releases are superseded six months after they ship.
 	labels := map[int]string{
 		21: "LTS until 2031 — Recommended",
-		25: "LTS",
-		26: "Latest",
+		24: "Feature release, superseded",
+		25: "LTS until 2033",
+		26: "Feature release, superseded",
+		27: "Latest feature release",
 	}
 
 	// Collect detected versions that are in our supported list

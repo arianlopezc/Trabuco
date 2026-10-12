@@ -53,7 +53,7 @@ COMMON PITFALLS TO AVOID:
 - "cache" may mean application-level caching (not generated) not Redis data store (NoSQLDatastore)
 
 WHAT TRABUCO GENERATES:
-- Multi-module Maven project with Spring Boot 3.4
+- Multi-module Maven project with Spring Boot 3.5
 - Spring Data JDBC (not JPA), Immutables for DTOs/entities
 - Testcontainers for integration tests, Spotless for formatting
 - Docker Compose for local development

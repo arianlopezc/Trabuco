@@ -53,7 +53,7 @@ For migrating an existing Spring Boot project, see
 - **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
 - **Project health checks** — Validate project structure and consistency with `trabuco doctor`
 - **Immutables everywhere** — Type-safe, immutable DTOs and entities with builder pattern
-- **Spring Boot 3.4** — Latest LTS with Spring Data JDBC (not JPA — no magic, no surprises)
+- **Spring Boot 3.5** — The final 3.x line, with Spring Data JDBC (not JPA — no magic, no surprises)
 - **SQL databases** — PostgreSQL/MySQL support with Flyway migrations out of the box
 - **NoSQL databases** — MongoDB/Redis support with Spring Data repositories
 - **Background jobs** — JobRunr for fire-and-forget, delayed, recurring, and batch jobs
@@ -68,7 +68,7 @@ For migrating an existing Spring Boot project, see
 - **Docker Compose** — Local development stack included
 - **IntelliJ run configs** — Just open and run
 - **GitHub Actions CI** — Opt-in CI workflow that adapts to your modules with `--ci github`
-- **Virtual threads on by default** — Project Loom enabled in Spring Boot 3.4 (`spring.threads.virtual.enabled=true`); I/O-heavy services scale concurrency without code changes
+- **Virtual threads on by default** — Project Loom enabled in Spring Boot 3.5 (`spring.threads.virtual.enabled=true`); I/O-heavy services scale concurrency without code changes
 - **RFC 7807 Problem Details** — every error response is `application/problem+json` via Spring 6's `ProblemDetail`
 - **Bucket4j rate limiting** — declarative per-IP / per-key limits via `application.yml`, ships off by default with sample policy
 - **OpenTelemetry observability** — auto-instruments Spring MVC, JDBC, Kafka/RabbitMQ, JobRunr; traces export to stdout in dev, OTLP in prod
@@ -1132,15 +1132,16 @@ mvn test
 
 ### Java version detection
 
-Trabuco automatically detects installed Java versions on your system. In interactive mode, version options show detection status:
+Trabuco automatically detects installed Java versions on your system (JAVA_HOME, the `java` on PATH, SDKMAN, and platform-specific locations). In interactive mode, the menu offers only the supported versions that are actually installed:
 
 ```
 Java version:
-> 21 (LTS until 2031 - Recommended) [detected]
-  25 (Latest LTS) [not detected]
+> 21 (LTS until 2031 — Recommended)
+  25 (LTS until 2033)
+  27 (Latest feature release)
 ```
 
-If you select an undetected version, you'll be asked to confirm. In non-interactive mode, a warning is shown but the project is still generated. Use `--strict` to fail instead:
+Supported versions are 21, 24, 25, 26 and 27 — every LTS release from 21 up plus the feature releases shipped since the last LTS. Spring Boot 3.5 officially supports Java 17–25; Trabuco's own CI builds and tests every archetype on 26 and 27 as well. The menu only lists versions that are both supported and installed, so a JDK 25 install shows up as soon as it is on the machine. In non-interactive mode, choosing a version that is not installed prints a warning but still generates the project. Use `--strict` to fail instead:
 
 ```bash
 # Warns but continues
@@ -1197,18 +1198,18 @@ See [CI/CD](#cicd) for details on what the workflow includes.
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Java | 21, 25, or 26 | Runtime |
-| Spring Boot | 3.4.2 | Application framework |
+| Java | 21, 24, 25, 26, or 27 | Runtime (compile target = `--java-version`) |
+| Spring Boot | 3.5.16 | Application framework (final 3.x release) |
 | Spring Data JDBC | — | SQL database access |
 | Spring Data MongoDB | — | MongoDB access |
 | Spring Data Redis | — | Redis access |
 | Spring Kafka | — | Kafka messaging |
 | Spring AMQP | — | RabbitMQ messaging |
-| Spring Cloud AWS | 3.2.0 | AWS SQS messaging |
-| Spring Cloud GCP | 5.8.0 | GCP Pub/Sub messaging |
+| Spring Cloud AWS | 3.4.2 | AWS SQS messaging |
+| Spring Cloud GCP | 7.4.10 | GCP Pub/Sub messaging |
 | Immutables | 2.10.1 | Immutable value objects |
 | Flyway | — | SQL database migrations |
-| JobRunr | 7.3.2 | Background job processing |
+| JobRunr | 8.8.2 | Background job processing |
 | Testcontainers | 2.0.3 | Integration testing |
 | ArchUnit | — | Architecture enforcement tests |
 | Spotless | — | Code formatting (Google Java Format) |

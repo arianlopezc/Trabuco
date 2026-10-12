@@ -11,12 +11,23 @@ const MinSupportedVersion = 21
 
 // SupportedVersions lists all Java versions supported by this tool.
 //
-// Note (1.13.x): Java 25 and 26 are deliberately not on this list. Spring
-// Boot 3.4.x's bundled ASM does not understand class-file version 69 (Java
-// 25) — projects compile but crash at component scan with
-// "Unsupported class file major version 69". Re-add 25/26 when Trabuco
-// upgrades the templates to Spring Boot 3.5.x (which ships ASM 9.9+).
-var SupportedVersions = []int{21, 24}
+// Policy: every LTS release from MinSupportedVersion up, plus the feature
+// releases shipped since the last LTS. The list is the single source of
+// truth — the `--java-version` flag help, the MCP `java_version` parameter,
+// the interactive menu and the CI archetype matrix are all derived from (or
+// asserted against) it, so adding a version here is the only code change
+// needed to accept it.
+//
+// Why 25+ is allowed again (1.16): the templates moved from Spring Boot
+// 3.4.2 to 3.5.16 (Spring Framework 6.2.19). 3.4.x's repackaged ASM
+// rejected class-file major version 69 (Java 25) — projects compiled but
+// crashed at component scan with "Unsupported class file major version
+// 69". Framework 6.2.13+ accepts newer class files leniently, and every
+// other bytecode-reading tool in the templates (Mockito/Byte Buddy,
+// JaCoCo, ArchUnit, JobRunr) is pinned to a release that knows Java 27.
+// Spring Boot 3.5 officially supports Java 17–25; 26 and 27 work on a
+// best-effort basis and are exercised by the CI archetype matrix.
+var SupportedVersions = []int{21, 24, 25, 26, 27}
 
 // ParseVersion extracts the major version and full version string from various formats.
 // Handles formats like:

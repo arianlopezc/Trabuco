@@ -68,6 +68,14 @@ import static org.assertj.core.api.Assertions.assertThat;
     // when this is unset. The legacy API-key path is the right mode
     // for this test — see comment below.
     "trabuco.auth.enabled=false",
+    // The /ingest assertion below depends on ApiKeyAuthFilter being in
+    // the security chain. It is on by default, but a host environment
+    // variable (APP_AIAGENT_API_KEY_ENABLED=false — Spring's relaxed
+    // binding maps it onto this property) would switch it off and turn
+    // the partner bearer below into an anonymous caller, failing the
+    // test with a 403 that has nothing to do with wiring. Pin it so the
+    // test is hermetic: @TestPropertySource outranks the environment.
+    "app.aiagent.api-key.enabled=true",
     // ApiKeyAuthFilter#validateKeysConfigured refuses to boot when
     // the filter is enabled (default) and no keys are configured.
     // Inject a single test-only partner key so the /ingest call

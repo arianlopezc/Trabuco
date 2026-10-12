@@ -7,7 +7,7 @@ files and dispatches the
 [`trabuco-security-audit-orchestrator`](../../agents/trabuco-security-audit-orchestrator.md)
 subagent.
 
-**Scope.** Trabuco-generated Spring Boot 3.4.x / Java 21 / Maven multi-module
+**Scope.** Trabuco-generated Spring Boot 3.5.x / Java 21+ / Maven multi-module
 projects. The check evidence patterns assume Trabuco's module shape: Model,
 SQLDatastore, NoSQLDatastore, Shared, API, Worker (JobRunr), EventConsumer
 (Kafka / RabbitMQ / SQS / PubSub), AIAgent (Spring AI 1.0.5), with a

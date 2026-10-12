@@ -51,7 +51,7 @@ func registerInitProject(s *server.MCPServer, version string) {
 			"Generate a new production-ready Java multi-module Maven project with Spring Boot. "+
 				"WHEN TO USE: User wants to start a new Java backend project, REST API, event processor, or background job system. "+
 				"Trabuco generates a complete project skeleton with working code, tests, Docker configs, CI pipelines, and AI context files. "+
-				"GENERATES: Multi-module Maven project with Spring Boot 3.4, Spring Data JDBC (not JPA), Immutables for DTOs/entities, "+
+				"GENERATES: Multi-module Maven project with Spring Boot 3.5, Spring Data JDBC (not JPA), Immutables for DTOs/entities, "+
 				"Testcontainers for integration tests, Spotless for code formatting, JaCoCo for coverage, and Docker Compose for local development. "+
 				"When API or AIAgent module is selected, also generates OIDC Resource Server scaffolding (dual SecurityFilterChain, JWT validation, "+
 				"RFC 7807 ProblemDetail handlers, Model+Shared auth utilities). The generated app refuses to boot until trabuco.auth.enabled is set explicitly to 'true' or 'false' " +

@@ -8,7 +8,7 @@ Trabuco makes the choices most teams spend weeks debating and then sets them in 
 
 **Hard conventions** (enforced by the generated review tooling, not merely suggested):
 
-- **Spring Boot 3.4.2 + Java 25** — no backports, no Boot 2.x compatibility.
+- **Spring Boot 3.5 + Java 21–27** — no backports, no Boot 2.x compatibility.
 - **Maven multi-module** — Gradle is not supported; Ant is not supported. The `init_project` tool emits Maven-only.
 - **Constructor injection only** — no `@Autowired` fields, no setter injection. The review subagents flag this.
 - **Immutables + builder pattern** — all DTOs/entities are immutable records or Immutables-generated classes. No Lombok.
