@@ -16,7 +16,7 @@
     <description>AI agent module powered by Spring AI with tool calling, guardrails, and MCP support</description>
 
     <properties>
-        <immutables.version>2.10.1</immutables.version>
+        <immutables.version>2.12.3</immutables.version>
     </properties>
 
     <dependencies>
@@ -61,13 +61,15 @@
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
 
-        <!-- Spring Boot WebFlux (for reactive WebClient) -->
+        <!-- Spring WebClient (webhook dispatch in WebhookManager). Boot 4
+             ships a dedicated starter so the servlet stack stays primary
+             without pulling the whole WebFlux starter. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
+            <artifactId>spring-boot-starter-webclient</artifactId>
         </dependency>
 
         <!-- Spring Boot Actuator (for health checks) -->
@@ -180,7 +182,7 @@
 
              This module pulls the MongoDB driver transitively. If your
              project does not already include NoSQLDatastore=mongodb,
-             configure spring.data.mongodb.uri here too. -->
+             configure spring.mongodb.uri here too. -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-vector-store-mongodb-atlas</artifactId>
@@ -190,8 +192,8 @@
         <!-- Resilience4j Circuit Breaker -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-spring-boot3</artifactId>
-            <version>2.2.0</version>
+            <artifactId>resilience4j-spring-boot4</artifactId>
+            <version>${resilience4j.version}</version>
         </dependency>
 
         <!-- Micrometer Prometheus Registry (metrics export) -->
@@ -208,15 +210,6 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Jackson for JSON serialization -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jdk8</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-parameter-names</artifactId>
-        </dependency>
 {{- if .AuthEnabled}}
 
         <!-- Spring Security: enables the resource-server filter chain
@@ -230,14 +223,24 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
         </dependency>
 {{- end}}
 
-        <!-- Test Dependencies -->
+        <!-- Test Dependencies. Spring Boot 4 splits test support per
+             technology: webmvc-test provides @AutoConfigureMockMvc
+             (AuthChainIntegrationTest), restclient-test provides
+             TestRestTemplate / @AutoConfigureTestRestTemplate
+             (AgentWiringIntegrationTest). Both bring
+             spring-boot-starter-test transitively. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-restclient-test</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- ArchUnit — drives the AgentArchitectureTest guard
@@ -250,11 +253,12 @@
             <scope>test</scope>
         </dependency>
 {{- if .AuthEnabled}}
-        <!-- spring-security-test: post-processors and test utilities for
-             the JWT filter chain. -->
+        <!-- spring-boot-starter-security-test: post-processors and test
+             utilities for the JWT filter chain (Boot 4 requires the starter
+             so the security MockMvc auto-configuration is registered). -->
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-test</artifactId>
             <scope>test</scope>
         </dependency>
 {{- end}}

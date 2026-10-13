@@ -8,13 +8,13 @@ Trabuco makes the choices most teams spend weeks debating and then sets them in 
 
 **Hard conventions** (enforced by the generated review tooling, not merely suggested):
 
-- **Spring Boot 3.5 + Java 21–27** — no backports, no Boot 2.x compatibility.
+- **Spring Boot 4.1 + Java 21–27** — no backports, no Boot 2.x compatibility.
 - **Maven multi-module** — Gradle is not supported; Ant is not supported. The `init_project` tool emits Maven-only.
 - **Constructor injection only** — no `@Autowired` fields, no setter injection. The review subagents flag this.
 - **Immutables + builder pattern** — all DTOs/entities are immutable records or Immutables-generated classes. No Lombok.
 - **Keyset pagination** — offset pagination is banned in generated code. The `perf.offset-pagination` review rule flags it.
 - **No FK constraints in Flyway migrations** — denormalization is preferred; joins happen in the service layer. The review tooling flags FK usage.
-- **Testcontainers for integration tests, never `@MockBean` of the database** — the `test.no-db-mock` review rule catches this. Reason: we've shipped bugs where mocked tests passed but real migrations failed in prod.
+- **Testcontainers for integration tests, never `@MockitoBean` of the database** — the `test.no-db-mock` review rule catches this. Reason: we've shipped bugs where mocked tests passed but real migrations failed in prod.
 - **Never `Thread.sleep` in tests** — use Awaitility or Testcontainers wait strategies.
 
 ## Modules over micro-features

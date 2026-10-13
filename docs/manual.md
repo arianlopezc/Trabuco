@@ -48,12 +48,12 @@ For migrating an existing Spring Boot project, see
 ## Features
 
 - **Claude Code plugin** — Drive scaffolding, extension, and architecture advice conversationally via `/trabuco:*` skills and specialist subagents. Published in [Anthropic's community marketplace](https://github.com/anthropics/claude-plugins-community): `/plugin marketplace add anthropics/claude-plugins-community` then `/plugin install trabuco@claude-community`. See [Claude Code plugin](#claude-code-plugin) below.
-- **OIDC Resource Server (auto-generated, runtime-gated)** — Whenever API or AIAgent is selected, Trabuco emits Spring Security 6 OAuth2 Resource Server scaffolding: dual `SecurityFilterChain` beans (JWT chain + permit-all fallback), JWT-to-`Authentication` converter, scope-based authority mapping, RFC 7807 ProblemDetail handlers, RSA-signed e2e test utilities, and a regression backstop for the dormant default. Universal data types (`IdentityClaims`, `AuthorityScope`, `AuthenticatedRequest`) live in Model; cross-module utilities (`RequestContextHolder`, `JwtClaimsExtractor`, `AuthContextPropagator`) in Shared; filter chains in API and AIAgent. The scaffolding ships **dormant** — no auth is enforced at runtime until you set `trabuco.auth.enabled=true` (and configure `OIDC_ISSUER_URI`). Provider-agnostic: works with Keycloak, Auth0, Okta, AWS Cognito, or any RFC-conformant OIDC issuer. AIAgent's legacy `ApiKeyAuthFilter` coexists, governed by its own `app.aiagent.api-key.enabled` property (default on). Full guide: [`docs/auth.md`](auth.md).
+- **OIDC Resource Server (auto-generated, runtime-gated)** — Whenever API or AIAgent is selected, Trabuco emits Spring Security 7 OAuth2 Resource Server scaffolding: dual `SecurityFilterChain` beans (JWT chain + permit-all fallback), JWT-to-`Authentication` converter, scope-based authority mapping, RFC 7807 ProblemDetail handlers, RSA-signed e2e test utilities, and a regression backstop for the dormant default. Universal data types (`IdentityClaims`, `AuthorityScope`, `AuthenticatedRequest`) live in Model; cross-module utilities (`RequestContextHolder`, `JwtClaimsExtractor`, `AuthContextPropagator`) in Shared; filter chains in API and AIAgent. The scaffolding ships **dormant** — no auth is enforced at runtime until you set `trabuco.auth.enabled=true` (and configure `OIDC_ISSUER_URI`). Provider-agnostic: works with Keycloak, Auth0, Okta, AWS Cognito, or any RFC-conformant OIDC issuer. AIAgent's legacy `ApiKeyAuthFilter` coexists, governed by its own `app.aiagent.api-key.enabled` property (default on). Full guide: [`docs/auth.md`](auth.md).
 - **Multi-module Maven structure** — Clean separation between Model, Data, Services, API, Worker, and EventConsumer
 - **Incremental module addition** — Start minimal and add modules as you need them with `trabuco add`
 - **Project health checks** — Validate project structure and consistency with `trabuco doctor`
 - **Immutables everywhere** — Type-safe, immutable DTOs and entities with builder pattern
-- **Spring Boot 3.5** — The final 3.x line, with Spring Data JDBC (not JPA — no magic, no surprises)
+- **Spring Boot 4.1** — The current 4.x line (Spring Framework 7, Jackson 3), with Spring Data JDBC (not JPA — no magic, no surprises)
 - **SQL databases** — PostgreSQL/MySQL support with Flyway migrations out of the box
 - **NoSQL databases** — MongoDB/Redis support with Spring Data repositories
 - **Background jobs** — JobRunr for fire-and-forget, delayed, recurring, and batch jobs
@@ -68,7 +68,7 @@ For migrating an existing Spring Boot project, see
 - **Docker Compose** — Local development stack included
 - **IntelliJ run configs** — Just open and run
 - **GitHub Actions CI** — Opt-in CI workflow that adapts to your modules with `--ci github`
-- **Virtual threads on by default** — Project Loom enabled in Spring Boot 3.5 (`spring.threads.virtual.enabled=true`); I/O-heavy services scale concurrency without code changes
+- **Virtual threads on by default** — Project Loom enabled in Spring Boot 4.1 (`spring.threads.virtual.enabled=true`); I/O-heavy services scale concurrency without code changes
 - **RFC 7807 Problem Details** — every error response is `application/problem+json` via Spring 6's `ProblemDetail`
 - **Bucket4j rate limiting** — declarative per-IP / per-key limits via `application.yml`, ships off by default with sample policy
 - **OpenTelemetry observability** — auto-instruments Spring MVC, JDBC, Kafka/RabbitMQ, JobRunr; traces export to stdout in dev, OTLP in prod
@@ -1141,7 +1141,7 @@ Java version:
   27 (Latest feature release)
 ```
 
-Supported versions are 21, 24, 25, 26 and 27 — every LTS release from 21 up plus the feature releases shipped since the last LTS. Spring Boot 3.5 officially supports Java 17–25; Trabuco's own CI builds and tests every archetype on 26 and 27 as well. The menu only lists versions that are both supported and installed, so a JDK 25 install shows up as soon as it is on the machine. In non-interactive mode, choosing a version that is not installed prints a warning but still generates the project. Use `--strict` to fail instead:
+Supported versions are 21, 24, 25, 26 and 27 — every LTS release from 21 up plus the feature releases shipped since the last LTS. Spring Boot 4.1 officially supports Java 17–26; Trabuco's own CI builds and tests every archetype on 27 as well. The menu only lists versions that are both supported and installed, so a JDK 25 install shows up as soon as it is on the machine. In non-interactive mode, choosing a version that is not installed prints a warning but still generates the project. Use `--strict` to fail instead:
 
 ```bash
 # Warns but continues
@@ -1199,18 +1199,18 @@ See [CI/CD](#cicd) for details on what the workflow includes.
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | Java | 21, 24, 25, 26, or 27 | Runtime (compile target = `--java-version`) |
-| Spring Boot | 3.5.16 | Application framework (final 3.x release) |
+| Spring Boot | 4.1.1 | Application framework (Spring Framework 7, Spring Security 7, Jackson 3) |
 | Spring Data JDBC | — | SQL database access |
 | Spring Data MongoDB | — | MongoDB access |
 | Spring Data Redis | — | Redis access |
 | Spring Kafka | — | Kafka messaging |
 | Spring AMQP | — | RabbitMQ messaging |
-| Spring Cloud AWS | 3.4.2 | AWS SQS messaging |
-| Spring Cloud GCP | 7.4.10 | GCP Pub/Sub messaging |
-| Immutables | 2.10.1 | Immutable value objects |
+| Spring Cloud AWS | 4.2.0 | AWS SQS messaging |
+| Spring Cloud GCP | 8.2.4 | GCP Pub/Sub messaging |
+| Immutables | 2.12.3 | Immutable value objects (Jackson 3 annotations) |
 | Flyway | — | SQL database migrations |
-| JobRunr | 8.8.2 | Background job processing |
-| Testcontainers | 2.0.3 | Integration testing |
+| JobRunr | 9.0.1 | Background job processing |
+| Testcontainers | 2.0.5 | Integration testing |
 | ArchUnit | — | Architecture enforcement tests |
 | Spotless | — | Code formatting (Google Java Format) |
 | Resilience4j | — | Circuit breakers |
@@ -1221,7 +1221,7 @@ See [CI/CD](#cicd) for details on what the workflow includes.
 | AWS SQS | — | Managed queue service (via LocalStack for local dev) |
 | GCP Pub/Sub | — | Google Cloud messaging (via emulator for local dev) |
 | HikariCP | — | Connection pooling (SQL) |
-| Spring AI | 1.0.5 | AI/LLM integration framework |
+| Spring AI | 2.0.1 | AI/LLM integration framework (official anthropic-java SDK underneath) |
 | Anthropic Claude | — | LLM provider for AI Agent module |
 | MCP Server | — | Model Context Protocol for tool exposure |
 

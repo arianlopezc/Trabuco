@@ -16,7 +16,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: 'go.mod'
 
       - name: Build
         run: go build -v ./cmd/trabuco
@@ -48,7 +48,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: 'go.mod'
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -729,7 +729,7 @@ jobs:
   # exercise that path, which is how the "Unsupported class file major
   # version 69" failure escaped before 1.13.
   #
-  # Scope: 5 archetypes × 5 JDKs = 25 parallel shards. The JDK list must
+  # Scope: 7 archetypes × 5 JDKs = 35 parallel shards. The JDK list must
   # equal `java.SupportedVersions` (internal/java/version.go);
   # TestCIMatrixMatchesSupportedVersions fails the build if it drifts.
   # ─────────────────────────────────────────────────────────────────────────
@@ -751,6 +751,13 @@ jobs:
           # so those guards never ran in CI.
           - aiagent-rag
           - full-fat
+          # sql-h2 and nosql-mongo cover the two datastore paths that were
+          # silently broken on main before the Spring Boot 4.1 migration
+          # (H2 quoted-identifier casing; Mongo container wiring + the
+          # spring.mongodb.* namespace). Neither PostgreSQL archetype
+          # exercises them.
+          - sql-h2
+          - nosql-mongo
     steps:
       - uses: actions/checkout@v4
 

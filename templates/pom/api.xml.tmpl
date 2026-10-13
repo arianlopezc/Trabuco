@@ -66,7 +66,7 @@
         <!-- JobRunr Spring Boot Starter (initializes JobRequestScheduler for enqueueing) -->
         <dependency>
             <groupId>org.jobrunr</groupId>
-            <artifactId>jobrunr-spring-boot-3-starter</artifactId>
+            <artifactId>jobrunr-spring-boot-4-starter</artifactId>
             <version>${jobrunr.version}</version>
         </dependency>
 {{- end}}
@@ -90,7 +90,7 @@
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
 
         <!-- Spring Boot Validation -->
@@ -146,15 +146,6 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Jackson for JSON -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jdk8</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-parameter-names</artifactId>
-        </dependency>
 {{- if .AuthEnabled}}
 
         <!-- Spring Security: enables the resource-server filter chain
@@ -168,14 +159,23 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
         </dependency>
 {{- end}}
 
-        <!-- Test Dependencies -->
+        <!-- Test Dependencies. Spring Boot 4 splits test support per
+             technology: webmvc-test provides @AutoConfigureMockMvc, and
+             restclient-test provides TestRestTemplate /
+             @AutoConfigureTestRestTemplate for RANDOM_PORT tests. Both
+             bring spring-boot-starter-test transitively. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-restclient-test</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- ArchUnit — drives the ApiArchitectureTest guard
@@ -188,22 +188,26 @@
             <scope>test</scope>
         </dependency>
 {{- if .AuthEnabled}}
-        <!-- spring-security-test: provides MockMvc post-processors like
-             with(jwt()) used by SecurityIntegrationTest to inject
-             pre-validated JWTs without standing up a real IdP. -->
+        <!-- spring-boot-starter-security-test: provides MockMvc post-processors
+             like with(jwt()) used by SecurityIntegrationTest to inject
+             pre-validated JWTs without standing up a real IdP. Boot 4 requires
+             the starter (not bare spring-security-test) so the security
+             MockMvc auto-configuration is registered. -->
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-test</artifactId>
             <scope>test</scope>
         </dependency>
 {{- end}}
-{{- if and (and .AuthEnabled (.HasModule "SQLDatastore")) (or (eq .Database "postgresql") (eq .Database "mysql"))}}
+{{- if and .AuthEnabled (or (or (and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))) (.HasModule "NoSQLDatastore")) (and (and (.HasModule "Worker") (not (.HasModule "SQLDatastore"))) (.JobRunrUsesSql)))}}
         <!-- Testcontainers: the auth tests boot the full Spring context
              via @SpringBootTest. With SQLDatastore in the project, that
              context wires Spring Data JDBC + Flyway against the configured
-             datasource — which CI doesn't provide. spring-boot-testcontainers
-             gives us @ServiceConnection so the test class declares a
-             container and Spring auto-binds spring.datasource.* to it. -->
+             datasource; with NoSQLDatastore it wires Spring Data MongoDB /
+             Redis repositories — neither of which CI provides.
+             spring-boot-testcontainers gives us @ServiceConnection so the
+             test class declares a container and Spring auto-binds the
+             connection properties to it. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-testcontainers</artifactId>
@@ -224,6 +228,22 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{- end}}
+{{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-mongodb</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{- end}}
+{{- if and (and (and (.HasModule "Worker") (not (.HasModule "SQLDatastore"))) (.JobRunrUsesSql)) (ne .Database "postgresql")}}
+        <!-- JobRunr PostgreSQL fallback (Worker without SQLDatastore): the
+             auth tests need a Postgres container for the storage provider. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
 {{- end}}

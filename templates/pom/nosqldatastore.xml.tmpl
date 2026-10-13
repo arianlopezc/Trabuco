@@ -36,19 +36,23 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
-        <!-- Jackson Java Time support for Instant serialization -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
 {{- end}}
 
-        <!-- Test Dependencies -->
+        <!-- Test Dependencies (Boot 4 modular test support; each test starter
+             brings spring-boot-starter-test transitively). -->
+{{- if eq .NoSQLDatabase "mongodb"}}
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
+            <artifactId>spring-boot-starter-data-mongodb-test</artifactId>
             <scope>test</scope>
         </dependency>
+{{- else if eq .NoSQLDatabase "redis"}}
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+{{- end}}
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -59,7 +63,7 @@
 {{- if eq .NoSQLDatabase "mongodb"}}
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>mongodb</artifactId>
+            <artifactId>testcontainers-mongodb</artifactId>
             <scope>test</scope>
         </dependency>
 {{- end}}

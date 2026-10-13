@@ -37,8 +37,8 @@
 
         <!-- Spring Kafka (for event publishing) -->
         <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
 {{else if .UsesRabbitMQ}}
 
@@ -55,11 +55,6 @@
             <artifactId>spring-cloud-aws-starter-sqs</artifactId>
         </dependency>
 
-        <!-- Jackson Java 8 date/time support -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
 {{else if .UsesPubSub}}
 
         <!-- Spring Cloud GCP Pub/Sub (for event publishing) -->
@@ -76,11 +71,6 @@
             </exclusions>
         </dependency>
 
-        <!-- Jackson Java 8 date/time support -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
 {{end}}
     </dependencies>
 

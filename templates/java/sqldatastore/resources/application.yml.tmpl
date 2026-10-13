@@ -21,7 +21,14 @@ spring:
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 {{- else}}
-    url: ${DB_URL:jdbc:h2:mem:{{.ProjectName}};DB_CLOSE_DELAY=-1}
+    # Spring Data JDBC's H2 dialect quotes every identifier and upper-cases
+    # the derived column names ("CREATED_AT") while keeping the explicit
+    # @Table name as written ("placeholders"). H2 resolves quoted names
+    # case-sensitively, so without CASE_INSENSITIVE_IDENTIFIERS one of the
+    # two would never match the Flyway-created table. MODE=PostgreSQL is
+    # deliberately NOT set: it rejects the AUTO_INCREMENT syntax the
+    # baseline shares with MySQL.
+    url: ${DB_URL:jdbc:h2:mem:{{.ProjectName}};DB_CLOSE_DELAY=-1;CASE_INSENSITIVE_IDENTIFIERS=TRUE}
     username: ${DB_USERNAME:sa}
     password: ${DB_PASSWORD:}
     driver-class-name: org.h2.Driver

@@ -291,7 +291,7 @@ The generated code includes working `Placeholder*` classes as reference implemen
 
 ## Authentication (shipped, dormant by default)
 
-OAuth2 Resource Server scaffolding ships with this project — Spring Security 6, JWT validation, scope → `SCOPE_*` authority mapping, RFC 7807 problem+json error envelopes. It is **dormant** until `trabuco.auth.enabled` is set explicitly:
+OAuth2 Resource Server scaffolding ships with this project — Spring Security 7, JWT validation, scope → `SCOPE_*` authority mapping, RFC 7807 problem+json error envelopes. It is **dormant** until `trabuco.auth.enabled` is set explicitly:
 
 - `trabuco.auth.enabled=false` — local dev / API-key-only deployments. Default-deny chain skipped, `permitAll` chain active.
 - `trabuco.auth.enabled=true` — production. Requires `OIDC_ISSUER_URI` and `OIDC_AUDIENCE`; the app refuses to boot when those are missing.
@@ -306,7 +306,7 @@ Per-provider recipes (Keycloak / Auth0 / Okta / Cognito / generic OIDC) live in 
 
 ## Vector RAG (shipped, store-configurable)
 
-The AIAgent module ships vector-RAG knowledge retrieval (Spring AI 1.0.5). Do not reinvent it — extend the existing surface:
+The AIAgent module ships vector-RAG knowledge retrieval (Spring AI 2.0). Do not reinvent it — extend the existing surface:
 
 - `KnowledgeRetriever` interface; `VectorKnowledgeRetriever` (pgvector / Qdrant / MongoDB Atlas) wins autowiring when `agent.knowledge.vector-store` selects one. `KeywordKnowledgeRetriever` is the always-emitted baseline / fallback.
 - The ambient RAG path on `PrimaryAgent` uses a separate `TenantFilteringDocumentRetriever` (Spring AI's `DocumentRetriever` interface) wrapped by `FencingDocumentRetriever`. Both retrievers — `KnowledgeRetriever` (tool path) and `TenantFilteringDocumentRetriever` (advisor path) — resolve the `tenant_id` filter PER CALL from `CallerContext`. Any new retriever must follow the same shape.
@@ -314,7 +314,7 @@ The AIAgent module ships vector-RAG knowledge retrieval (Spring AI 1.0.5). Do no
 - Tenant isolation: `CallerIdentity.tenantId()` is enforced at every retriever AND at ingest time; caller-supplied `tenant_id` in metadata is server-side stripped before storage.
 - See `docs/vector-rag.md` for store-specific recipes, `.ai/prompts/JAVA_CODE_QUALITY.md` §6.1.2 for the canonical retriever pattern, `.ai/prompts/add-knowledge-entry.md` for one-off content additions, `.ai/prompts/add-retriever.md` for extending the retrieval chain (re-ranking, hybrid, multi-source), and `.ai/prompts/extend-rag-ingestion.md` for new ingestion paths (HTTP, scheduled, event-driven; metadata schema extension; indexing).
 - SSE streaming surface: `StreamingController` (`GET /tasks/{taskId}/stream`, `@RequireScope("partner")`) is the canonical 5-part lifecycle (rate-limit → per-caller cap → BOLA-safe `getTaskForOwner` → named `Consumer<TaskEvent>` listener → paired unsubscribe in all 3 emitter hooks). Inline `subscribe(id, e -> {...})` lambdas can't be unsubscribed — capture as a named variable. See `.ai/prompts/JAVA_CODE_QUALITY.md` §6.1.4 and `.ai/prompts/add-streaming-endpoint.md`.
-- Multi-agent orchestration: `PrimaryAgent` + `SpecialistAgent` (wrapped in `SpecialistAgentTool`). Adding a new agent variant is always 4 files: `@Qualifier("xChatModel")` alias in `ChatClientConfig`, the agent class as `@Component` (NEVER `@ConditionalOnBean(ChatModel.class)` — silently fails), the `@Tool` wrapper as `@Component @ConditionalOnBean(<X>Agent.class)`, and a `PrimaryAgent` constructor injection. All agents share `@CircuitBreaker(name = "llm")` and set `ToolCallingChatOptions.maxTokens(2048)` on the builder (F-AIAGENT-12 partial mitigation). See `.ai/prompts/add-agent-variant.md`.
+- Multi-agent orchestration: `PrimaryAgent` + `SpecialistAgent` (wrapped in `SpecialistAgentTool`). Adding a new agent variant is always 4 files: `@Qualifier("xChatModel")` alias in `ChatClientConfig`, the agent class as `@Component` (NEVER `@ConditionalOnBean(ChatModel.class)` — silently fails), the `@Tool` wrapper as `@Component @ConditionalOnBean(<X>Agent.class)`, and a `PrimaryAgent` constructor injection. All agents share `@CircuitBreaker(name = "llm")` and set `AnthropicChatOptions.builder().maxTokens(2048)` on the builder (F-AIAGENT-12 partial mitigation). See `.ai/prompts/add-agent-variant.md`.
 {{- end}}
 
 ## What This Project Does NOT Include

@@ -92,7 +92,7 @@ These aren't disqualifying, but they should trigger "ask a clarifying question" 
 
 When Trabuco isn't the right fit, the best service is saying so. Sample phrasings:
 
-- "Trabuco's for Spring Boot 3 multi-module Java services. For a Next.js app with minimal backend, you'd spend more time fighting Trabuco's opinions than they'd save you. I'd recommend a different approach."
+- "Trabuco's for Spring Boot 4 multi-module Java services. For a Next.js app with minimal backend, you'd spend more time fighting Trabuco's opinions than they'd save you. I'd recommend a different approach."
 - "Your requirement is essentially 'a GraphQL API.' Trabuco emits REST only and isn't going to help with schema-first design. I'd reach for Netflix DGS or graphql-java directly."
 - "You want to prototype this over the weekend? Trabuco will give you more scaffolding than a weekend prototype needs. Use Spring Initializr and come back to Trabuco when the prototype proves out."
 

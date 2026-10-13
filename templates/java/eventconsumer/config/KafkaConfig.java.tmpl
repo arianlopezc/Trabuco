@@ -7,7 +7,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
+import org.springframework.boot.kafka.autoconfigure.KafkaProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
@@ -18,7 +18,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
-import org.springframework.kafka.support.serializer.JsonDeserializer;
+import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
 
 /**
@@ -62,18 +62,18 @@ public class KafkaConfig {
    */
   @Bean
   public ConsumerFactory<String, PlaceholderEvent> consumerFactory(KafkaProperties kafkaProperties) {
-    Map<String, Object> props = new HashMap<>(kafkaProperties.buildConsumerProperties(null));
+    Map<String, Object> props = new HashMap<>(kafkaProperties.buildConsumerProperties());
     // Wrap real deserializers in ErrorHandlingDeserializer so deserialization
     // failures become DeserializationException → DefaultErrorHandler routes to
     // DLT instead of poison-looping the consumer.
     props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
     props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
     props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
-    props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
-    // JsonDeserializer settings (read by the wrapped delegate).
-    props.put(JsonDeserializer.TRUSTED_PACKAGES, "{{.GroupID}}.model.events");
-    props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
-    props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, PlaceholderEvent.class.getName());
+    props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JacksonJsonDeserializer.class);
+    // JacksonJsonDeserializer settings (read by the wrapped delegate).
+    props.put(JacksonJsonDeserializer.TRUSTED_PACKAGES, "{{.GroupID}}.model.events");
+    props.put(JacksonJsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+    props.put(JacksonJsonDeserializer.VALUE_DEFAULT_TYPE, PlaceholderEvent.class.getName());
 
     return new DefaultKafkaConsumerFactory<>(props);
   }

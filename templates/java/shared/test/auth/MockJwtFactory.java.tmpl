@@ -33,7 +33,7 @@ import java.util.Set;
  * {@code @SpringBootTest} integration tests that need a working filter
  * chain without standing up a real IdP:
  * <pre>{@code
- * @MockBean JwtDecoder jwtDecoder;
+ * @MockitoBean JwtDecoder jwtDecoder;
  *
  * @BeforeEach void setup() {
  *     when(jwtDecoder.decode(any()))

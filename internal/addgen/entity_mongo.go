@@ -58,8 +58,8 @@ func generateMongoEntity(ctx *Context, opts EntityOpts, fields []Field) (*Result
 func renderMongoEntityInterface(ctx *Context, name string, fields []Field) string {
 	pkg := ctx.JavaPackage(config.ModuleModel, "entities")
 	imports := uniqueImports(fields,
-		"com.fasterxml.jackson.databind.annotation.JsonDeserialize",
-		"com.fasterxml.jackson.databind.annotation.JsonSerialize",
+		"tools.jackson.databind.annotation.JsonDeserialize",
+		"tools.jackson.databind.annotation.JsonSerialize",
 		"jakarta.annotation.Nullable",
 		"org.immutables.value.Value",
 		ctx.GroupID+".model.ImmutableStyle",

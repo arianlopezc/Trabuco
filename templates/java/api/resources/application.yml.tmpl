@@ -133,7 +133,7 @@ spring:
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 {{- else}}
-    url: jdbc:h2:mem:{{.ProjectName}};DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:{{.ProjectName}};DB_CLOSE_DELAY=-1;CASE_INSENSITIVE_IDENTIFIERS=TRUE
     username: ${DB_USERNAME:sa}
     password: ${DB_PASSWORD:}
     driver-class-name: org.h2.Driver
@@ -177,9 +177,12 @@ spring:
 
   # MongoDB configuration
   # Use docker-compose up -d to start the MongoDB container
+  # (Spring Boot 4: connection keys live under spring.mongodb.*, Spring
+  # Data specific keys stay under spring.data.mongodb.*)
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
       auto-index-creation: true
 {{- else if eq .NoSQLDatabase "redis"}}
 
@@ -229,7 +232,7 @@ spring:
         enable.idempotence: true
       retries: 5
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 {{- else if and (.HasModule "EventConsumer") (.UsesRabbitMQ)}}
 
   # RabbitMQ Configuration (for event publishing)

@@ -59,13 +59,13 @@ spring:
   #
   # SECURITY WARNING: This URI has no authentication for LOCAL DEVELOPMENT.
   # For production, override via environment variable:
-  # - SPRING_DATA_MONGODB_URI=mongodb://user:pass@host:27017/dbname?authSource=admin
+  # - SPRING_MONGODB_URI=mongodb://user:pass@host:27017/dbname?authSource=admin
   #
   # Note: This config is duplicated from NoSQLDatastore intentionally so that
   # the Worker module can run independently and be configured separately.
-  data:
-    mongodb:
-      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
+  # Spring Boot 4 property name (was spring.data.mongodb.uri in Boot 3).
+  mongodb:
+    uri: ${SPRING_MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
 {{- end}}
 
 # Server configuration. Actuator endpoints share this port by default so a

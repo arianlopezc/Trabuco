@@ -66,15 +66,13 @@ For each repository in the assessment:
 
 ## Dependency hygiene gotcha
 
-`org.flywaydb:flyway-core` IS BOM-managed by spring-boot-dependencies
-(no version needed). But database-specific Flyway artifacts split off in
-Flyway 10:
+Spring Boot 4 moved the Flyway auto-configuration into its own module:
+depend on `org.springframework.boot:spring-boot-starter-flyway` (NOT bare
+`org.flywaydb:flyway-core`) or migrations silently never run at startup.
+Flyway 10+ split the database support into separate artifacts, which
+spring-boot-dependencies 4.x manages (no `<version>` needed):
 - `flyway-database-postgresql`
-- `flyway-database-mysql`
+- `flyway-mysql`
 - `flyway-mongodb`
-These are NOT in Spring Boot 3.2's BOM. If you add one, give it an
-explicit `<version>` (10.x compatible with Flyway-core 10.x). Easier:
-for Spring Boot 3.2 + Postgres, just use `flyway-core` alone — it
-includes Postgres support up through Flyway 9, which is what
-spring-boot-dependencies pins. Add the database-specific artifact only
-if the legacy used Flyway 10+.
+Add the one matching the target database next to the starter; the
+Trabuco SQLDatastore template does exactly this.

@@ -354,7 +354,7 @@ If you prefer to use your own database instead of Docker:
 | `SPRING_DATASOURCE_USERNAME` | JobRunr database user | {{if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}root{{else}}postgres{{end}} |
 | `SPRING_DATASOURCE_PASSWORD` | JobRunr database password | {{if and (.HasModule "SQLDatastore") (eq .Database "mysql")}}root{{else}}postgres{{end}} |
 {{- else if .JobRunrUsesMongoDB}}
-| `SPRING_DATA_MONGODB_URI` | JobRunr MongoDB URI | mongodb://localhost:27017/{{.ProjectName}} |
+| `SPRING_MONGODB_URI` | JobRunr MongoDB URI | mongodb://localhost:27017/{{.ProjectName}} |
 {{- end}}
 {{- end}}
 {{- if .HasModule "EventConsumer"}}

@@ -100,7 +100,7 @@ For a Spring Data JDBC repository test, use `@DataJdbcTest` (slice) over `@Sprin
 package {{.GroupID}}.sqldatastore.repository;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
+import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -124,7 +124,7 @@ For Mongo repositories, use `@DataMongoTest` with the same `@ServiceConnection` 
 
 ## 4b. AIAgent integration tests — pgvector + mockJwt
 
-AIAgent integration tests that exercise the full security chain follow a specific shape: a Testcontainers `pgvector/pgvector:pg16` container, a vector-store-aware Spring profile, and `mockJwt()` from `spring-security-test` so the OAuth2 chain treats the request as authenticated. The shipped `AuthChainIntegrationTest` is the canonical example. Mirror its structure when adding new auth-chain or vector-RAG tests:
+AIAgent integration tests that exercise the full security chain follow a specific shape: a Testcontainers `pgvector/pgvector:pg16` container, a vector-store-aware Spring profile, and `mockJwt()` from `spring-boot-starter-security-test` so the OAuth2 chain treats the request as authenticated. The shipped `AuthChainIntegrationTest` is the canonical example. Mirror its structure when adding new auth-chain or vector-RAG tests:
 
 ```java
 @Testcontainers(disabledWithoutDocker = true)
@@ -159,7 +159,7 @@ The `pgvector` image is required because the AIAgent context auto-configures `Ve
 class ThingControllerTest {
 
   @Autowired MockMvc mvc;
-  @MockBean ThingService service;
+  @MockitoBean ThingService service;
 
   @Test
   void getById_returns200() throws Exception {

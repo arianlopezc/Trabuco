@@ -199,8 +199,8 @@ func renderSQLRepositoryTest(target, pkg, database string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "package %s;\n\n", pkg)
 	b.WriteString("import org.junit.jupiter.api.Test;\n")
-	b.WriteString("import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;\n")
-	b.WriteString("import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;\n")
+	b.WriteString("import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;\n")
+	b.WriteString("import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;\n")
 	useContainer := database == config.DatabasePostgreSQL || database == config.DatabaseMySQL
 	if useContainer {
 		b.WriteString("import org.springframework.boot.testcontainers.service.connection.ServiceConnection;\n")
@@ -244,7 +244,7 @@ func renderMongoRepositoryTest(target, pkg string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "package %s;\n\n", pkg)
 	b.WriteString("import org.junit.jupiter.api.Test;\n")
-	b.WriteString("import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;\n")
+	b.WriteString("import org.springframework.boot.data.mongodb.test.autoconfigure.DataMongoTest;\n")
 	b.WriteString("import org.springframework.boot.testcontainers.service.connection.ServiceConnection;\n")
 	b.WriteString("import org.testcontainers.containers.MongoDBContainer;\n")
 	b.WriteString("import org.testcontainers.junit.jupiter.Container;\n")

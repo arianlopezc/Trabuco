@@ -27,7 +27,7 @@ SpecialistAgent    YourNewAgent  ◀── @Qualifier("yourChatModel") ChatModel
 ChatClient         ChatClient
         │              │
    @CircuitBreaker(name="llm", fallbackMethod=...)
-   defaultOptions(ToolCallingChatOptions.maxTokens(2048))
+   defaultOptions(AnthropicChatOptions.builder().maxTokens(2048))
 
 ChatClientConfig declares the @Qualifier aliases:
   primaryChatModel    → anthropicChatModel
@@ -48,7 +48,7 @@ The shipped `PrimaryAgent`, `SpecialistAgent`, and `ChatClientConfig` Javadocs a
 
 ## Bound the cost per turn
 
-Set `ToolCallingChatOptions.maxTokens(2048)` (tune to your domain) on every new agent's `ChatClient.builder`. Spring AI 1.0.5 does not expose a tool-call recursion cap, so `maxTokens` (output tokens per LLM call) is the meaningful cost guard against runaway tool-call loops. Hardened deployments pair this with `internalToolExecutionEnabled(false)` and manage the tool-call loop manually — F-AIAGENT-12 in `.ai/security-audit/checklist-aiagent-java.md`.
+Set `.defaultOptions(AnthropicChatOptions.builder().maxTokens(2048))` (tune to your domain) on every new agent's `ChatClient.builder` — Spring AI 2.0 takes the options *builder* here, not a built `ChatOptions` instance, and the Anthropic default is now 4096 output tokens per call. `maxTokens` bounds cost per LLM call; Spring AI 2.0.1 additionally lets you cap the tool-execution loop itself (see the tool-call limits on `ToolCallingAdvisor` / `spring.ai.chat.client.tool-calling.*`). Hardened deployments that want a fully manual loop set `spring.ai.chat.client.tool-calling.enabled=false` and drive `ToolCallingManager` themselves (`internalToolExecutionEnabled` was removed in 2.0) — F-AIAGENT-12 in `.ai/security-audit/checklist-aiagent-java.md`.
 
 ## Steps — full 4-file skeleton with `PlaceholderAgent` as the worked example
 
@@ -85,7 +85,7 @@ import {{.GroupID}}.aiagent.knowledge.KnowledgeTools;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -119,9 +119,10 @@ public class PlaceholderAgent {
         this.chatClient = ChatClient.builder(chatModel)
             .defaultSystem(SYSTEM_PROMPT)
             .defaultTools(knowledgeTools)
-            .defaultOptions(ToolCallingChatOptions.builder()
-                .maxTokens(MAX_OUTPUT_TOKENS)
-                .build())
+            // Spring AI 2.0: pass the options builder; ChatClient merges it with
+            // the model's defaults before the first advisor runs.
+            .defaultOptions(AnthropicChatOptions.builder()
+                .maxTokens(MAX_OUTPUT_TOKENS))
             .build();
     }
 
@@ -212,7 +213,7 @@ class PlaceholderAgentTest {
 
     @Autowired private PlaceholderAgent placeholderAgent;        // catches @ConditionalOnBean(ChatModel.class) trap
     @Autowired private PlaceholderAgentTool placeholderAgentTool;
-    @MockBean(name = "anthropicChatModel") private ChatModel chatModel;
+    @MockitoBean(name = "anthropicChatModel") private ChatModel chatModel;
 
     @Test
     void placeholderAgent_isWired() {
@@ -236,8 +237,8 @@ The wire test alone is the smoke test that catches the `@ConditionalOnBean(ChatM
 - **`@Tool` wrapper**: `@ConditionalOnBean(<YourAgent>.class)` IS reliable here.
 - **Tool descriptions**: specific. The LLM reads them to decide which tool to invoke.
 - **`@CircuitBreaker(name = "llm")`** uniformly across agents.
-- **`ToolCallingChatOptions.maxTokens(...)`** on every new agent's builder. F-AIAGENT-12 partial mitigation.
-- **Explicit types**: `ChatClient`, `ChatModel`, `ToolCallingChatOptions` — `var` hides the qualifier wiring.
+- **`AnthropicChatOptions.builder().maxTokens(...)`** on every new agent's builder. F-AIAGENT-12 partial mitigation.
+- **Explicit types**: `ChatClient`, `ChatModel`, `AnthropicChatOptions` — `var` hides the qualifier wiring.
 
 ## Common mistakes
 
@@ -257,7 +258,7 @@ The wire test alone is the smoke test that catches the `@ConditionalOnBean(ChatM
 - [ ] Constructor uses a unique `@Qualifier("xChatModel")` (not reused).
 - [ ] `@CircuitBreaker(name = "llm", fallbackMethod = ...)` on every public method.
 - [ ] Fallback method matches the signature pattern; `@SuppressWarnings("unused")`.
-- [ ] `defaultOptions(ToolCallingChatOptions.builder().maxTokens(<n>).build())` set.
+- [ ] `defaultOptions(AnthropicChatOptions.builder().maxTokens(<n>))` set (builder, not `.build()`).
 - [ ] `@Tool` and `@ToolParam` descriptions are specific (not "Ask the agent something").
 - [ ] `PrimaryAgent` constructor injects the new tool AND appends it to `.defaultTools(...)`.
 - [ ] Wire test (`@SpringBootTest` + `@Autowired`) verifies the bean registers.

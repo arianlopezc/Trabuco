@@ -2,9 +2,9 @@ package {{.GroupID}}.api.config.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
@@ -19,6 +19,22 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mongodb.MongoDBContainer;
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+{{- end}}
+{{- if (and (and (.HasModule "Worker") (not (.HasModule "SQLDatastore"))) (.JobRunrUsesSql))}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 {{- end}}
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,7 +54,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       error-handling convention (see {@code GlobalExceptionHandler}).</li>
  * </ol>
  *
- * <p>The {@link MockBean} {@link JwtDecoder} satisfies the resource-server
+ * <p>The {@link MockitoBean} {@link JwtDecoder} satisfies the resource-server
  * starter's bean requirement without making real network calls. The 200-with-token
  * and 403-wrong-scope paths are verified by {@code AuthEndToEndTest} which boots
  * a real Tomcat and uses RS256-signed test tokens.
@@ -59,8 +75,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     // validation never runs.
     "spring.security.oauth2.resourceserver.jwt.audiences=https://test-api.example.com"
 })
-{{- if and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))}}
-{{- /* (this conditional matches when SQLDatastore is selected with a real RDBMS) */}}
+{{- if or (or (and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))) (.HasModule "NoSQLDatastore")) (and (and (.HasModule "Worker") (not (.HasModule "SQLDatastore"))) (.JobRunrUsesSql))}}
+{{- /* (matches when SQLDatastore is selected with a real RDBMS, or any NoSQLDatastore) */}}
 @Testcontainers(disabledWithoutDocker = true)
 {{- end}}
 class SecurityIntegrationTest {
@@ -80,9 +96,38 @@ class SecurityIntegrationTest {
     @Container
     @ServiceConnection
     static MySQLContainer mysql = new MySQLContainer("mysql:8.0");
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+
+    // With NoSQLDatastore=mongodb the context wires Spring Data MongoDB
+    // repositories (auto-index creation touches the server at startup), so
+    // a real MongoDB is required. @ServiceConnection binds spring.mongodb.*
+    // to the container.
+    @Container
+    @ServiceConnection
+    static MongoDBContainer mongodb = new MongoDBContainer("mongo:7.0");
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+
+    // With NoSQLDatastore=redis the context wires Spring Data Redis
+    // repositories. Spring Boot's RedisContainerConnectionDetailsFactory
+    // recognises any container built from the `redis` image, so
+    // @ServiceConnection binds spring.data.redis.* to it.
+    @Container
+    @ServiceConnection
+    static GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
+{{- end}}
+{{- if (and (and (.HasModule "Worker") (not (.HasModule "SQLDatastore"))) (.JobRunrUsesSql))}}
+
+    // Worker is selected without SQLDatastore, so the API module carries the
+    // JobRunr PostgreSQL fallback datasource (spring.datasource.* in
+    // application.yml) for enqueue-only access. The JobRunr storage provider
+    // connects at startup, so the context needs a real Postgres;
+    // @ServiceConnection rebinds spring.datasource.* to the container.
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer jobrunrPostgres = new PostgreSQLContainer("postgres:15-alpine");
 {{- end}}
 
-    @MockBean
+    @MockitoBean
     private JwtDecoder jwtDecoder;
 
     @Autowired

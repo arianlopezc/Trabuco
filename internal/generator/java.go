@@ -494,7 +494,7 @@ func (g *Generator) generateAPIModule() error {
 			}
 		}
 		// Integration test for the resource-server filter chain
-		// (MockMvc + @MockBean JwtDecoder — fast, no real HTTP).
+		// (MockMvc + @MockitoBean JwtDecoder — fast, no real HTTP).
 		if err := g.writeTemplate(
 			"java/api/test/security/SecurityIntegrationTest.java.tmpl",
 			g.testJavaPath("API", filepath.Join("config", "security", "SecurityIntegrationTest.java")),

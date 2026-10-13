@@ -1,6 +1,6 @@
 # Trabuco Security Audit — AIAgent + Java Platform Domain
 
-AIAgent runtime (Spring AI 1.0.5, RAG, tool dispatch, A2A protocol, vector store, guardrails, MCP exposure) plus Java-platform gotchas (deserialization, regex DoS, HTTP client hardening, virtual-thread context).
+AIAgent runtime (Spring AI 2.0, RAG, tool dispatch, A2A protocol, vector store, guardrails, MCP exposure) plus Java-platform gotchas (deserialization, regex DoS, HTTP client hardening, virtual-thread context).
 
 This file is the **detail reference** for the
 `trabuco-security-audit-aiagent-java` specialist subagent. The orchestrator
@@ -229,7 +229,7 @@ Require `@RequireScope("public")` (or stronger) on the controller; bind tasks to
 
 ---
 
-## F-JAVA-01 — Spring AMQP `Jackson2JsonMessageConverter` accepts `__TypeId__` header without trusted-packages allow-list (deserialization gadget — JAVA-001)
+## F-JAVA-01 — Spring AMQP `JacksonJsonMessageConverter` accepts `__TypeId__` header without trusted-packages allow-list (deserialization gadget — JAVA-001)
 
 **Severity floor:** Critical
 **Taxonomy:** JAVA-001, OWASP-A08, ASVS-V8-3, CWE-502, CWE-915
@@ -239,19 +239,19 @@ Require `@RequireScope("public")` (or stronger) on the controller; bind tasks to
 ```java
 // EventConsumer
 @Bean
-public Jackson2JsonMessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
-  return new Jackson2JsonMessageConverter(objectMapper);
+public JacksonJsonMessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
+  return new JacksonJsonMessageConverter(objectMapper);
 }
 // Events
 @Bean
-public Jackson2JsonMessageConverter jackson2JsonMessageConverter(ObjectMapper objectMapper) {
-  return new Jackson2JsonMessageConverter(objectMapper);
+public JacksonJsonMessageConverter jacksonJsonMessageConverter(ObjectMapper objectMapper) {
+  return new JacksonJsonMessageConverter(objectMapper);
 }
 ```
 
 ### Why it matters
 
-`Jackson2JsonMessageConverter` reads the AMQP `__TypeId__` header and instantiates the Java class named there via Jackson's `ObjectMapper.readValue(..., Class)` — this is functionally equivalent to enabling Jackson default typing on inbound messages. The default `DefaultClassMapper` accepts **any** class on the classpath that Jackson can deserialize; `setTrustedPackages` is not invoked, no `BasicPolymorphicTypeValidator` is wired. A publisher able to put a message on the `placeholder-events` queue (or any other queue this listener serves) can set `__TypeId__` to a known gadget class — `org.springframework.context.support.ClassPathXmlApplicationContext`, `com.zaxxer.hikari.HikariConfig`, or any class on the classpath with a setter that fetches a remote URL — and trigger remote-class-loading / SSRF / RCE the moment the consumer deserializes. Spring AMQP's documentation explicitly recommends `converter.setClassMapper(new DefaultClassMapper { setTrustedPackages(...) })` or the new `Jackson2JsonMessageConverter#setAllowedListPatterns`, neither of which is configured. The presence of `@JsonSubTypes`-restricted sealed interface in `PlaceholderEvent` does **not** help because the converter consults `__TypeId__` first and bypasses the sealed-interface allow-list entirely.
+`JacksonJsonMessageConverter` reads the AMQP `__TypeId__` header and instantiates the Java class named there via Jackson's `ObjectMapper.readValue(..., Class)` — this is functionally equivalent to enabling Jackson default typing on inbound messages. The default `DefaultClassMapper` accepts **any** class on the classpath that Jackson can deserialize; `setTrustedPackages` is not invoked, no `BasicPolymorphicTypeValidator` is wired. A publisher able to put a message on the `placeholder-events` queue (or any other queue this listener serves) can set `__TypeId__` to a known gadget class — `org.springframework.context.support.ClassPathXmlApplicationContext`, `com.zaxxer.hikari.HikariConfig`, or any class on the classpath with a setter that fetches a remote URL — and trigger remote-class-loading / SSRF / RCE the moment the consumer deserializes. Spring AMQP's documentation explicitly recommends `converter.setClassMapper(new DefaultClassMapper { setTrustedPackages(...) })` or the new `JacksonJsonMessageConverter#setAllowedListPatterns`, neither of which is configured. The presence of `@JsonSubTypes`-restricted sealed interface in `PlaceholderEvent` does **not** help because the converter consults `__TypeId__` first and bypasses the sealed-interface allow-list entirely.
 
 ### Suggested fix
 
@@ -918,7 +918,7 @@ public class WebhookManager {
 
 ### Why it matters
 
-1. **Inline mapper bypass**: `new ObjectMapper()` is a fresh mapper without any of the Spring-Boot-applied modules (`Jdk8Module`, `JavaTimeModule`, `ParameterNamesModule`) or `Jackson2ObjectMapperBuilder` customizations. Anywhere a custom `Jackson2ObjectMapperBuilderCustomizer` is added (e.g., to register a `StreamReadConstraints` or `BasicPolymorphicTypeValidator`), these inline mappers don't get it. They will silently behave differently from the autowired mapper — stamping out a copy of `LocalDateTime` as `[2026, 5, 1, ...]` (default-array form) instead of ISO-8601, etc.
+1. **Inline mapper bypass**: `JsonMapper.builder().build()` (or `new ObjectMapper()`) is a fresh mapper without any of the Spring-Boot-applied customizations (Jackson 3 builds `java.time` / `Optional` / parameter-name support in, but Boot-level hardening such as `fail-on-unknown-properties` and read constraints is lost) or `JsonMapperBuilderCustomizer` customizations. Anywhere a custom `JsonMapperBuilderCustomizer` is added (e.g., to register a `StreamReadConstraints` or `BasicPolymorphicTypeValidator`), these inline mappers don't get it. They will silently behave differently from the autowired mapper — stamping out a copy of `LocalDateTime` as `[2026, 5, 1, ...]` (default-array form) instead of ISO-8601, etc.
 2. **No depth/length limits configured anywhere**: `grep -rn "StreamReadConstraints\|maxNestingDepth\|maxDocumentLength"` returns zero results. Jackson 2.16+ ships defaults of `maxNestingDepth=1000`, `maxDocumentLength=-1` (unlimited), `maxStringLength=20_000_000`. A `POST /a2a` body of `{"a":{"a":{...500 deep}}}` is permitted by default — combined with virtual threads (carrier-pinning is unlikely here but parsing CPU is not) plus the `Map<String,Object>` untyped bag from F-JAVA-02, an attacker exhausts CPU + heap with one request. No request-body size limit (`spring.servlet.multipart.max-request-size` — applies to multipart only — is unset; `server.tomcat.max-http-form-post-size` not configured; `server.tomcat.max-swallow-size` not configured).
 3. **`@JsonInclude` not configured globally**: response DTOs that bind `Map<String, Object>` (e.g., `IngestionController.ingest` returns `ResponseEntity<Map<String, Object>>`) will serialize null values, leaking stack-trace-like keys with `null` values when the contract changes.
 
@@ -927,7 +927,7 @@ public class WebhookManager {
 Inject the Spring `ObjectMapper` via constructor in both classes; add a `@Configuration` bean:
 ```java
 @Bean
-public Jackson2ObjectMapperBuilderCustomizer hardenJackson() {
+public JsonMapperBuilderCustomizer hardenJackson() {
     return b -> b.factory(JsonFactory.builder()
         .streamReadConstraints(StreamReadConstraints.builder()
             .maxNestingDepth(64)
@@ -1433,7 +1433,7 @@ public class ProcessPlaceholderJobRequestHandler implements JobRequestHandler<Pr
 
 ### Why it matters
 
-JobRunr 8.x serializes job arguments via Jackson and stores the class FQN (`org.jobrunr.utils.mapper.jackson.JacksonJsonMapper`) in the `jobAsJson` column. On dequeue, the Jackson default-typing-equivalent path reads the FQN and instantiates — same gadget surface as Spring AMQP F-JAVA-01. The shipped sealed-interface design is *currently safe* because:
+JobRunr 9.x serializes job arguments via Jackson and stores the class FQN (`org.jobrunr.utils.mapper.jackson.JacksonJsonMapper`) in the `jobAsJson` column. On dequeue, the Jackson default-typing-equivalent path reads the FQN and instantiates — same gadget surface as Spring AMQP F-JAVA-01. The shipped sealed-interface design is *currently safe* because:
 - only `record ProcessPlaceholderJobRequest(String message)` is permitted,
 - `String message` is the only field,
 - JobRunr's `JacksonJsonMapper` does not enable global default typing.
@@ -1465,7 +1465,7 @@ public interface ChatRequest {
 
 ### Why it matters
 
-Current state is safe — Hibernate Validator 8.x (Spring Boot 3.5.16 BOM) does not implement regex timeout, but there are no user-controllable regex inputs in the current generated code. The platform-level concern is preventive: the skill `add-endpoint` doesn't say "if you add `@Pattern`, the regex string must be a compile-time constant; never `@Pattern(regexp = "${user.supplied.regex:}")` — the resulting `Pattern.compile` is unbounded and `(a+)+b`-style adversarial inputs cause catastrophic backtracking with no timeout."
+Current state is safe — Hibernate Validator 9.x (Spring Boot 4.1 BOM) does not implement regex timeout, but there are no user-controllable regex inputs in the current generated code. The platform-level concern is preventive: the skill `add-endpoint` doesn't say "if you add `@Pattern`, the regex string must be a compile-time constant; never `@Pattern(regexp = "${user.supplied.regex:}")` — the resulting `Pattern.compile` is unbounded and `(a+)+b`-style adversarial inputs cause catastrophic backtracking with no timeout."
 
 ### Suggested fix
 
@@ -1480,8 +1480,8 @@ Add a paragraph to the `add-endpoint` and `code-quality-guide` skills warning ag
 - **`UUID.randomUUID()` for correlation/task/webhook IDs is not insecure.** Java's `UUID.randomUUID()` is backed by `SecureRandom` (`SecureRandom.next` for the 122 random bits). Sufficient for non-secret identifiers. Flagged in F-JAVA-07 only as a *teaching-by-example* concern when integrators copy the pattern for actual secrets.
 - **No `ObjectInputStream` / `readObject` / RMI / JMX endpoints anywhere.** `grep -rn "ObjectInputStream\|readObject\|RMI\|JMX"` returns no hits in user-scanned packages. JAVA-003 (Java native serialization) is genuinely absent.
 - **No XML parsing surface.** No `DocumentBuilderFactory`, `SAXParserFactory`, `TransformerFactory`, `JAXBContext`, `XMLInputFactory`, or `XMLReader` usages anywhere. JAVA-002 / JAVA-010 (XML billion-laughs) is genuinely absent — Trabuco emits JSON-only controllers.
-- **No JNDI / Logback `JndiLookup`.** No `InitialContext`, `JndiTemplate`, `ctx.lookup`, or `jndi:` literal anywhere. Logback configuration files contain no JNDI receivers and no socket-receiver. Logback 1.5.x via Spring Boot 3.5.16 BOM is post-CVE-2023-6378. JAVA-004 is genuinely absent.
-- **No SnakeYAML usages.** `new Yaml(...)` not present in any module. Spring Boot 3.5.16 includes SnakeYAML 2.x by transitive dep, with `SafeConstructor` as the default. JAVA-005 is genuinely absent.
+- **No JNDI / Logback `JndiLookup`.** No `InitialContext`, `JndiTemplate`, `ctx.lookup`, or `jndi:` literal anywhere. Logback configuration files contain no JNDI receivers and no socket-receiver. Logback 1.5.x via Spring Boot 4.1.1 BOM is post-CVE-2023-6378. JAVA-004 is genuinely absent.
+- **No SnakeYAML usages.** `new Yaml(...)` not present in any module. Spring Boot 4.1.1 includes SnakeYAML 2.x by transitive dep, with `SafeConstructor` as the default. JAVA-005 is genuinely absent.
 - **No TrustAll SSL / `X509TrustManager` / `HostnameVerifier` overrides.** `grep -rn "TrustManager\|HostnameVerifier\|trustAll\|InsecureTrustManager\|HttpsURLConnection\.setDefault"` returns zero hits in generated code. JAVA-008 (TrustAll) is genuinely absent. (F-JAVA-13 is the *related* concern of "no positive TLS hardening shipped, so an integrator might add TrustAll later.")
 - **No ZIP/TAR extraction.** `grep -rn "ZipInputStream\|ZipFile\|TarInputStream\|getNextEntry"` returns zero hits. JAVA-009 (Zip Slip) is genuinely absent — `DocumentIngestionService.ingest(String text, ...)` accepts plain text only.
 - **No `Runtime.exec` / `ProcessBuilder`.** Genuinely absent in generated Java code. (`localstack-init.sh` is shell, not JVM.)

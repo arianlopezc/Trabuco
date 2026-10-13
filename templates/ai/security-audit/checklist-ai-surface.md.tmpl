@@ -122,7 +122,7 @@ When the deterministic review check (the only enforcement layer that catches `fi
 
 ---
 
-## F-AI-07 — Migration `tests` specialist allows `@MockBean JwtDecoder` and `MockJwtFactory`-driven SecurityContext as documented test patterns
+## F-AI-07 — Migration `tests` specialist allows `@MockitoBean JwtDecoder` and `MockJwtFactory`-driven SecurityContext as documented test patterns
 
 **Severity floor:** Medium
 **Taxonomy:** OWASP-A07, ASVS-V2-1, ASVS-V14-1
@@ -272,7 +272,7 @@ The tool description tells the calling agent that auth is "dormant by default" �
 
 ---
 
-## F-AI-17 — Generated test patterns recommend `@MockBean` of JwtDecoder with no warning that `MockJwtFactory` issues admin scopes trivially
+## F-AI-17 — Generated test patterns recommend `@MockitoBean` of JwtDecoder with no warning that `MockJwtFactory` issues admin scopes trivially
 
 **Severity floor:** Low
 **Taxonomy:** ASVS-V14-1, OWASP-A07

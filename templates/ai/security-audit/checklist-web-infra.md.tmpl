@@ -877,7 +877,7 @@ Add an owner check (`task.ownerKeyHash != caller.keyHash()` → 404, not 403, to
 
 ## False positives considered
 
-- **`server.error.include-stacktrace` / `include-message` / `include-binding-errors` not configured.** Spring Boot 3 defaults are `never` for all three; `grep -rn "include-stacktrace\|include-message\|include-binding-errors"` across the audit tree finds zero matches, so the framework defaults stand. Not a finding.
+- **`server.error.include-stacktrace` / `include-message` / `include-binding-errors` not configured.** Spring Boot 4 defaults are `never` for all three; `grep -rn "include-stacktrace\|include-message\|include-binding-errors"` across the audit tree finds zero matches, so the framework defaults stand. Not a finding.
 - **`spring.mvc.problemdetails.enabled: true`** in the API yaml. This is correct — it activates RFC 7807 globally and matches the `GlobalExceptionHandler` design. Not a finding.
 - **`management.endpoints.web.exposure.include: "*"`.** The default *is* a curated list `health,info,prometheus,metrics` (not `*`). `health.show-details: when_authorized` is also set. Actuator surface is acceptable. Not a finding (`/env`, `/heapdump`, `/threaddump`, `/loggers` are not exposed by default).
 - **`management.info.env.enabled: false`.** Explicitly set to false; environment leakage via `/actuator/info` is closed. Not a finding.
@@ -1041,7 +1041,7 @@ Drop the `|| true`; rely on Docker layer caching (the `COPY pom.xml*` step + a p
 
 ### Why it matters
 
-This is mostly OK — pin via BOM, exclude legacy. The minor concern is that the BOM is imported in parent dependencyManagement but a consumer module could override individual artifacts; a `mvn dependency:tree` discipline isn't enforced. Spring AI 1.0.5 has had advisories around prompt-injection in `RetrievalAugmentationAdvisor` (covered in AIAgent agent's findings) — keeping the BOM pinned to 1.0.5 means missing 1.0.x patches if/when they ship.
+This is mostly OK — pin via BOM, exclude legacy. The minor concern is that the BOM is imported in parent dependencyManagement but a consumer module could override individual artifacts; a `mvn dependency:tree` discipline isn't enforced. Spring AI 2.0 has had advisories around prompt-injection in `RetrievalAugmentationAdvisor` (covered in AIAgent agent's findings) — keeping the BOM pinned to 1.0.5 means missing 1.0.x patches if/when they ship.
 
 ### Suggested fix
 
@@ -1077,7 +1077,7 @@ Confirm via `mvn dependency:tree -Dverbose` that no module overrides spring-ai v
 
 ### Why it matters
 
-A legacy JAR on the classpath isn't always unused — when the Jakarta and javax artifacts both have `javax.validation.constraints.NotNull` and `jakarta.validation.constraints.NotNull` classes, downstream code can accidentally import the wrong one (IDE auto-import). Hibernate Validator 8.x ignores javax.* annotations entirely, so a misimported `javax.validation.constraints.NotNull` is **silently a no-op** — failing closed in security-sensitive validation paths. ASVS-V5-1 wants input validation; an annotation that compiles but doesn't validate is the worst kind of silent failure.
+A legacy JAR on the classpath isn't always unused — when the Jakarta and javax artifacts both have `javax.validation.constraints.NotNull` and `jakarta.validation.constraints.NotNull` classes, downstream code can accidentally import the wrong one (IDE auto-import). Hibernate Validator 9.x ignores javax.* annotations entirely, so a misimported `javax.validation.constraints.NotNull` is **silently a no-op** — failing closed in security-sensitive validation paths. ASVS-V5-1 wants input validation; an annotation that compiles but doesn't validate is the worst kind of silent failure.
 
 ### Suggested fix
 

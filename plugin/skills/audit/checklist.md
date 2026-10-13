@@ -7,10 +7,10 @@ files and dispatches the
 [`trabuco-security-audit-orchestrator`](../../agents/trabuco-security-audit-orchestrator.md)
 subagent.
 
-**Scope.** Trabuco-generated Spring Boot 3.5.x / Java 21+ / Maven multi-module
+**Scope.** Trabuco-generated Spring Boot 4.1.x / Java 21+ / Maven multi-module
 projects. The check evidence patterns assume Trabuco's module shape: Model,
 SQLDatastore, NoSQLDatastore, Shared, API, Worker (JobRunr), EventConsumer
-(Kafka / RabbitMQ / SQS / PubSub), AIAgent (Spring AI 1.0.5), with a
+(Kafka / RabbitMQ / SQS / PubSub), AIAgent (Spring AI 2.0), with a
 dormant OIDC JWT resource server, ApiKeyAuthFilter, ScopeEnforcer, RFC 7807
 GlobalExceptionHandler, application.yml, Docker Compose, Flyway,
 Testcontainers, and GitHub Actions CI.
@@ -87,7 +87,7 @@ justification, which it surfaces in the report.
 | F-AI-04 | High | Plugin docs and skills repeatedly tell users "every endpoint is open … fine for local dev, do not... |
 | F-AI-05 | High | app.aiagent.api-key.enabled=true (default) framed as "backward compatibility" without warning see... |
 | F-AI-06 | Medium | Stop-hook block messages teach the agent the kill switches and the suppression directive |
-| F-AI-07 | Medium | Migration tests specialist allows @MockBean JwtDecoder and MockJwtFactory-driven SecurityContext ... |
+| F-AI-07 | Medium | Migration tests specialist allows @MockitoBean JwtDecoder and MockJwtFactory-driven SecurityContext ... |
 | F-AI-08 | Medium | Migration assessor classifies hardcoded secrets as "blocker" but config specialist treats env-var... |
 | F-AI-09 | Medium | trabuco-ai-agent-expert MCP prompt teaches that guardrails save tokens as the *primary* benefit, ... |
 | F-AI-10 | Medium | Generated add-tool.md allows-and-trusts LLM-synthesized inputs without mandatory parameter type b... |
@@ -97,7 +97,7 @@ justification, which it surfaces in the report.
 | F-AI-14 | Low | Migration-mode parent POM ships with enforcement deferred for 11 phases and the orchestrator does... |
 | F-AI-15 | Low | trabuco_expert MCP prompt's POST-GENERATION STEPS omit auth activation |
 | F-AI-16 | Low | init_project MCP tool description claims auth scaffolding is dormant "by default" without surfaci... |
-| F-AI-17 | Low | Generated test patterns recommend @MockBean of JwtDecoder with no warning that MockJwtFactory iss... |
+| F-AI-17 | Low | Generated test patterns recommend @MockitoBean of JwtDecoder with no warning that MockJwtFactory iss... |
 
 ### AIAgent + Java Platform (42 checks) — see [`checklist-aiagent-java.md`](./checklist-aiagent-java.md)
 
@@ -109,7 +109,7 @@ justification, which it surfaces in the report.
 | F-AIAGENT-04 | Critical | RetrievalAugmentationAdvisor injects raw RAG content into prompt with no provenance fence |
 | F-AIAGENT-06 | Critical | MCP server exposed at /mcp with no authentication boundary |
 | F-AIAGENT-07 | Critical | A2A JSON-RPC /a2a endpoint accepts anonymous callers; no @RequireScope annotation |
-| F-JAVA-01 | Critical | Spring AMQP Jackson2JsonMessageConverter accepts __TypeId__ header without trusted-packages allow... |
+| F-JAVA-01 | Critical | Spring AMQP JacksonJsonMessageConverter accepts __TypeId__ header without trusted-packages allow... |
 | F-AIAGENT-05 | High | KnowledgeTools.askQuestion @Tool returns raw retrieved text to the LLM |
 | F-AIAGENT-08 | High | Webhook URL is not validated against an allow-list (SSRF) |
 | F-AIAGENT-09 | High | Webhook signing key is the caller's API key label, not a separate signing secret |
@@ -151,12 +151,12 @@ justification, which it surfaces in the report.
 | ID | Severity | Title |
 | -- | -------- | ----- |
 | F-DATA-08 | Critical | Vector documents table has no tenant_id / caller_id / authority_scope column; VectorKnowledgeRetr... |
-| F-EVENTS-02 | Critical | RabbitMQ listener consumes PlaceholderEvent with a default Jackson2JsonMessageConverter and **no*... |
+| F-EVENTS-02 | Critical | RabbitMQ listener consumes PlaceholderEvent with a default JacksonJsonMessageConverter and **no*... |
 | F-DATA-01 | High | Flyway migration runs as the same Postgres user as the runtime app (super/owner privileges leak i... |
 | F-DATA-02 | High | postgres / postgres shipped as default DB credentials in env, yml, docker-compose AND .env.example |
 | F-DATA-03 | High | Postgres sslmode=prefer default — silently downgrades to plaintext when server doesn't offer TLS |
 | F-DATA-06 | High | Redis ships with no AUTH, no TLS, optional-password commented out |
-| F-DATA-07 | High | Redis RedisTemplate uses GenericJackson2JsonRedisSerializer — ships polymorphic @class markers (J... |
+| F-DATA-07 | High | Redis RedisTemplate uses GenericJacksonJsonRedisSerializer — ships polymorphic @class markers (J... |
 | F-DATA-09 | High | IngestRequest (record) has no validation; metadata: Map<String,Object> accepted unbounded into ve... |
 | F-DATA-12 | High | Worker module hardcodes username: postgres / password: postgres (no env-var indirection) — applic... |
 | F-EVENTS-01 | High | Kafka JsonDeserializer.TRUSTED_PACKAGES set to a directory that already imports cross-module DTOs... |
