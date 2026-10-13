@@ -61,7 +61,7 @@ Say this when:
 
 - The project's **core identity** is something Trabuco explicitly excludes (e.g., "a GraphQL API server," "a React SPA with minimal backend," "a gRPC service mesh component").
 - The user wants a **different framework family** — Quarkus, Micronaut, Dropwizard, Ktor, Helidon. Trabuco is Spring Boot-only.
-- The project needs **Boot 2.x** compatibility — Trabuco targets 3.4.2 only.
+- The project needs **Boot 2.x** compatibility — Trabuco targets 3.5 only.
 - The project needs **non-JVM languages** — Trabuco is JVM-only.
 - **Auth IS the project** (e.g., building an OAuth server / IdP) — Trabuco scaffolds resource-server-side validation only (auto-emitted with API/AIAgent, requires explicit `trabuco.auth.enabled=true` at runtime). It does NOT generate identity-provider-side code (login forms, token issuance, MFA, password reset, user management). Use a hosted IdP for the producer side.
 

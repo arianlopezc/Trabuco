@@ -721,8 +721,17 @@ jobs:
   # on Java 21 only, which is why v1.8.1/v1.8.2 shipped with Mockito/Jacoco/
   # banned-deps failures that only surface on Java 24/25 at test time.
   #
-  # Scope: 4 archetypes × 3 JDKs = 12 parallel shards. Keep JDKs in sync
-  # with `flagJavaVersion` accepted values in internal/cli/init.go.
+  # Each shard generates with `--java-version=<matrix JDK>` (the e2e script
+  # derives it from the runtime `java`), so the project's compile target —
+  # and therefore the class-file version every bytecode-reading library
+  # (Spring's ASM, Mockito, JaCoCo, ArchUnit, JobRunr) has to parse — moves
+  # with the shard. Building a Java-21 target on a Java-25 runtime does not
+  # exercise that path, which is how the "Unsupported class file major
+  # version 69" failure escaped before 1.13.
+  #
+  # Scope: 5 archetypes × 5 JDKs = 25 parallel shards. The JDK list must
+  # equal `java.SupportedVersions` (internal/java/version.go);
+  # TestCIMatrixMatchesSupportedVersions fails the build if it drifts.
   # ─────────────────────────────────────────────────────────────────────────
   archetype-matrix:
     name: Archetype ${{ matrix.archetype }} on JDK ${{ matrix.java }}
@@ -731,11 +740,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java: ['21', '24', '25']
+        java: ['21', '24', '25', '26', '27']
         archetype:
           - api-minimal
           - crud-sql
           - aiagent-pubsub
+          # aiagent-rag is the only shape that runs VectorRagIntegrationTest
+          # and AgentWiringIntegrationTest (pgvector round-trip + bean
+          # wiring). It was defined in test_full_build.sh but missing here,
+          # so those guards never ran in CI.
+          - aiagent-rag
           - full-fat
     steps:
       - uses: actions/checkout@v4

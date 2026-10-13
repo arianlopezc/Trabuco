@@ -35,6 +35,20 @@ fi
 WORKDIR="$(mktemp -d -t trabuco-e2e-XXXXXX)"
 trap 'rm -rf "${WORKDIR}"' EXIT
 
+# ─── Target Java version ─────────────────────────────────────────────────────
+# Generate with `--java-version` equal to the runtime JDK's major version
+# (override with TRABUCO_JAVA_VERSION). Without this every shard would build
+# a Java-21 target and never produce class files newer than major 65, so a
+# library whose bundled ASM cannot read Java 25+ bytecode would pass CI and
+# fail for the first user who actually targets 25.
+if [[ -z "${TRABUCO_JAVA_VERSION:-}" ]]; then
+  TRABUCO_JAVA_VERSION="$(java -version 2>&1 | head -1 | sed -E 's/.*version "([0-9]+).*/\1/')"
+fi
+if ! [[ "${TRABUCO_JAVA_VERSION}" =~ ^[0-9]+$ ]]; then
+  echo "error: could not determine Java major version from 'java -version' (got '${TRABUCO_JAVA_VERSION}'); set TRABUCO_JAVA_VERSION" >&2
+  exit 2
+fi
+
 # ─── Archetype definitions ───────────────────────────────────────────────────
 # Each archetype is: <name>|<modules>|<extra-flags>
 # The orthogonal axes we're covering:
@@ -79,6 +93,7 @@ run_archetype() {
       --name="${name//-/}" \
       --group-id="com.trabuco.e2e" \
       --modules="${modules}" \
+      --java-version="${TRABUCO_JAVA_VERSION}" \
       --skip-build \
       ${extra} \
     > "${log_file}" 2>&1 ); then
@@ -112,7 +127,7 @@ run_archetype() {
 log "Repo: ${REPO_ROOT}"
 log "Workdir: ${WORKDIR}"
 log "Binary: ${TRABUCO_BIN}"
-log "Java: $(java -version 2>&1 | head -1)"
+log "Java: $(java -version 2>&1 | head -1) (generating with --java-version=${TRABUCO_JAVA_VERSION})"
 log "Maven: $(mvn -v 2>&1 | head -1)"
 
 for entry in "${ARCHETYPES[@]}"; do

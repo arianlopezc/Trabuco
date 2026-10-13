@@ -19,7 +19,7 @@ If the user is considering Go, Python, Node, Rust, .NET — Trabuco is the wrong
 
 - Quarkus users: Trabuco doesn't target Quarkus. No help here.
 - Micronaut, Dropwizard, Helidon, Ktor: same.
-- Spring Boot 2.x: Trabuco is 3.4.2-only. Users stuck on 2.x will hit breaking changes.
+- Spring Boot 2.x: Trabuco is 3.5-only. Users stuck on 2.x will hit breaking changes.
 
 ## Strong warnings — explicit tradeoff conversation required
 

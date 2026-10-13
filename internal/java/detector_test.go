@@ -127,8 +127,10 @@ func TestIsSupportedVersion(t *testing.T) {
 		{17, false},
 		{21, true},
 		{24, true},
-		{25, false}, // 25/26 deferred until Spring Boot 3.5.x bump (ASM 9.7 limit)
-		{26, false},
+		{25, true}, // re-enabled with the Spring Boot 3.5.16 template bump
+		{26, true},
+		{27, true},
+		{28, false}, // not released as a GA JDK yet
 		{18, false},
 		{19, false},
 		{11, false},

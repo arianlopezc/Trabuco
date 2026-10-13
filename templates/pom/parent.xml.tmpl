@@ -17,21 +17,34 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>{{.JavaVersion}}</maven.compiler.source>
         <maven.compiler.target>{{.JavaVersion}}</maven.compiler.target>
-        <spring-boot.version>3.4.2</spring-boot.version>
-        <!-- Mockito: override Spring Boot's managed version (5.14.2) which does
-             not support Java 24/25 class-file bytecode. Mockito 5.17+ adds Java
-             25 support; pinning to a newer 5.x keeps mocks working when the
-             developer's runtime JVM is newer than {{.JavaVersion}}. -->
-        <mockito.version>5.19.0</mockito.version>
+        <!-- Spring Boot 3.5.16 is the final 3.x release (Spring Framework
+             6.2.19). It is the first line whose repackaged ASM accepts Java 25+
+             class files (Framework 6.2.13+ reads newer bytecode leniently), so
+             it is what lets this project target Java 25, 26 and 27. Spring
+             officially supports Java 17–25 on 3.5; 26/27 are best-effort and
+             verified by Trabuco's own CI matrix. Note that 3.5 left open-source
+             support on 2026-06-30 — it is also the mandatory stepping stone to
+             Spring Boot 4.x, which is the next planned template upgrade. -->
+        <spring-boot.version>3.5.16</spring-boot.version>
+        <!-- Mockito: override Spring Boot's managed version (5.17.0, Byte Buddy
+             1.17.8) which only knows class files through Java 25. Mockito 5.24
+             ships Byte Buddy 1.18.x with Java 27 support; pinning it keeps mocks
+             working when the compile target or the developer's runtime JVM is
+             newer than what the BOM was built for. -->
+        <mockito.version>5.24.0</mockito.version>
         <testcontainers.version>2.0.3</testcontainers.version>
 {{- if or (.HasModule "Jobs") (.HasModule "Worker")}}
-        <jobrunr.version>8.4.0</jobrunr.version>
+        <!-- JobRunr 8.6+ dropped reflective final-field mutation, which Java 26
+             rejects when illegal-final-field-mutation is set to deny. 8.8.x is
+             the last 8.x line with a Spring Boot 3 starter; 9.x targets Boot 4. -->
+        <jobrunr.version>8.8.2</jobrunr.version>
 {{- end}}
 {{- if or (or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")) (.HasAIAgentModule)}}
         <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
 {{- end}}
 {{- if .HasModule "API"}}
-        <springdoc.version>2.7.0</springdoc.version>
+        <!-- springdoc 2.8.x is the line built against Spring Boot 3.5. -->
+        <springdoc.version>2.8.17</springdoc.version>
         <bucket4j.version>0.12.7</bucket4j.version>
 {{- end}}
 {{- if or (or (or (.HasModule "API") (.HasModule "Worker")) (.HasModule "EventConsumer")) (.HasAIAgentModule)}}
@@ -42,7 +55,9 @@
         <opentelemetry.version>2.11.0</opentelemetry.version>
 {{- end}}
 {{- if .HasAIAgentModule}}
-        <spring-ai.version>1.0.5</spring-ai.version>
+        <!-- Spring AI 1.0.x is the line built against Spring Boot 3.5; 1.0.6+
+             carries the April 2026 CVE fixes. 2.x requires Spring Boot 4. -->
+        <spring-ai.version>1.0.9</spring-ai.version>
 {{- end}}
 {{- if .HasModule "Shared"}}
         <!-- Resilience4j: declared here as the canonical version source
@@ -52,18 +67,20 @@
              version. -->
         <resilience4j.version>2.2.0</resilience4j.version>
 {{- end}}
-        <!-- Jacoco 0.8.12 cannot instrument class-file major version 69 (Java 25)
-             — its agent fails during runtime instrumentation of JDK classes with
-             `Unsupported class file major version 69`, producing log noise and
-             missing coverage data. 0.8.14 adds Java 25 class-file support. -->
-        <jacoco.version>0.8.14</jacoco.version>
+        <!-- JaCoCo instruments class files with its own ASM, so it must know
+             every class-file version it meets: 0.8.14 added Java 25 (major 69),
+             0.8.15 adds official Java 26 and experimental Java 27 support. An
+             older agent fails with `Unsupported class file major version N`,
+             producing log noise and missing coverage data. -->
+        <jacoco.version>0.8.15</jacoco.version>
         <maven-enforcer.version>3.5.0</maven-enforcer.version>
         <spotless.version>2.44.4</spotless.version>
-        <!-- ArchUnit 1.4.0 ships an ASM that can't parse class-file major
-             version 69 (Java 25) — it logs "Unsupported class file major version"
-             per JDK class and falls back to a degraded importer, producing
-             stack-trace spam in test logs. 1.4.1+ bundles a newer ASM. -->
-        <archunit.version>1.4.2</archunit.version>
+        <!-- ArchUnit bundles its own ASM, so it must know every class-file
+             version it imports — otherwise it logs "Unsupported class file
+             major version" per JDK class and falls back to a degraded importer,
+             producing stack-trace spam in test logs. 1.4.1 added Java 25,
+             1.4.2 Java 26, 1.5.0 Java 27 (class-file major version 71). -->
+        <archunit.version>1.5.1</archunit.version>
     </properties>
 
     <modules>
@@ -96,20 +113,22 @@
                 <scope>import</scope>
             </dependency>
 {{- if .UsesSQS}}
-            <!-- Spring Cloud AWS BOM -->
+            <!-- Spring Cloud AWS BOM — 3.4.x is the line built against Spring
+                 Boot 3.5 (3.3.x ↔ Boot 3.4, 4.x ↔ Boot 4). -->
             <dependency>
                 <groupId>io.awspring.cloud</groupId>
                 <artifactId>spring-cloud-aws-dependencies</artifactId>
-                <version>3.2.0</version>
+                <version>3.4.2</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
 {{- else if .UsesPubSub}}
-            <!-- Spring Cloud GCP BOM -->
+            <!-- Spring Cloud GCP BOM — 7.x is the line built against Spring
+                 Boot 3.5 (6.x ↔ Boot 3.4, 8.x ↔ Boot 4). -->
             <dependency>
                 <groupId>com.google.cloud</groupId>
                 <artifactId>spring-cloud-gcp-dependencies</artifactId>
-                <version>5.8.0</version>
+                <version>7.4.10</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -164,10 +183,10 @@
                 <artifactId>checker-qual</artifactId>
                 <version>3.48.3</version>
             </dependency>
-            <!-- Mockito: Spring Boot 3.4.2 manages mockito-core at 5.14.2
-                 which only supports JVM class files through Java 23. Developers
-                 running a newer JDK (24/25) locally hit Byte Buddy "could not
-                 instrument" errors when tests try to mock concrete classes.
+            <!-- Mockito: Spring Boot 3.5.16 manages mockito-core at 5.17.0
+                 which only supports JVM class files through Java 25. Developers
+                 targeting or running a newer JDK (26/27) hit Byte Buddy "could
+                 not instrument" errors when tests try to mock concrete classes.
                  Pin a newer Mockito explicitly — the `<mockito.version>` property
                  by itself does not override the version that Spring Boot's
                  spring-boot-dependencies BOM locks in. -->
