@@ -7,10 +7,10 @@ import (
 
 func TestParseFields(t *testing.T) {
 	cases := []struct {
-		name     string
-		in       string
-		want     []Field
-		wantErr  string
+		name    string
+		in      string
+		want    []Field
+		wantErr string
 	}{
 		{
 			name: "single string field",
@@ -150,7 +150,7 @@ func TestField_JavaImport(t *testing.T) {
 		FTInstant:   "java.time.Instant",
 		FTLocalDate: "java.time.LocalDate",
 		FTUUID:      "java.util.UUID",
-		FTJSON:      "com.fasterxml.jackson.databind.JsonNode",
+		FTJSON:      "tools.jackson.databind.JsonNode",
 		FTEnum:      "",
 	}
 	for ft, want := range imports {
@@ -163,9 +163,9 @@ func TestField_JavaImport(t *testing.T) {
 
 func TestField_SQLType(t *testing.T) {
 	cases := []struct {
-		ft       FieldType
-		pgsql    string
-		mysql    string
+		ft    FieldType
+		pgsql string
+		mysql string
 	}{
 		{FTString, "VARCHAR(255)", "VARCHAR(255)"},
 		{FTText, "TEXT", "TEXT"},
@@ -208,12 +208,12 @@ func TestField_ColumnName(t *testing.T) {
 
 func TestUniqueImports(t *testing.T) {
 	fields := []Field{
-		{Type: FTString},                    // no import
-		{Type: FTDecimal},                   // java.math.BigDecimal
-		{Type: FTInstant},                   // java.time.Instant
-		{Type: FTLocalDate},                 // java.time.LocalDate
-		{Type: FTDecimal},                   // duplicate — must dedupe
-		{Type: FTEnum, EnumName: "Status"},  // no import (same package)
+		{Type: FTString},                   // no import
+		{Type: FTDecimal},                  // java.math.BigDecimal
+		{Type: FTInstant},                  // java.time.Instant
+		{Type: FTLocalDate},                // java.time.LocalDate
+		{Type: FTDecimal},                  // duplicate — must dedupe
+		{Type: FTEnum, EnumName: "Status"}, // no import (same package)
 	}
 	got := uniqueImports(fields, "jakarta.annotation.Nullable")
 	want := []string{

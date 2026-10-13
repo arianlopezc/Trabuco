@@ -291,7 +291,7 @@ import {{.GroupID}}.model.entities.PlaceholderRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
+import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.{{if eq .Database "postgresql"}}PostgreSQLContainer{{else}}MySQLContainer{{end}};
 import org.testcontainers.junit.jupiter.Container;
@@ -378,7 +378,7 @@ import {{.GroupID}}.model.entities.PlaceholderDocument;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
+import org.springframework.boot.data.mongodb.test.autoconfigure.DataMongoTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -434,7 +434,7 @@ import {{.GroupID}}.model.entities.PlaceholderDocument;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.data.redis.DataRedisTest;
+import org.springframework.boot.data.redis.test.autoconfigure.DataRedisTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -496,10 +496,10 @@ package {{.GroupID}}.api.controller;
 
 import {{.GroupID}}.model.entities.ImmutablePlaceholder;
 import {{.GroupID}}.shared.service.PlaceholderService;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.mock.bean.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -521,7 +521,7 @@ class PlaceholderControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private PlaceholderService service;
 
     @Test
@@ -863,7 +863,7 @@ class PlaceholderEventListenerTest {
 | `Testcontainers: Could not start container` | Docker not running | Start Docker Desktop |
 {{- end}}
 | `ImmutablePlaceholder cannot be resolved` | Annotation processor not run | Run `mvn clean compile` first |
-| `No qualifying bean of type` | Missing `@Mock` or `@MockBean` | Add mock for the dependency |
+| `No qualifying bean of type` | Missing `@Mock` or `@MockitoBean` | Add mock for the dependency |
 | `NullPointerException` in test setup | `@InjectMocks` field not initialized | Add `@ExtendWith(MockitoExtension.class)` |
 {{- if .HasModule "API"}}
 | `Expected 201 but got 400` | Request body validation failing | Check `@NotBlank`/`@Valid` on request DTO |

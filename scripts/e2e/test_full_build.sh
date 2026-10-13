@@ -62,12 +62,23 @@ fi
 #                    Without it, those Testcontainer-backed tests never execute
 #                    in Trabuco's own CI even though they ship in the templates.
 #   - full-fat:      every module + RabbitMQ — max dependency surface
+#   - sql-h2:        SQLDatastore with no database selected (embedded H2) —
+#                    the H2 identifier-casing / Flyway-dialect path that
+#                    none of the PostgreSQL archetypes exercise
+#   - nosql-mongo:   NoSQLDatastore + MongoDB — the Mongo property namespace
+#                    (spring.mongodb.* since Boot 4) and the Testcontainers
+#                    wiring of the API auth tests against Mongo
+#
+#   scripts/e2e/test_combinations.sh is the exhaustive 19-shape local sweep
+#   (every DB / broker / vector store); this list is the CI-sized subset.
 ARCHETYPES=(
   "api-minimal|Model,API|"
   "crud-sql|Model,SQLDatastore,Shared,API,Worker,Jobs|--database=postgresql"
   "aiagent-pubsub|Model,SQLDatastore,Shared,Events,EventConsumer,AIAgent|--database=postgresql --message-broker=pubsub --ai-agents=claude"
   "aiagent-rag|Model,SQLDatastore,Shared,API,AIAgent|--database=postgresql --vector-store=pgvector --ai-agents=claude"
   "full-fat|Model,SQLDatastore,Shared,Events,API,Worker,EventConsumer,AIAgent,Jobs|--database=postgresql --message-broker=rabbitmq --ai-agents=claude"
+  "sql-h2|Model,SQLDatastore,Shared,API|--database=none"
+  "nosql-mongo|Model,NoSQLDatastore,Shared,API|--nosql-database=mongodb"
 )
 
 FILTER="${1:-}"

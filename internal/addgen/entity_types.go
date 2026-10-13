@@ -85,7 +85,7 @@ func (f Field) JavaImport() string {
 	case FTUUID:
 		return "java.util.UUID"
 	case FTJSON:
-		return "com.fasterxml.jackson.databind.JsonNode"
+		return "tools.jackson.databind.JsonNode"
 	}
 	return ""
 }

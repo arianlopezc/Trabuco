@@ -127,7 +127,7 @@ func TestIsSupportedVersion(t *testing.T) {
 		{17, false},
 		{21, true},
 		{24, true},
-		{25, true}, // re-enabled with the Spring Boot 3.5.16 template bump
+		{25, true}, // re-enabled with the Spring Boot 3.5 template bump (now 4.1)
 		{26, true},
 		{27, true},
 		{28, false}, // not released as a GA JDK yet

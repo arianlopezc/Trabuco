@@ -81,7 +81,7 @@ func TestGenerateEntity_SQL_Postgres(t *testing.T) {
 		{
 			name:           "json field",
 			fields:         "metadata:json",
-			entityContains: []string{"JsonNode metadata();", "import com.fasterxml.jackson.databind.JsonNode;"},
+			entityContains: []string{"JsonNode metadata();", "import tools.jackson.databind.JsonNode;"},
 			migContains:    []string{"metadata JSONB NOT NULL"},
 		},
 		{
@@ -251,7 +251,7 @@ func TestGenerateEntity_Mongo(t *testing.T) {
 	repo := readPath(t, project, expectedFiles[2])
 
 	wants := []string{
-		"String documentId();",     // entity has documentId, not id
+		"String documentId();", // entity has documentId, not id
 		"@Document(collection = \"orders\")",
 		"@Id @Nullable String documentId",
 		"MongoRepository<OrderDocument, String>",

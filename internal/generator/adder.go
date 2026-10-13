@@ -13,18 +13,18 @@ import (
 
 // Version constants for dependencies added during module addition
 const (
-	JobRunrVersion           = "8.4.0"
-	LogstashEncoderVersion   = "8.0"
-	SpringDocVersion         = "2.7.0"
-	JaCoCoVersion            = "0.8.12"
-	SpringCloudAWSVersion    = "3.2.0"
-	SpringCloudGCPVersion    = "5.8.0"
-	LocalStackImageVersion   = "3.0"
-	ConfluentKafkaVersion    = "7.5.0"
+	JobRunrVersion         = "9.0.1"
+	LogstashEncoderVersion = "9.0"
+	SpringDocVersion       = "3.1.1"
+	JaCoCoVersion          = "0.8.15"
+	SpringCloudAWSVersion  = "4.2.0"
+	SpringCloudGCPVersion  = "8.2.4"
+	LocalStackImageVersion = "3.0"
+	ConfluentKafkaVersion  = "7.5.0"
 
-	EnforcerVersion          = "3.5.0"
-	SpotlessVersion          = "2.44.4"
-	ArchUnitVersion          = "1.4.0"
+	EnforcerVersion = "3.6.3"
+	SpotlessVersion = "3.10.4"
+	ArchUnitVersion = "1.5.1"
 )
 
 // Module, database, and broker constants are defined in config package

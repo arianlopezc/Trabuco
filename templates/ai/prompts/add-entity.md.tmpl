@@ -50,8 +50,8 @@ Document each denormalization decision (why it was made, how it stays in sync) i
 ```java
 package {{.GroupID}}.model.entities;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonSerialize;
 import org.immutables.value.Value;
 import {{.GroupID}}.model.ImmutableStyle;
 import org.jspecify.annotations.Nullable;
@@ -358,8 +358,8 @@ public class {EntityName}Service {
 ```java
 package {{.GroupID}}.model.dto;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonSerialize;
 import org.immutables.value.Value;
 import {{.GroupID}}.model.ImmutableStyle;
 
@@ -378,8 +378,8 @@ public interface {EntityName}Request {
 ```java
 package {{.GroupID}}.model.dto;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonSerialize;
 import org.immutables.value.Value;
 import {{.GroupID}}.model.ImmutableStyle;
 import {{.GroupID}}.model.entities.Immutable{EntityName};

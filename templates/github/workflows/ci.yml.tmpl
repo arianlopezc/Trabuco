@@ -167,7 +167,7 @@ jobs:
       SPRING_DATASOURCE_PASSWORD: root
 {{- end}}
 {{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
-      SPRING_DATA_MONGODB_URI: mongodb://localhost:27017/{{.ProjectName}}
+      SPRING_MONGODB_URI: mongodb://localhost:27017/{{.ProjectName}}
 {{- end}}
 {{- if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
       SPRING_DATA_REDIS_HOST: localhost

@@ -9,7 +9,8 @@ import {{.GroupID}}.aiagent.security.InputGuardrailAdvisor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpEntity;
@@ -55,6 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code @Testcontainers(disabledWithoutDocker = true)}).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureTestRestTemplate
 @Testcontainers(disabledWithoutDocker = true)
 @TestPropertySource(properties = {
     // Match VectorRagIntegrationTest's environment so the vector path

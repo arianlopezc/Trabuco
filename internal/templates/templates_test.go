@@ -171,8 +171,8 @@ func TestExecuteFromFile(t *testing.T) {
 	engine := NewEngine()
 
 	cfg := &config.ProjectConfig{
-		ProjectName:    "test-project",
-		GroupID:        "com.example.test",
+		ProjectName: "test-project",
+		GroupID:     "com.example.test",
 		JavaVersion: "21",
 		Modules:     []string{"Model", "SQLDatastore", "Shared", "API"},
 		Database:    "postgresql",
@@ -479,7 +479,7 @@ func TestSharedPOM(t *testing.T) {
 	}
 
 	// Verify Resilience4j
-	if !strings.Contains(result, "resilience4j-spring-boot3") {
+	if !strings.Contains(result, "resilience4j-spring-boot4") {
 		t.Error("Shared POM should contain Resilience4j dependency")
 	}
 	// Verify Model dependency
@@ -530,8 +530,8 @@ func TestAPIPOM(t *testing.T) {
 	}
 
 	// Verify Spring Boot web
-	if !strings.Contains(result, "spring-boot-starter-web") {
-		t.Error("API POM should contain Spring Boot Web")
+	if !strings.Contains(result, "spring-boot-starter-webmvc") {
+		t.Error("API POM should contain Spring Boot Web MVC")
 	}
 	// Verify validation
 	if !strings.Contains(result, "spring-boot-starter-validation") {

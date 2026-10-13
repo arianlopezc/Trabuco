@@ -8,7 +8,8 @@ import {{.GroupID}}.aiagent.security.RateLimiter;
 import {{.GroupID}}.aiagent.security.RequireScope;
 import {{.GroupID}}.aiagent.security.ScopeEnforcer;
 import {{.GroupID}}.aiagent.task.TaskManager;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -79,7 +80,7 @@ public class A2AController {
      * caps so a malformed payload fails fast with
      * {@code -32602 Invalid params}.
      */
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builder().build();
 
     @Autowired(required = false)
     private {{.GroupID}}.aiagent.agent.PrimaryAgent primaryAgent;

@@ -16,7 +16,7 @@
     <description>DTOs, Entities, Enums, and Exceptions</description>
 
     <properties>
-        <immutables.version>2.10.1</immutables.version>
+        <immutables.version>2.12.3</immutables.version>
     </properties>
 
     <dependencies>
@@ -34,7 +34,7 @@
             <artifactId>jackson-annotations</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
+            <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
@@ -94,11 +94,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jdk8</artifactId>
             <scope>test</scope>
         </dependency>
 {{- end}}

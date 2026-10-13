@@ -29,10 +29,12 @@
             <artifactId>spring-boot-starter-data-jdbc</artifactId>
         </dependency>
 
-        <!-- Flyway Core -->
+        <!-- Flyway. Spring Boot 4 moved the Flyway auto-configuration into
+             its own module, so the starter (not bare flyway-core) is required
+             for migrations to run on startup. -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
 
 {{- if eq .Database "postgresql"}}
@@ -71,10 +73,12 @@
         </dependency>
 {{- end}}
 
-        <!-- Test Dependencies -->
+        <!-- Test Dependencies. data-jdbc-test provides @DataJdbcTest and
+             @AutoConfigureTestDatabase (Boot 4 modular test support) and
+             brings spring-boot-starter-test transitively. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
+            <artifactId>spring-boot-starter-data-jdbc-test</artifactId>
             <scope>test</scope>
         </dependency>
 

@@ -2,7 +2,7 @@ package {{.GroupID}}.api.config.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 {{- if and (.HasModule "SQLDatastore") (eq .Database "postgresql")}}
@@ -15,6 +15,22 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mongodb.MongoDBContainer;
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+{{- end}}
+{{- if (and (and (.HasModule "Worker") (not (.HasModule "SQLDatastore"))) (.JobRunrUsesSql))}}
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 {{- end}}
 
 import org.springframework.http.HttpHeaders;
@@ -44,7 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = "trabuco.auth.enabled=false")
 @AutoConfigureMockMvc
-{{- if and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))}}
+{{- if or (or (and (.HasModule "SQLDatastore") (or (eq .Database "postgresql") (eq .Database "mysql"))) (.HasModule "NoSQLDatastore")) (and (and (.HasModule "Worker") (not (.HasModule "SQLDatastore"))) (.JobRunrUsesSql))}}
 @Testcontainers(disabledWithoutDocker = true)
 {{- end}}
 class AuthDormantTest {
@@ -61,6 +77,35 @@ class AuthDormantTest {
     @Container
     @ServiceConnection
     static MySQLContainer mysql = new MySQLContainer("mysql:8.0");
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "mongodb")}}
+
+    // With NoSQLDatastore=mongodb the context wires Spring Data MongoDB
+    // repositories (auto-index creation touches the server at startup), so
+    // a real MongoDB is required. @ServiceConnection binds spring.mongodb.*
+    // to the container.
+    @Container
+    @ServiceConnection
+    static MongoDBContainer mongodb = new MongoDBContainer("mongo:7.0");
+{{- else if and (.HasModule "NoSQLDatastore") (eq .NoSQLDatabase "redis")}}
+
+    // With NoSQLDatastore=redis the context wires Spring Data Redis
+    // repositories. Spring Boot's RedisContainerConnectionDetailsFactory
+    // recognises any container built from the `redis` image, so
+    // @ServiceConnection binds spring.data.redis.* to it.
+    @Container
+    @ServiceConnection
+    static GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
+{{- end}}
+{{- if (and (and (.HasModule "Worker") (not (.HasModule "SQLDatastore"))) (.JobRunrUsesSql))}}
+
+    // Worker is selected without SQLDatastore, so the API module carries the
+    // JobRunr PostgreSQL fallback datasource (spring.datasource.* in
+    // application.yml) for enqueue-only access. The JobRunr storage provider
+    // connects at startup, so the context needs a real Postgres;
+    // @ServiceConnection rebinds spring.datasource.* to the container.
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer jobrunrPostgres = new PostgreSQLContainer("postgres:15-alpine");
 {{- end}}
 
     @Autowired

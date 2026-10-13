@@ -107,7 +107,7 @@ class ArchitectureTest {
             .that()
             .areAnnotatedWith("org.immutables.value.Value$Immutable")
             .should()
-            .beAnnotatedWith("com.fasterxml.jackson.databind.annotation.JsonSerialize")
+            .beAnnotatedWith("tools.jackson.databind.annotation.JsonSerialize")
             .because(
                 "All @Value.Immutable interfaces must have @JsonSerialize and "
                     + "@JsonDeserialize for Jackson compatibility")

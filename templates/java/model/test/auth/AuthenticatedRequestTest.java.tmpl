@@ -1,8 +1,7 @@
 package {{.GroupID}}.model.auth;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -18,9 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class AuthenticatedRequestTest {
 
-    private final ObjectMapper mapper = new ObjectMapper()
-        .registerModule(new Jdk8Module())
-        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    // Jackson 3: Optional / java.time support is built in (no jdk8 or
+    // jsr310 modules), dates are ISO-8601 strings by default, and mappers
+    // are built once through the builder.
+    private final ObjectMapper mapper = JsonMapper.builder().build();
 
     @Test
     void serializesAndDeserializesWithCaller() throws Exception {

@@ -18,15 +18,15 @@ const MinSupportedVersion = 21
 // asserted against) it, so adding a version here is the only code change
 // needed to accept it.
 //
-// Why 25+ is allowed again (1.16): the templates moved from Spring Boot
-// 3.4.2 to 3.5.16 (Spring Framework 6.2.19). 3.4.x's repackaged ASM
-// rejected class-file major version 69 (Java 25) — projects compiled but
-// crashed at component scan with "Unsupported class file major version
-// 69". Framework 6.2.13+ accepts newer class files leniently, and every
+// Why 25+ is allowed (1.16): the templates moved off Spring Boot 3.4.2,
+// whose repackaged ASM rejected class-file major version 69 (Java 25) —
+// projects compiled but crashed at component scan with "Unsupported
+// class file major version 69". The templates now target Spring Boot 4.1
+// (Spring Framework 7.0), which officially supports Java 17–26, and every
 // other bytecode-reading tool in the templates (Mockito/Byte Buddy,
 // JaCoCo, ArchUnit, JobRunr) is pinned to a release that knows Java 27.
-// Spring Boot 3.5 officially supports Java 17–25; 26 and 27 work on a
-// best-effort basis and are exercised by the CI archetype matrix.
+// Java 27 works on a best-effort basis upstream and is exercised by the
+// CI archetype matrix.
 var SupportedVersions = []int{21, 24, 25, 26, 27}
 
 // ParseVersion extracts the major version and full version string from various formats.
@@ -81,7 +81,7 @@ func parseVersionNumber(s string) (major int, full string, err error) {
 	return 0, full, nil
 }
 
-// IsVersionCompatible checks if a Java version is compatible with Spring Boot 3.x
+// IsVersionCompatible checks if a Java version is compatible with Spring Boot 4.x
 func IsVersionCompatible(version int) bool {
 	return version >= MinSupportedVersion
 }

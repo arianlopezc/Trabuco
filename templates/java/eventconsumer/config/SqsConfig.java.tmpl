@@ -1,21 +1,19 @@
 package {{.GroupID}}.eventconsumer.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tools.jackson.databind.json.JsonMapper;
 import io.awspring.cloud.sqs.config.SqsMessageListenerContainerFactory;
 import io.awspring.cloud.sqs.listener.acknowledgement.handler.AcknowledgementMode;
 import io.awspring.cloud.sqs.support.converter.SqsMessagingMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 
 /**
  * AWS SQS configuration for event consumers.
  *
  * <p>Configures manual acknowledgment mode for reliable message processing
- * and the ObjectMapper for JSON message deserialization with Java 8 date/time support.</p>
+ * and binds the SQS message converter to Spring Boot's auto-configured
+ * Jackson 3 {@code JsonMapper} ({@code java.time} support is built in).</p>
  *
  * <p>With manual acknowledgment, messages are only deleted from the queue
  * after explicit acknowledgment. If processing fails, messages return to
@@ -25,30 +23,13 @@ import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 public class SqsConfig {
 
   /**
-   * ObjectMapper configured for SQS message serialization/deserialization.
-   *
-   * <p>Includes JavaTimeModule for proper handling of Instant,
-   * LocalDateTime, and other Java 8 date/time types.</p>
+   * Configures the SQS message converter with the application's Jackson 3
+   * {@code JsonMapper} so broker payloads and HTTP payloads share one
+   * serialization configuration (ISO-8601 dates, {@code Optional} support).
    */
   @Bean
-  @Primary
-  public ObjectMapper objectMapper() {
-    return new ObjectMapper()
-      .registerModule(new JavaTimeModule())
-      .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-  }
-
-  /**
-   * Configures the SQS message converter with our ObjectMapper.
-   *
-   * <p>Uses the ObjectMapper with JavaTimeModule for proper handling
-   * of Java 8 date/time types in message deserialization.</p>
-   */
-  @Bean
-  public SqsMessagingMessageConverter sqsMessagingMessageConverter(ObjectMapper objectMapper) {
-    SqsMessagingMessageConverter converter = new SqsMessagingMessageConverter();
-    converter.setObjectMapper(objectMapper);
-    return converter;
+  public SqsMessagingMessageConverter sqsMessagingMessageConverter(JsonMapper jsonMapper) {
+    return new SqsMessagingMessageConverter(jsonMapper);
   }
 
   /**

@@ -28,12 +28,12 @@ Skip any one and the agent silently fails to register, can't be invoked by the L
 
 ## Bound the cost per turn (F-AIAGENT-12 mitigation)
 
-Set `ToolCallingChatOptions.maxTokens(2048)` (or the value your domain needs) on every new agent's `ChatClient.builder`. Spring AI 1.0.5 does not ship a `maxToolCalls` cap on the tool-execution loop, so `maxTokens` (output cap per LLM turn) is the meaningful cost guard. Hardened deployments with stricter budgets pair this with `internalToolExecutionEnabled(false)` and manage the tool-call loop manually.
+Set `.defaultOptions(AnthropicChatOptions.builder().maxTokens(2048))` (or the value your domain needs) on every new agent's `ChatClient.builder` — Spring AI 2.0 takes the options *builder*, and the Anthropic default is now 4096 output tokens per call. `maxTokens` bounds cost per LLM turn; Spring AI 2.0.1 also exposes tool-call limits on `ToolCallingAdvisor` for the loop itself. Hardened deployments with stricter budgets set `spring.ai.chat.client.tool-calling.enabled=false` and drive `ToolCallingManager` manually (`internalToolExecutionEnabled` was removed in 2.0).
 
 ## Key steps (summary)
 
 1. **Add the qualifier bean** in `ChatClientConfig`. Even if it delegates to the same auto-configured ChatModel today, the seam is in place for production tuning.
-2. **Create the agent class** as `@Component` (no conditional). Inject the qualifier ChatModel + any tools the agent itself uses (e.g. `KnowledgeTools` for RAG-aware specialists). Build the `ChatClient` with a focused system prompt and `ToolCallingChatOptions.maxTokens(2048)`.
+2. **Create the agent class** as `@Component` (no conditional). Inject the qualifier ChatModel + any tools the agent itself uses (e.g. `KnowledgeTools` for RAG-aware specialists). Build the `ChatClient` with a focused system prompt and `.defaultOptions(AnthropicChatOptions.builder().maxTokens(2048))`.
 3. **Add `@CircuitBreaker(name = "llm", fallbackMethod = "<x>Fallback")`** on the public method. The fallback method takes the same params plus `Throwable t` and returns the same type. Use `@SuppressWarnings("unused")` on the fallback (Spring invokes it reflectively).
 4. **Create the `@Tool` wrapper** as `@Component @ConditionalOnBean(<X>Agent.class)` (this conditional IS valid — both classes are user-scanned). `@Tool(description = "...")` — the description is what the LLM reads to decide WHEN to invoke; be specific. `@ToolParam(description = "...")` on every parameter.
 5. **Inject the new tool into `PrimaryAgent`** — add the constructor parameter and append to `.defaultTools(...)`. Order doesn't matter for tools.
@@ -46,7 +46,7 @@ Set `ToolCallingChatOptions.maxTokens(2048)` (or the value your domain needs) on
 - **The `@Tool` wrapper carries `@ConditionalOnBean(<X>Agent.class)`.** This conditional IS reliable because both classes are user-scanned.
 - **`@Tool` and `@ToolParam` descriptions guide the LLM.** Vague descriptions ("Ask the agent something") leave the LLM unable to pick the right tool. Be specific about the agent's domain and when to invoke.
 - **All agents share `@CircuitBreaker(name = "llm")`.** A single LLM outage opens once.
-- **Set `ToolCallingChatOptions.maxTokens(...)`** on every new agent's `ChatClient.builder` to bound cost per turn (F-AIAGENT-12 partial mitigation).
+- **Set `AnthropicChatOptions.builder().maxTokens(...)`** on every new agent's `ChatClient.builder` to bound cost per turn (F-AIAGENT-12 partial mitigation).
 - **Use explicit types in agent code.** `ChatClient`, `ChatModel`, agent class types — `var` obscures the wiring at the exact point reviewers verify the qualifier discipline.
 
 ## Full step-by-step

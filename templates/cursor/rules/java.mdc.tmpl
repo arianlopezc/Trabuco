@@ -233,7 +233,7 @@ The shipped `StreamingController` (`/tasks/{taskId}/stream`) is the reference im
 - NEVER `@ConditionalOnBean(ChatModel.class)` on the agent or `ChatClientConfig` — silently fails (Spring evaluates before Spring AI auto-config registers ChatModel). The `@ConditionalOnBean(<UserAgent>.class)` pattern on the `@Tool` wrapper IS valid (both classes are user-scanned).
 - Each agent gets its own `@Qualifier("xChatModel")` so production can tune temperature / model variant / rate limit independently.
 - `@CircuitBreaker(name = "llm")` on every public agent method, paired private fallback. Same name = single LLM outage opens all circuits at once.
-- Set `ToolCallingChatOptions.maxTokens(2048)` on the `ChatClient.builder` to bound cost per turn (Spring AI 1.0.5 has no tool-call recursion cap; F-AIAGENT-12).
+- Set `.defaultOptions(AnthropicChatOptions.builder().maxTokens(2048))` on the `ChatClient.builder` to bound cost per turn (F-AIAGENT-12). Spring AI 2.0 takes the options builder, and 2.0.1 adds tool-call limits on `ToolCallingAdvisor` for the loop itself.
 - See `/add-agent-variant` for the procedure.
 {{- end}}
 {{- if or (.HasModule "API") (.HasModule "AIAgent")}}

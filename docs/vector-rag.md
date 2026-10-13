@@ -194,7 +194,7 @@ change `MONGODB_VECTOR_INDEX` if your Atlas index has a different
 name. Indexing is asynchronous; expect a few minutes after creation
 before queries return results.
 
-The generator emits a fallback `spring.data.mongodb.uri` when
+The generator emits a fallback `spring.mongodb.uri` when
 `--vector-store=mongodb` is selected without `NoSQLDatastore=mongodb`
 in the modules. When both are selected, the NoSQL block above the
 vector-store block provides the connection (no duplicate-key YAML).

@@ -6,13 +6,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 {{- if .UsesKafka}}
+import org.springframework.kafka.annotation.BackOff;
 import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.retrytopic.DltStrategy;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
-import org.springframework.retry.annotation.Backoff;
 {{- else if .UsesRabbitMQ}}
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 {{- else if .UsesSQS}}
@@ -71,9 +71,9 @@ public class PlaceholderEventListener {
    * </ul>
    * </p>
    *
-   * <p><b>Pre-flight (autoCreateTopics=false):</b> Spring Kafka 3.x names
+   * <p><b>Pre-flight (autoCreateTopics=false):</b> Spring Kafka names
    * retry topics by their <em>delay in milliseconds</em>, not by attempt
-   * index. With {@code @Backoff(delay=1000, multiplier=2.0)} below, the
+   * index. With {@code @BackOff(delay=1000, multiplier=2.0)} below, the
    * topics it expects on the broker before first deploy are:
    * <ul>
    *   <li>{@code <topic>-retry-1000} — 1st retry, 1s delay</li>
@@ -89,7 +89,10 @@ public class PlaceholderEventListener {
    */
   @RetryableTopic(
     attempts = "4",
-    backoff = @Backoff(delay = 1000, multiplier = 2.0),
+    // Spring Kafka 4 moved retry support from Spring Retry to Spring
+    // Framework's core retry: the attribute is backOff/@BackOff from
+    // org.springframework.kafka.annotation.
+    backOff = @BackOff(delay = 1000, multiplier = 2.0),
     dltStrategy = DltStrategy.FAIL_ON_ERROR,
     autoCreateTopics = "false"
   )

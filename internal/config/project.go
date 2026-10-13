@@ -436,7 +436,7 @@ func (c *ProjectConfig) VectorStoreIsMongoAtlas() bool {
 // VectorStoreNeedsStandaloneMongoConnection returns true when the project
 // uses MongoDB Atlas as its vector store but does NOT also have a
 // NoSQLDatastore=mongodb wiring a Mongo connection. In that case the
-// AIAgent application.yml needs its own spring.data.mongodb.uri so the
+// AIAgent application.yml needs its own spring.mongodb.uri so the
 // Atlas vector-store starter has somewhere to connect; otherwise the
 // connection comes from the NoSQL block above and a second emission
 // would be a duplicate YAML key. (Phase E auto-adds NoSQLDatastore so

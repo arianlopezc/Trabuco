@@ -51,12 +51,12 @@ func registerInitProject(s *server.MCPServer, version string) {
 			"Generate a new production-ready Java multi-module Maven project with Spring Boot. "+
 				"WHEN TO USE: User wants to start a new Java backend project, REST API, event processor, or background job system. "+
 				"Trabuco generates a complete project skeleton with working code, tests, Docker configs, CI pipelines, and AI context files. "+
-				"GENERATES: Multi-module Maven project with Spring Boot 3.5, Spring Data JDBC (not JPA), Immutables for DTOs/entities, "+
+				"GENERATES: Multi-module Maven project with Spring Boot 4.1, Spring Data JDBC (not JPA), Immutables for DTOs/entities, "+
 				"Testcontainers for integration tests, Spotless for code formatting, JaCoCo for coverage, and Docker Compose for local development. "+
 				"When API or AIAgent module is selected, also generates OIDC Resource Server scaffolding (dual SecurityFilterChain, JWT validation, "+
-				"RFC 7807 ProblemDetail handlers, Model+Shared auth utilities). The generated app refuses to boot until trabuco.auth.enabled is set explicitly to 'true' or 'false' " +
-				"(no implicit default — a deliberate guardrail so no service ships with neither chain wired). 'true' requires OIDC_ISSUER_URI AND OIDC_AUDIENCE " +
-				"(audience is required to close the silent-empty-default token-confusion vector); 'false' enables the open chain " +
+				"RFC 7807 ProblemDetail handlers, Model+Shared auth utilities). The generated app refuses to boot until trabuco.auth.enabled is set explicitly to 'true' or 'false' "+
+				"(no implicit default — a deliberate guardrail so no service ships with neither chain wired). 'true' requires OIDC_ISSUER_URI AND OIDC_AUDIENCE "+
+				"(audience is required to close the silent-empty-default token-confusion vector); 'false' enables the open chain "+
 				"(local dev, or — for AIAgent — the legacy API-key path only). "+
 				"DOES NOT GENERATE: Identity-provider side (login forms, token issuance, user management), frontend/UI code, GraphQL endpoints, Kubernetes manifests, "+
 				"Terraform/cloud deployment configs, custom business logic, or production database schemas. "+
@@ -259,10 +259,10 @@ func registerInitProject(s *server.MCPServer, version string) {
 
 		// Build conditional key_files
 		keyFiles := map[string]string{
-			"quality_spec": ".ai/prompts/JAVA_CODE_QUALITY.md",
-			"add_entity":   ".ai/prompts/add-entity.md",
-			"agent_guide":  "AGENTS.md",
-			"project_meta": ".trabuco.json",
+			"quality_spec":    ".ai/prompts/JAVA_CODE_QUALITY.md",
+			"add_entity":      ".ai/prompts/add-entity.md",
+			"agent_guide":     "AGENTS.md",
+			"project_meta":    ".trabuco.json",
 			"extension_guide": ".ai/prompts/extending-the-project.md",
 		}
 		if hasModule(resolvedModules, config.ModuleAPI) {
@@ -430,13 +430,13 @@ func registerSuggestArchitecture(s *server.MCPServer) {
 // architectureAdvisory provides the full module catalog, warnings, and constraints
 // so the calling agent can make its own module selection decision.
 type architectureAdvisory struct {
-	Modules           []advisoryModule  `json:"modules"`
-	DatabaseOptions   []dbOption        `json:"database_options"`
-	BrokerOptions     []brokerOption    `json:"broker_options"`
-	Warnings          []string          `json:"warnings"`
-	NotCovered        []string          `json:"not_covered"`
-	Constraints       []string          `json:"constraints"`
-	Patterns          []scoredPattern   `json:"patterns"`
+	Modules           []advisoryModule   `json:"modules"`
+	DatabaseOptions   []dbOption         `json:"database_options"`
+	BrokerOptions     []brokerOption     `json:"broker_options"`
+	Warnings          []string           `json:"warnings"`
+	NotCovered        []string           `json:"not_covered"`
+	Constraints       []string           `json:"constraints"`
+	Patterns          []scoredPattern    `json:"patterns"`
 	RecommendedConfig *recommendedConfig `json:"recommended_config"`
 }
 
@@ -939,13 +939,13 @@ func registerListProviders(s *server.MCPServer) {
 		var providers []map[string]any
 		for id, info := range auth.SupportedProviders {
 			providers = append(providers, map[string]any{
-				"id":               string(id),
-				"name":             info.Name,
-				"env_var":          info.EnvVar,
-				"models":           info.Models,
+				"id":                 string(id),
+				"name":               info.Name,
+				"env_var":            info.EnvVar,
+				"models":             info.Models,
 				"input_cost_per_1m":  info.InputCostPer1M,
 				"output_cost_per_1m": info.OutputCostPer1M,
-				"requires_key":     info.RequiresKey,
+				"requires_key":       info.RequiresKey,
 			})
 		}
 
@@ -954,7 +954,6 @@ func registerListProviders(s *server.MCPServer) {
 }
 
 // ---------- Helpers ----------
-
 
 // hasModule checks if a module name is in the list.
 func hasModule(modules []string, name string) bool {

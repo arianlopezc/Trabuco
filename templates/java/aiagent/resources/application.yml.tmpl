@@ -74,12 +74,29 @@ spring:
         enabled: ${MCP_SERVER_ENABLED:false}
         name: {{.ProjectNamePascal}} AI Agent
         version: 1.0.0
+        # Streamable-HTTP is the current MCP transport (POST /mcp). The
+        # older SSE transport is deprecated since Spring AI 2.0; both are
+        # served by spring-ai-starter-mcp-server-webmvc.
+        protocol: STREAMABLE
+    # Spring AI 2.0 tool-call limits (per chat() turn). The defaults
+    # (150 total / 40 per tool) already stop runaway tool loops; the
+    # explicit values keep the bound visible and tunable per deployment.
+    # on-limit-exceeded: throw (default) surfaces ToolCallLimitExceededException
+    # to the caller; return-error-response hands the error back to the model.
+    tools:
+      limits:
+        max-total-tool-calls: ${AI_MAX_TOTAL_TOOL_CALLS:150}
+        max-calls-per-tool-default: ${AI_MAX_CALLS_PER_TOOL:40}
     anthropic:
       api-key: ${ANTHROPIC_API_KEY:}
       chat:
-        options:
-          model: ${AI_MODEL:claude-sonnet-4-20250514}
-          max-tokens: ${AI_MAX_TOKENS:1024}
+        # Spring AI 2.0 flattened the chat options: the former
+        # spring.ai.anthropic.chat.options.* keys now live directly under
+        # spring.ai.anthropic.chat.*. (Spring AI 2.0 also raised the
+        # built-in max-tokens default from 500 to 4096; keep the explicit
+        # cap below to bound per-request cost.)
+        model: ${AI_MODEL:claude-sonnet-4-20250514}
+        max-tokens: ${AI_MAX_TOKENS:1024}
     retry:
       max-attempts: ${AI_RETRY_MAX_ATTEMPTS:2}
 {{- if .HasVectorStore}}
@@ -168,7 +185,7 @@ spring:
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 {{- else}}
-    url: jdbc:h2:mem:{{.ProjectName}};DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:{{.ProjectName}};DB_CLOSE_DELAY=-1;CASE_INSENSITIVE_IDENTIFIERS=TRUE
     username: ${DB_USERNAME:sa}
     password: ${DB_PASSWORD:}
     driver-class-name: org.h2.Driver
@@ -189,9 +206,12 @@ spring:
 {{- if .HasModule "NoSQLDatastore"}}
 {{- if eq .NoSQLDatabase "mongodb"}}
 
+  # Spring Boot 4: connection keys live under spring.mongodb.*, Spring
+  # Data specific keys stay under spring.data.mongodb.*
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
       auto-index-creation: true
 {{- else if eq .NoSQLDatabase "redis"}}
 
@@ -212,9 +232,8 @@ spring:
   # MongoDB connection — required by spring-ai-starter-vector-store-mongodb-atlas.
   # NoSQLDatastore=mongodb is not selected, so the AIAgent module wires
   # the connection here. Point MONGODB_URI at your Atlas cluster.
-  data:
-    mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27018/{{.ProjectName}}}
 {{- end}}
 
 {{- if .AuthEnabled}}
@@ -280,9 +299,10 @@ agent:
 # Spring AI auto-loops tool calls inside a single
 # chat() invocation; a misbehaving tool description or recursive
 # delegation can trap the model in a tool-loop that never stops
-# issuing calls. Spring AI 1.0.x has no native
-# max-tool-call-chain knob — the strongest available bound is
-# per-LLM-call wall-clock plus circuit-breaker-driven cool-off.
+# issuing calls. Spring AI 2.0 caps that loop natively
+# (spring.ai.tools.limits.* above: 150 calls per turn / 40 per tool
+# by default); the time limiter and circuit breaker below bound the
+# wall-clock and drive cool-off on top of it.
 #
 # The {@code llm} TimeLimiter instance is configured but NOT
 # applied to {@code PrimaryAgent.chat()} by default — the method

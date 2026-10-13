@@ -64,7 +64,7 @@ Add `tenant_id UUID NOT NULL` (or `authority_scope TEXT`) as a non-null column w
 
 ---
 
-## F-EVENTS-02 — RabbitMQ listener consumes `PlaceholderEvent` with a default `Jackson2JsonMessageConverter` and **no** `DefaultJackson2JavaTypeMapper.setTrustedPackages(...)` configured — Spring-AMQP's default trusted-package list is `["*"]`, meaning any sender can specify any FQCN in the `__TypeId__` header
+## F-EVENTS-02 — RabbitMQ listener consumes `PlaceholderEvent` with a default `JacksonJsonMessageConverter` and **no** `DefaultJacksonJavaTypeMapper.setTrustedPackages(...)` configured — Spring-AMQP's default trusted-package list is `["*"]`, meaning any sender can specify any FQCN in the `__TypeId__` header
 
 **Severity floor:** Critical
 
@@ -76,8 +76,8 @@ Add `tenant_id UUID NOT NULL` (or `authority_scope TEXT`) as a non-null column w
 
 ```java
 @Bean
-public Jackson2JsonMessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
-  return new Jackson2JsonMessageConverter(objectMapper);
+public JacksonJsonMessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
+  return new JacksonJsonMessageConverter(objectMapper);
 }
 ```
 
@@ -214,7 +214,7 @@ Uncomment `password: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}` by default; 
 
 ---
 
-## F-DATA-07 — Redis `RedisTemplate` uses `GenericJackson2JsonRedisSerializer` — ships polymorphic `@class` markers (Jackson-default-typing-equivalent gadget chain risk)
+## F-DATA-07 — Redis `RedisTemplate` uses `GenericJacksonJsonRedisSerializer` — ships polymorphic `@class` markers (Jackson-default-typing-equivalent gadget chain risk)
 
 **Severity floor:** High
 **Taxonomy:** ASVS-V5-3, OWASP-A08, CWE-502
@@ -230,8 +230,8 @@ Uncomment `password: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}` by default; 
 public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory, ObjectMapper redisObjectMapper) {
   RedisTemplate<String, Object> template = new RedisTemplate<>();
   ...
-  template.setValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
-  template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
+  template.setValueSerializer(new GenericJacksonJsonRedisSerializer(redisObjectMapper));
+  template.setHashValueSerializer(new GenericJacksonJsonRedisSerializer(redisObjectMapper));
   template.afterPropertiesSet();
   return template;
 }
@@ -239,11 +239,11 @@ public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connec
 
 ### Why it matters
 
-`GenericJackson2JsonRedisSerializer` writes a Jackson `@class` type marker into every value and reads it back via `ObjectMapper.activateDefaultTyping`-equivalent semantics. Combined with the unauthenticated Redis (F-DATA-06), an attacker who can write a key (FLUSHDB → SET) injects a serialized `@class` referencing any class on the classpath with a single-arg-string constructor or property setter — the same class of CVE-2017-15095 / CVE-2019-12086 gadgets that have plagued Jackson default-typing in the past. Even with auth, a co-tenant or compromised microservice on the Redis becomes an RCE vector.
+`GenericJacksonJsonRedisSerializer` writes a Jackson `@class` type marker into every value and reads it back via `ObjectMapper.activateDefaultTyping`-equivalent semantics. Combined with the unauthenticated Redis (F-DATA-06), an attacker who can write a key (FLUSHDB → SET) injects a serialized `@class` referencing any class on the classpath with a single-arg-string constructor or property setter — the same class of CVE-2017-15095 / CVE-2019-12086 gadgets that have plagued Jackson default-typing in the past. Even with auth, a co-tenant or compromised microservice on the Redis becomes an RCE vector.
 
 ### Suggested fix
 
-Replace with `Jackson2JsonRedisSerializer<>(YourSpecificType.class)` and a per-cache typed bean, or use `StringRedisSerializer` + manual JSON via a context-typed mapper; explicitly disallow polymorphic deserialization.
+Replace with `JacksonJsonRedisSerializer<>(YourSpecificType.class)` and a per-cache typed bean, or use `StringRedisSerializer` + manual JSON via a context-typed mapper; explicitly disallow polymorphic deserialization.
 
 ---
 
@@ -526,7 +526,7 @@ flyway:
 
 ### Why it matters
 
-`spring.flyway.clean-disabled` is missing. From Flyway 9 onwards the default flipped to `true`, but Spring Boot 3.x exposes `clean-disabled` through `FlywayProperties` and a misconfigured CI/CD or operator's `mvn flyway:clean` can drop every table the runtime DB role can `DROP` — combined with F-DATA-01 (runtime user ≡ Flyway user with DROP), one stray Maven goal wipes prod. A defense-in-depth template would set `clean-disabled: true` explicitly.
+`spring.flyway.clean-disabled` is missing. From Flyway 9 onwards the default flipped to `true`, but Spring Boot 4.x exposes `clean-disabled` through `FlywayProperties` and a misconfigured CI/CD or operator's `mvn flyway:clean` can drop every table the runtime DB role can `DROP` — combined with F-DATA-01 (runtime user ≡ Flyway user with DROP), one stray Maven goal wipes prod. A defense-in-depth template would set `clean-disabled: true` explicitly.
 
 ### Suggested fix
 
@@ -967,7 +967,7 @@ Default `MANAGEMENT_ENDPOINTS=health,info` in API yaml; route `/actuator/prometh
 ```yaml
 producer:
   key-serializer: org.apache.kafka.common.serialization.StringSerializer
-  value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 ```
 
 ---
@@ -1019,7 +1019,7 @@ Document a post-migration `REVOKE` step and ship a Flyway callback that runs it;
 - **`PlaceholderRecord` mass assignment today:** Currently mediated by the controller's separate `ImmutablePlaceholderRequest`. Filed only as a future-refactor risk (F-DATA-11) because the templates invite developers down the antipattern.
 - **Spring Data Redis `@Indexed` field secondary-index injection:** The `name` field is indexed via Redis `SADD placeholder:name:<value>` — but Spring Data Redis serializes the value through `StringRedisSerializer` after Spring's bean-property binding. No key-injection vector via repository derivation `findByName(String)`.
 - **`PgVectorStore` SQL-injection via `metadata.filterExpression`:** Spring AI builds parameterized filters via `FilterExpressionBuilder` — strings are bound as JDBC parameters. Filed only as the absence-of-filter problem (F-DATA-08), not SQLi.
-- **`GenericJackson2JsonRedisSerializer` polymorphism (F-DATA-07) — caveat:** Recent Spring Data Redis (3.x) uses an internal allow-list (`AllowAllNullClassLoader` removed; explicit type-validator). The risk is reduced from "any class" to "any class on the classpath that the validator allows." Still material because the allow-list is permissive and not under the operator's control.
+- **`GenericJacksonJsonRedisSerializer` polymorphism (F-DATA-07) — caveat:** Recent Spring Data Redis (4.x) uses an internal allow-list (`AllowAllNullClassLoader` removed; explicit type-validator). The risk is reduced from "any class" to "any class on the classpath that the validator allows." Still material because the allow-list is permissive and not under the operator's control.
 - **`@Testcontainers(disabledWithoutDocker=true)` — TRABUCO-010 `Testcontainers Resource Bleed`:** Generated tests do not mount host paths, do not share state across PRs, do not pin reusable containers with secrets. Negative finding.
 - **Mongo BSON injection / Mongo NoSQL key injection (CWE-89 NoSQL flavour):** No MongoDB target generated in the audit set (`NoSQLDatabase=mongodb` not selected); no `MongoTemplate` / `Criteria.where` / `new Query` in any reviewed archetype. Out of scope for this run.
 - **`MultipartFile` directory-traversal (CWE-22, ASVS-V12-1):** Searched all five archetypes; no `MultipartFile` import or `Files.copy` / `Paths.get` user-supplied filename usage. Filed only as the prerequisite "no body limits" prep step (F-DATA-19) for when a developer adds it.

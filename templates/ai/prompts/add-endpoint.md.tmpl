@@ -30,8 +30,8 @@ CLI is **addition-only**. Replace `UnsupportedOperationException` stubs with rea
 ```java
 package {{.GroupID}}.model.dto;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonSerialize;
 import org.immutables.value.Value;
 import {{.GroupID}}.model.ImmutableStyle;
 import jakarta.validation.constraints.NotBlank;
@@ -56,8 +56,8 @@ public interface {EntityName}Request {
 ```java
 package {{.GroupID}}.model.dto;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonSerialize;
 import org.immutables.value.Value;
 import {{.GroupID}}.model.ImmutableStyle;
 import {{.GroupID}}.model.entities.Immutable{EntityName};
@@ -219,7 +219,7 @@ import {{.GroupID}}.model.entities.Immutable{EntityName};
 import {{.GroupID}}.shared.service.{EntityName}Service;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.mock.bean.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -237,7 +237,7 @@ class {EntityName}ControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private {EntityName}Service service;
 
     @Test

@@ -370,7 +370,7 @@ on identity. See its javadoc for full examples; the short version:
 Jwt jwt = MockJwtFactory.jwt("user-42", "agent:read", "agent:write");
 
 // Pattern 2 — @SpringBootTest with mocked decoder
-@MockBean JwtDecoder jwtDecoder;
+@MockitoBean JwtDecoder jwtDecoder;
 @BeforeEach void setup() {
     when(jwtDecoder.decode(any()))
         .thenReturn(MockJwtFactory.jwt("user-42", "admin"));
